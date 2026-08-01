@@ -1,9 +1,9 @@
 import { useEffect, useState, type ComponentType } from 'react'
-import type { ServicesConfig } from '@/config/schema'
+import type { NavigationConfig } from '@/config/schema'
 
 interface BookmarkEditDialogProps {
   open: boolean
-  config?: ServicesConfig
+  config?: NavigationConfig
   serviceSlug: string | null
   onClose: () => void
 }

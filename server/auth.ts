@@ -210,6 +210,11 @@ export function createAuthService() {
     }
   }
 
+  function getSessionKey(request: FastifyRequest) {
+    const session = getSessionFromRequest(request)
+    return session ? sha256Base64Url(session.token) : null
+  }
+
   function createSession(reply: FastifyReply, request: FastifyRequest, username: string) {
     const token = randomBytes(32).toString('base64url')
     sessions.set(sha256Base64Url(token), {
@@ -393,6 +398,7 @@ export function createAuthService() {
 
   return {
     getStatus,
+    getSessionKey,
     requireAuthenticated,
     invalidateAllSessions(reply?: FastifyReply, request?: FastifyRequest) {
       sessions.clear()

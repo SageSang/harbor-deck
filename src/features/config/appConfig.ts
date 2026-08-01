@@ -1,12 +1,21 @@
 import { defaultAppConfig as bundledDefaultAppConfig } from '@/config/defaultConfig'
-import { appConfigSchema, systemConfigSchema, type AppConfig, type ServicesConfig, type SystemConfig } from '@/config/schema'
+import {
+  appConfigSchema,
+  systemConfigSchema,
+  type AppConfig,
+  type NavigationConfig,
+  type SystemConfig,
+} from '@/config/schema'
 import { getCurrentMessages } from '@/i18n/runtime'
-import { cloneServicesConfig, parseServicesConfig } from '@/features/services/servicesConfig'
+import {
+  cloneNavigationConfig,
+  parseNavigationConfig,
+} from '@/features/navigation/navigationConfig'
 
 export const defaultAppConfig = parseAppConfig(bundledDefaultAppConfig)
 
-export function buildAppConfig(system: SystemConfig, services: ServicesConfig): AppConfig {
-  return parseAppConfig({ system, services })
+export function buildAppConfig(system: SystemConfig, navigation: NavigationConfig): AppConfig {
+  return parseAppConfig({ system, navigation })
 }
 
 export function parseAppConfig(input: unknown): AppConfig {
@@ -21,7 +30,7 @@ export function parseAppConfig(input: unknown): AppConfig {
 
   return {
     system: systemConfigSchema.parse(validated.system),
-    services: parseServicesConfig(validated.services),
+    navigation: parseNavigationConfig(validated.navigation),
   }
 }
 
@@ -52,7 +61,7 @@ export function cloneAppConfig(config: AppConfig): AppConfig {
       },
       customSearchEngines: config.system.customSearchEngines.map((engine) => ({ ...engine })),
     },
-    services: cloneServicesConfig(config.services),
+    navigation: cloneNavigationConfig(config.navigation),
   }
 }
 

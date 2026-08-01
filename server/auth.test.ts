@@ -183,6 +183,127 @@ describe('auth module', () => {
     expect(storedConfig.system.darkMode).toBe(!publicSystem.darkMode)
   })
 
+  it('stores scene passwords privately and requires an unlock token for protected navigation', async () => {
+    const server = await buildTestServer()
+    const { cookie } = await setupAdmin(server)
+    const navigationResponse = await server.inject({
+      method: 'GET',
+      url: '/api/config/navigation',
+      headers: { cookie },
+    })
+    const navigation = navigationResponse.json() as AppConfig['navigation']
+
+    const saveResponse = await server.inject({
+      method: 'PUT',
+      url: '/api/config/navigation',
+      headers: { cookie },
+      payload: {
+        ...navigation,
+        scenes: [
+          ...navigation.scenes,
+          {
+            id: 'work',
+            name: 'Work',
+            protected: false,
+            groups: [],
+          },
+        ],
+      },
+    })
+    expect(saveResponse.statusCode).toBe(200)
+
+    const passwordResponse = await server.inject({
+      method: 'PUT',
+      url: '/api/config/navigation/scenes/work/password',
+      headers: { cookie },
+      payload: { password: 'work-secret' },
+    })
+    expect(passwordResponse.statusCode).toBe(200)
+    const publicNavigation = passwordResponse.json() as AppConfig['navigation']
+    const publicScene = publicNavigation.scenes.find((scene) => scene.id === 'work')
+    expect(publicScene?.protected).toBe(true)
+    expect(publicScene?.passwordHash).toBeUndefined()
+
+    const storedScene = (await readStoredConfig()).navigation.scenes.find(
+      (scene) => scene.id === 'work'
+    )
+    expect(storedScene?.passwordHash).toMatch(/^scrypt\$/)
+    expect(storedScene?.passwordHash).not.toBe('work-secret')
+
+    const protectedConfig = publicNavigation
+    const unauthorizedConfigSave = await server.inject({
+      method: 'PUT',
+      url: '/api/config/navigation',
+      headers: { cookie },
+      payload: {
+        ...protectedConfig,
+        scenes: protectedConfig.scenes.map((scene) =>
+          scene.id === 'work' ? { ...scene, name: 'Changed without unlock' } : scene
+        ),
+      },
+    })
+    expect(unauthorizedConfigSave.statusCode).toBe(403)
+
+    const unauthorizedPasswordChange = await server.inject({
+      method: 'PUT',
+      url: '/api/config/navigation/scenes/work/password',
+      headers: { cookie },
+      payload: { password: null },
+    })
+    expect(unauthorizedPasswordChange.statusCode).toBe(403)
+
+    const blockedNavigation = await server.inject({
+      method: 'GET',
+      url: '/api/navigation?sceneId=work',
+      headers: { cookie },
+    })
+    expect(blockedNavigation.statusCode).toBe(403)
+
+    const wrongUnlock = await server.inject({
+      method: 'POST',
+      url: '/api/navigation/scenes/work/unlock',
+      headers: { cookie },
+      payload: { password: 'wrong-secret' },
+    })
+    expect(wrongUnlock.statusCode).toBe(401)
+
+    const unlockResponse = await server.inject({
+      method: 'POST',
+      url: '/api/navigation/scenes/work/unlock',
+      headers: { cookie },
+      payload: { password: 'work-secret' },
+    })
+    expect(unlockResponse.statusCode).toBe(200)
+    const { token } = unlockResponse.json() as { token: string }
+
+    const publicConfigResponse = await server.inject({
+      method: 'GET',
+      url: '/api/config/navigation',
+      headers: { cookie },
+    })
+    const publicConfig = publicConfigResponse.json() as AppConfig['navigation']
+    const saveAfterUnlockResponse = await server.inject({
+      method: 'PUT',
+      url: '/api/config/navigation',
+      headers: { cookie, 'x-scene-tokens': JSON.stringify({ work: token }) },
+      payload: {
+        ...publicConfig,
+        scenes: publicConfig.scenes.map((scene) =>
+          scene.id === 'work' ? { ...scene, name: 'Work updated' } : scene
+        ),
+      },
+    })
+    expect(saveAfterUnlockResponse.statusCode).toBe(200)
+
+    const unlockedNavigation = await server.inject({
+      method: 'GET',
+      url: '/api/navigation?sceneId=work',
+      headers: { cookie, 'x-scene-token': token },
+    })
+    expect(unlockedNavigation.statusCode).toBe(200)
+    expect(unlockedNavigation.json()).toEqual([])
+  })
+
   it('rejects invalid logins, rate limits repeated failures, and rotates sessions on credential updates', async () => {
     const server = await buildTestServer()
     const { password } = await setupAdmin(server)

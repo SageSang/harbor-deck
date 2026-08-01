@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   appConfigQueryKey,
-  servicesConfigQueryKey,
+  navigationConfigQueryKey,
+  sceneListQueryKey,
   systemConfigQueryKey,
 } from '@/features/config/api'
 import {
@@ -19,7 +20,9 @@ import {
 function clearProtectedQueries(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.removeQueries({ queryKey: appConfigQueryKey })
   queryClient.removeQueries({ queryKey: systemConfigQueryKey })
-  queryClient.removeQueries({ queryKey: servicesConfigQueryKey })
+  queryClient.removeQueries({ queryKey: navigationConfigQueryKey })
+  queryClient.removeQueries({ queryKey: sceneListQueryKey })
+  queryClient.removeQueries({ queryKey: ['navigation', 'services'] })
 }
 
 export function useAuthStatus() {

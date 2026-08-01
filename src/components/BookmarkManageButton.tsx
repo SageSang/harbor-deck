@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { FolderTree, GripVertical, Plus, SquarePen, Upload } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  FolderTree,
+  KeyRound,
+  Layers3,
+  Plus,
+  SquarePen,
+  Trash2,
+  Upload,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ConfigPanelLayout, ConfigPanelSection } from '@/components/ConfigPanelLayout'
@@ -14,22 +25,25 @@ import {
   buildSuggestedSlug,
   createEmptyBookmarkForm,
   formatBookmarkError,
-  type BookmarkFormValues,
   validateBookmarkForm,
+  type BookmarkFormValues,
 } from '@/features/services/bookmarkForm'
 import {
-  cloneServicesConfig,
-  defaultServicesConfig,
-  insertService,
-  moveGroup,
-  validateGroupName,
-} from '@/features/services/servicesConfig'
-import { useSaveServicesConfig } from '@/features/services/useSaveServicesConfig'
-import { useServicesConfig } from '@/features/services/useServices'
+  buildUniqueNavigationId,
+  cloneNavigationConfig,
+  createScene,
+  createSceneGroup,
+  upsertBookmark,
+} from '@/features/navigation/navigationConfig'
+import {
+  useNavigationConfig,
+  useSaveNavigationConfig,
+  useSetScenePassword,
+} from '@/features/navigation/useNavigation'
 import { getFeedbackNoticeClass } from '@/features/feedback/feedbackStyles'
 import { useFeedback } from '@/features/feedback/useFeedback'
 import { useI18n } from '@/i18n/runtime'
-import { cn } from '@/lib/utils'
+import { useAppStore } from '@/store/appStore'
 
 interface FeedbackState {
   type: 'success' | 'error'
@@ -40,274 +54,366 @@ interface BookmarkManageButtonProps {
   initialOpen?: boolean
 }
 
-const sectionCardClass = 'config-panel-card p-4'
-const compactSectionCardClass = 'config-panel-card p-3'
+type SectionKey = 'scenes' | 'groups' | 'bookmark' | 'import'
 
 export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButtonProps) {
-  const { data: servicesConfig } = useServicesConfig()
-  const saveMutation = useSaveServicesConfig()
+  const navigationQuery = useNavigationConfig()
+  const saveMutation = useSaveNavigationConfig()
+  const passwordMutation = useSetScenePassword()
+  const activeSceneId = useAppStore((state) => state.activeSceneId)
+  const sceneTokens = useAppStore((state) => state.sceneTokens)
   const { showToast, confirm } = useFeedback()
   const { messages } = useI18n()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [isOpen, setIsOpen] = useState(initialOpen)
-  const [activeSection, setActiveSection] = useState<'groups' | 'bookmark' | 'import'>('groups')
-  const [groupDrafts, setGroupDrafts] = useState<string[]>([])
+  const [activeSection, setActiveSection] = useState<SectionKey>('groups')
+  const [selectedSceneId, setSelectedSceneId] = useState<string>('')
+  const [newSceneName, setNewSceneName] = useState('')
+  const [sceneNameDraft, setSceneNameDraft] = useState('')
+  const [scenePassword, setScenePassword] = useState('')
   const [newGroupName, setNewGroupName] = useState('')
-  const [bookmarkDraft, setBookmarkDraft] = useState<BookmarkFormValues>(
-    createEmptyBookmarkForm(defaultServicesConfig)
-  )
+  const [groupDrafts, setGroupDrafts] = useState<Record<string, string>>({})
+  const [bookmarkDraft, setBookmarkDraft] = useState<BookmarkFormValues | null>(null)
   const [bookmarkSlugTouched, setBookmarkSlugTouched] = useState(false)
-  const [draggingGroupIndex, setDraggingGroupIndex] = useState<number | null>(null)
-  const [dragOverGroupIndex, setDragOverGroupIndex] = useState<number | null>(null)
   const [feedback, setFeedback] = useState<FeedbackState | null>(null)
 
-  const activeConfig = useMemo(
-    () => cloneServicesConfig(servicesConfig ?? defaultServicesConfig),
-    [servicesConfig]
+  const navigation = navigationQuery.data
+  const manageableNavigation = useMemo(() => {
+    if (!navigation) return undefined
+    const scenes = navigation.scenes.filter(
+      (scene) => !scene.protected || Boolean(sceneTokens[scene.id])
+    )
+    if (scenes.length === 0) return undefined
+    return {
+      ...navigation,
+      defaultSceneId: scenes.some((scene) => scene.id === navigation.defaultSceneId)
+        ? navigation.defaultSceneId
+        : scenes[0].id,
+      scenes,
+    }
+  }, [navigation, sceneTokens])
+  const selectedScene = manageableNavigation?.scenes.find(
+    (scene) => scene.id === selectedSceneId
   )
 
   useEffect(() => {
-    if (!isOpen) {
-      return
+    if (!manageableNavigation) return
+    const nextSceneId = manageableNavigation.scenes.some(
+      (scene) => scene.id === selectedSceneId
+    )
+      ? selectedSceneId
+      : manageableNavigation.scenes.find((scene) => scene.id === activeSceneId)?.id ??
+        manageableNavigation.defaultSceneId
+    const scene = manageableNavigation.scenes.find((item) => item.id === nextSceneId)!
+    setSelectedSceneId(nextSceneId)
+    setSceneNameDraft(scene.name)
+    setGroupDrafts(Object.fromEntries(scene.groups.map((group) => [group.id, group.name])))
+    setBookmarkDraft(
+      (current) => current ?? createEmptyBookmarkForm(manageableNavigation, nextSceneId)
+    )
+  }, [activeSceneId, manageableNavigation, selectedSceneId])
+
+  useEffect(() => {
+    if (!isOpen || !manageableNavigation || !activeSceneId) return
+    if (manageableNavigation.scenes.some((scene) => scene.id === activeSceneId)) {
+      setSelectedSceneId(activeSceneId)
     }
+  }, [activeSceneId, isOpen, manageableNavigation])
 
-    setGroupDrafts(activeConfig.map((group) => group.category))
-    setNewGroupName('')
-    setBookmarkDraft(createEmptyBookmarkForm(activeConfig))
-    setBookmarkSlugTouched(false)
-    setDraggingGroupIndex(null)
-    setDragOverGroupIndex(null)
-    setFeedback(null)
+  useEffect(() => {
+    if (!selectedScene) return
+    setSceneNameDraft(selectedScene.name)
+    setGroupDrafts(
+      Object.fromEntries(selectedScene.groups.map((group) => [group.id, group.name]))
+    )
+  }, [selectedScene])
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }, [activeConfig, isOpen])
-
-  function openDialog() {
-    setActiveSection('groups')
-    setIsOpen(true)
+  function notify(type: FeedbackState['type'], message: string) {
+    setFeedback({ type, message })
+    showToast({ type, message })
   }
 
-  function clearGroupDragState() {
-    setDraggingGroupIndex(null)
-    setDragOverGroupIndex(null)
-  }
-
-  function saveNextConfig(
-    nextConfig: typeof activeConfig,
+  function saveNavigation(
+    nextNavigation: NonNullable<typeof navigation>,
     successMessage: string,
-    options?: {
-      afterSave?: () => void
-      closeOnSuccess?: boolean
-    }
+    afterSave?: () => void
   ) {
-    saveMutation.mutate(nextConfig, {
+    saveMutation.mutate(nextNavigation, {
       onSuccess: () => {
-        setFeedback({ type: 'success', message: successMessage })
-        showToast({ type: 'success', message: successMessage })
-        options?.afterSave?.()
-        if (options?.closeOnSuccess) {
-          setIsOpen(false)
-        }
+        notify('success', successMessage)
+        afterSave?.()
       },
-      onError: (error) => {
-        const message = error instanceof Error ? error.message : messages.common.saveFailedRetry
-        setFeedback({
-          type: 'error',
-          message,
-        })
-        showToast({ type: 'error', message })
-      },
+      onError: (error) =>
+        notify('error', error instanceof Error ? error.message : messages.common.saveFailedRetry),
     })
   }
 
-  function handleAddGroup() {
-    try {
-      const category = validateGroupName(newGroupName, activeConfig)
-      const nextConfig = [...activeConfig, { category, items: [] }]
-
-      saveNextConfig(nextConfig, messages.bookmarkManage.groupSection.created(category), {
-        afterSave: () => {
-          setNewGroupName('')
-        },
-      })
-    } catch (error) {
-      const message = formatBookmarkError(error)
-      setFeedback({ type: 'error', message })
-      showToast({ type: 'error', message })
+  function handleSceneSelection(sceneId: string) {
+    setSelectedSceneId(sceneId)
+    setFeedback(null)
+    if (manageableNavigation) {
+      setBookmarkDraft(createEmptyBookmarkForm(manageableNavigation, sceneId))
+      setBookmarkSlugTouched(false)
     }
   }
 
-  function handleRenameGroup(groupIndex: number) {
-    try {
-      const category = validateGroupName(groupDrafts[groupIndex] ?? '', activeConfig, groupIndex)
-      const nextConfig = cloneServicesConfig(activeConfig)
-      nextConfig[groupIndex].category = category
-
-      saveNextConfig(nextConfig, messages.bookmarkManage.groupSection.updated(category), {
-        closeOnSuccess: true,
-      })
-    } catch (error) {
-      const message = formatBookmarkError(error)
-      setFeedback({ type: 'error', message })
-      showToast({ type: 'error', message })
-    }
-  }
-
-  async function handleDeleteGroup(groupIndex: number) {
-    const targetGroup = activeConfig[groupIndex]
-    if (!targetGroup) {
+  function handleAddScene() {
+    if (!navigation || !newSceneName.trim()) return
+    if (navigation.scenes.some((scene) => scene.name === newSceneName.trim())) {
+      notify('error', '场景名称已存在')
       return
     }
+    const scene = createScene(navigation, newSceneName)
+    const next = cloneNavigationConfig(navigation)
+    next.scenes.push(scene)
+    saveNavigation(next, `场景“${scene.name}”已创建。`, () => {
+      setNewSceneName('')
+      setSelectedSceneId(scene.id)
+      setActiveSection('groups')
+    })
+  }
 
-    const confirmMessage =
-      targetGroup.items.length > 0
-        ? messages.bookmarkManage.groupSection.confirmDeleteWithItems(
-            targetGroup.category,
-            targetGroup.items.length
-          )
-        : messages.bookmarkManage.groupSection.confirmDeleteEmpty(targetGroup.category)
+  function handleRenameScene() {
+    if (!navigation || !selectedScene || !sceneNameDraft.trim()) return
+    if (
+      navigation.scenes.some(
+        (scene) => scene.id !== selectedScene.id && scene.name === sceneNameDraft.trim()
+      )
+    ) {
+      notify('error', '场景名称已存在')
+      return
+    }
+    const next = cloneNavigationConfig(navigation)
+    next.scenes.find((scene) => scene.id === selectedScene.id)!.name = sceneNameDraft.trim()
+    saveNavigation(next, '场景名称已更新。')
+  }
 
-    const confirmed = await confirm({
-      title: messages.bookmarkManage.groupSection.confirmDeleteTitle,
-      message: confirmMessage,
-      confirmLabel: messages.bookmarkManage.groupSection.confirmDeleteAction,
+  function handleDuplicateScene() {
+    if (!navigation || !selectedScene) return
+    const baseName = `${selectedScene.name} 副本`
+    let name = baseName
+    let suffix = 2
+    while (navigation.scenes.some((scene) => scene.name === name)) {
+      name = `${baseName} ${suffix}`
+      suffix += 1
+    }
+    const scene = createScene(navigation, name)
+    scene.groups = selectedScene.groups.map((group) => ({
+      id: buildUniqueNavigationId(
+        `${scene.id}-${group.id}`,
+        selectedScene.groups.map((item) => item.id),
+        'group'
+      ),
+      name: group.name,
+      bookmarkIds: [...group.bookmarkIds],
+    }))
+    const next = cloneNavigationConfig(navigation)
+    next.scenes.push(scene)
+    saveNavigation(next, `场景“${scene.name}”已复制。`, () => setSelectedSceneId(scene.id))
+  }
+
+  async function handleDeleteScene() {
+    if (!navigation || !selectedScene || navigation.scenes.length <= 1) return
+    const accepted = await confirm({
+      title: '删除场景',
+      message: `确定删除“${selectedScene.name}”吗？场景内分组会被删除，共享书签仍保留。`,
+      confirmLabel: messages.common.delete,
       cancelLabel: messages.common.cancel,
       variant: 'destructive',
     })
-
-    if (!confirmed) {
-      return
+    if (!accepted) return
+    const next = cloneNavigationConfig(navigation)
+    next.scenes = next.scenes.filter((scene) => scene.id !== selectedScene.id)
+    if (next.defaultSceneId === selectedScene.id) {
+      next.defaultSceneId = next.scenes[0].id
     }
-
-    const nextConfig = activeConfig.filter((_, index) => index !== groupIndex)
-    saveNextConfig(nextConfig, messages.bookmarkManage.groupSection.deleted(targetGroup.category))
+    saveNavigation(next, `场景“${selectedScene.name}”已删除。`, () =>
+      setSelectedSceneId(next.defaultSceneId)
+    )
   }
 
-  function handleMoveGroup(targetIndex: number) {
-    if (draggingGroupIndex === null || draggingGroupIndex === targetIndex) {
-      clearGroupDragState()
+  function moveScene(direction: -1 | 1) {
+    if (!navigation || !selectedScene) return
+    const index = navigation.scenes.findIndex((scene) => scene.id === selectedScene.id)
+    const target = index + direction
+    if (target < 0 || target >= navigation.scenes.length) return
+    const next = cloneNavigationConfig(navigation)
+    const [scene] = next.scenes.splice(index, 1)
+    next.scenes.splice(target, 0, scene)
+    saveNavigation(next, '场景顺序已更新。')
+  }
+
+  function setDefaultScene() {
+    if (!navigation || !selectedScene) return
+    saveNavigation(
+      { ...cloneNavigationConfig(navigation), defaultSceneId: selectedScene.id },
+      `“${selectedScene.name}”已设为默认场景。`
+    )
+  }
+
+  function saveScenePassword(password: string | null) {
+    if (!selectedScene) return
+    passwordMutation.mutate(
+      { sceneId: selectedScene.id, password },
+      {
+        onSuccess: () => {
+          setScenePassword('')
+          notify('success', password ? '场景密码已设置。' : '场景密码已移除。')
+        },
+        onError: (error) =>
+          notify('error', error instanceof Error ? error.message : '场景密码保存失败'),
+      }
+    )
+  }
+
+  function handleAddGroup() {
+    if (!navigation || !selectedScene || !newGroupName.trim()) return
+    if (selectedScene.groups.some((group) => group.name === newGroupName.trim())) {
+      notify('error', '当前场景已存在同名分组')
       return
     }
+    const next = cloneNavigationConfig(navigation)
+    const scene = next.scenes.find((item) => item.id === selectedScene.id)!
+    scene.groups.push(createSceneGroup(scene, newGroupName))
+    saveNavigation(next, `分组“${newGroupName.trim()}”已创建。`, () => setNewGroupName(''))
+  }
 
-    try {
-      const nextConfig = moveGroup(activeConfig, draggingGroupIndex, targetIndex)
-      clearGroupDragState()
-      saveNextConfig(nextConfig, messages.bookmarkManage.groupSection.orderUpdated)
-    } catch (error) {
-      clearGroupDragState()
-      const message = formatBookmarkError(error)
-      setFeedback({ type: 'error', message })
-      showToast({ type: 'error', message })
+  function handleRenameGroup(groupId: string) {
+    if (!navigation || !selectedScene) return
+    const name = groupDrafts[groupId]?.trim()
+    if (!name) return
+    if (selectedScene.groups.some((group) => group.id !== groupId && group.name === name)) {
+      notify('error', '当前场景已存在同名分组')
+      return
     }
+    const next = cloneNavigationConfig(navigation)
+    next.scenes
+      .find((scene) => scene.id === selectedScene.id)!
+      .groups.find((group) => group.id === groupId)!.name = name
+    saveNavigation(next, '分组名称已更新。')
+  }
+
+  async function handleDeleteGroup(groupId: string) {
+    if (!navigation || !selectedScene) return
+    const group = selectedScene.groups.find((item) => item.id === groupId)
+    if (!group) return
+    const accepted = await confirm({
+      title: messages.bookmarkManage.groupSection.confirmDeleteTitle,
+      message: `删除“${group.name}”会从当前场景移除其中 ${group.bookmarkIds.length} 个书签，但不会彻底删除书签。`,
+      confirmLabel: messages.common.delete,
+      cancelLabel: messages.common.cancel,
+      variant: 'destructive',
+    })
+    if (!accepted) return
+    const next = cloneNavigationConfig(navigation)
+    const scene = next.scenes.find((item) => item.id === selectedScene.id)!
+    scene.groups = scene.groups.filter((item) => item.id !== groupId)
+    saveNavigation(next, `分组“${group.name}”已删除。`)
+  }
+
+  function moveGroup(groupId: string, direction: -1 | 1) {
+    if (!navigation || !selectedScene) return
+    const index = selectedScene.groups.findIndex((group) => group.id === groupId)
+    const target = index + direction
+    if (target < 0 || target >= selectedScene.groups.length) return
+    const next = cloneNavigationConfig(navigation)
+    const groups = next.scenes.find((scene) => scene.id === selectedScene.id)!.groups
+    const [group] = groups.splice(index, 1)
+    groups.splice(target, 0, group)
+    saveNavigation(next, '分组顺序已更新。')
   }
 
   function handleBookmarkFieldChange<K extends keyof BookmarkFormValues>(
     field: K,
     value: BookmarkFormValues[K]
   ) {
+    if (!navigation) return
     setBookmarkDraft((current) => {
-      const nextDraft = { ...current, [field]: value } as BookmarkFormValues
-
+      if (!current) return current
+      const next = { ...current, [field]: value }
       if (field === 'name' && !bookmarkSlugTouched) {
-        nextDraft.slug = buildSuggestedSlug(String(value), activeConfig, undefined, current.slug)
+        next.slug = buildSuggestedSlug(String(value), navigation, undefined, current.slug)
       }
-
-      return nextDraft
+      return next
     })
-
-    if (field === 'slug') {
-      setBookmarkSlugTouched(String(value).trim().length > 0)
-    }
-
+    if (field === 'slug') setBookmarkSlugTouched(String(value).trim().length > 0)
     setFeedback(null)
   }
 
   function handleAddBookmark() {
+    if (!navigation || !bookmarkDraft) return
     try {
-      const result = validateBookmarkForm(bookmarkDraft, activeConfig)
-      const nextConfig =
-        activeConfig.length === 0 && result.newGroupName
-          ? [{ category: result.newGroupName, items: [result.service] }]
-          : insertService(activeConfig, result.targetGroupIndex, result.service)
-
-      saveNextConfig(
-        nextConfig,
-        messages.bookmarkManage.bookmarkSection.created(result.service.name),
-        {
-          afterSave: () => {
-            setBookmarkDraft(createEmptyBookmarkForm(nextConfig))
-            setBookmarkSlugTouched(false)
-            setActiveSection('bookmark')
-          },
-          closeOnSuccess: true,
-        }
-      )
+      const result = validateBookmarkForm(bookmarkDraft, manageableNavigation ?? navigation)
+      let base = cloneNavigationConfig(navigation)
+      const placements = result.placements.map((placement) => ({ ...placement }))
+      result.groupsToCreate.forEach(({ sceneId, name }) => {
+        const scene = base.scenes.find((item) => item.id === sceneId)!
+        const group = createSceneGroup(scene, name)
+        scene.groups.push(group)
+        const placement = placements.find((item) => item.sceneId === sceneId)
+        if (placement) placement.groupId = group.id
+      })
+      base = upsertBookmark(base, result.bookmark, placements)
+      saveNavigation(base, `书签“${result.bookmark.name}”已创建。`, () => {
+        setBookmarkDraft(createEmptyBookmarkForm(base, selectedSceneId))
+        setBookmarkSlugTouched(false)
+        setIsOpen(false)
+      })
     } catch (error) {
-      const message = formatBookmarkError(error)
-      setFeedback({ type: 'error', message })
-      showToast({ type: 'error', message })
+      notify('error', formatBookmarkError(error))
     }
-  }
-
-  function openImportPicker() {
-    fileInputRef.current?.click()
   }
 
   async function handleImportBookmarksFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     event.target.value = ''
-
-    if (!file) {
-      return
-    }
-
+    if (!file || !navigation || !selectedScene) return
     try {
-      const content = await file.text()
-      const bookmarks = parseBrowserBookmarksHtml(content)
-      const nextConfig = importBrowserBookmarks(activeConfig, bookmarks)
-
-      saveNextConfig(
-        nextConfig,
-        messages.bookmarkManage.importSection.imported(
-          bookmarks.length,
-          IMPORTED_BOOKMARK_GROUP_NAME
-        ),
-        {
-          afterSave: () => {
-            setActiveSection('import')
-          },
-        }
+      const bookmarks = parseBrowserBookmarksHtml(await file.text())
+      const next = importBrowserBookmarks(navigation, bookmarks, selectedScene.id)
+      saveNavigation(
+        next,
+        `已向“${selectedScene.name}”导入 ${bookmarks.length} 个浏览器书签。`
       )
     } catch (error) {
-      const fallbackMessage = messages.bookmarkManage.importSection.importFailed
-      const message = error instanceof Error ? error.message : fallbackMessage
-      setFeedback({ type: 'error', message })
-      showToast({ type: 'error', message })
+      notify(
+        'error',
+        error instanceof Error ? error.message : messages.bookmarkManage.importSection.importFailed
+      )
     }
   }
 
-  const panelTabs = [
-    {
-      key: 'groups' as const,
-      label: messages.bookmarkManage.groupSection.label,
-      description: messages.bookmarkManage.groupSection.description,
-      icon: FolderTree,
-    },
-    {
-      key: 'bookmark' as const,
-      label: messages.bookmarkManage.bookmarkSection.label,
-      description: messages.bookmarkManage.bookmarkSection.description,
-      icon: SquarePen,
-    },
-    {
-      key: 'import' as const,
-      label: messages.bookmarkManage.importSection.label,
-      description: messages.bookmarkManage.importSection.description,
-      icon: Upload,
-    },
-  ]
+  const panelTabs = useMemo(
+    () => [
+      { key: 'scenes' as const, label: '场景管理', description: '新增、复制、保护和删除', icon: Layers3 },
+      { key: 'groups' as const, label: messages.bookmarkManage.groupSection.label, description: '维护当前场景分组', icon: FolderTree },
+      { key: 'bookmark' as const, label: messages.bookmarkManage.bookmarkSection.label, description: '添加到一个或多个场景', icon: SquarePen },
+      { key: 'import' as const, label: messages.bookmarkManage.importSection.label, description: '导入到所选场景', icon: Upload },
+    ],
+    [messages]
+  )
+
+  if (!navigation || !manageableNavigation || !selectedScene || !bookmarkDraft) {
+    return (
+      <Button type="button" variant="outline" size="icon" className="h-10 w-10 rounded-full">
+        <Plus className="h-4 w-4" />
+      </Button>
+    )
+  }
+
+  const sceneSelector = (
+    <select
+      value={selectedScene.id}
+      onChange={(event) => handleSceneSelection(event.target.value)}
+      className="config-panel-select max-w-xs"
+    >
+      {manageableNavigation.scenes.map((scene) => (
+        <option key={scene.id} value={scene.id}>
+          {scene.name}
+        </option>
+      ))}
+    </select>
+  )
 
   return (
     <>
@@ -316,7 +422,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
         variant="outline"
         size="icon"
         aria-label={messages.bookmarkManage.buttonAria}
-        onClick={openDialog}
+        onClick={() => setIsOpen(true)}
         className="h-10 w-10 rounded-full"
       >
         <Plus className="h-4.5 w-4.5" />
@@ -326,8 +432,9 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
         open={isOpen}
         onClose={() => setIsOpen(false)}
         title={messages.bookmarkManage.title}
-        description={messages.bookmarkManage.description}
+        description="按场景维护分组和共享书签。"
         icon={Plus}
+        widthClassName="max-w-6xl"
       >
         <ConfigPanelLayout
           panelTitle={messages.bookmarkManage.panelTitle}
@@ -335,226 +442,70 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
           activeTab={activeSection}
           onTabChange={setActiveSection}
         >
-          {activeSection === 'groups' ? (
-            <ConfigPanelSection
-              title={messages.bookmarkManage.groupSection.title}
-              summary={messages.bookmarkManage.groupSection.summary}
-              footer={
-                <>
-                  <div className={getFeedbackNoticeClass(feedback?.type)}>
-                    {feedback?.message ?? messages.bookmarkManage.groupSection.footerHint}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsOpen(false)}
-                    className="w-full sm:w-auto"
-                  >
-                    {messages.common.close}
-                  </Button>
-                </>
-              }
-            >
-              <div className="config-panel-card rounded-[1.2rem] border-dashed border-primary/20 bg-primary/[0.04] p-3">
-                <div className="grid gap-2.5 md:grid-cols-[minmax(0,1fr)_auto]">
-                  <Input
-                    value={newGroupName}
-                    onChange={(event) => {
-                      setNewGroupName(event.target.value)
-                      setFeedback(null)
-                    }}
-                    placeholder={messages.bookmarkManage.groupSection.createPlaceholder}
-                    className="h-10"
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handleAddGroup}
-                    disabled={saveMutation.isPending}
-                  >
-                    <Plus className="h-4 w-4" />
-                    {messages.bookmarkManage.groupSection.createButton}
+          {activeSection === 'scenes' ? (
+            <ConfigPanelSection title="场景管理" summary="场景可自由新增、复制、排序、保护和删除。" headerActions={sceneSelector}>
+              <div className="space-y-4">
+                <div className="config-panel-card grid gap-2 p-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <Input value={newSceneName} onChange={(event) => setNewSceneName(event.target.value)} placeholder="新场景名称" />
+                  <Button type="button" onClick={handleAddScene} disabled={!newSceneName.trim() || saveMutation.isPending}>
+                    <Plus className="h-4 w-4" />新增场景
                   </Button>
                 </div>
-              </div>
-
-              <div className="mt-3 grid gap-3">
-                {activeConfig.length > 0 ? (
-                  activeConfig.map((group, index) => {
-                    const isDragging = draggingGroupIndex === index
-                    const isDropTarget =
-                      dragOverGroupIndex === index && draggingGroupIndex !== index
-
-                    return (
-                      <div
-                        key={group.category}
-                        draggable={!saveMutation.isPending}
-                        onDragStart={(event) => {
-                          event.dataTransfer.effectAllowed = 'move'
-                          event.dataTransfer.setData('text/plain', String(index))
-                          setDraggingGroupIndex(index)
-                          setDragOverGroupIndex(index)
-                          setFeedback(null)
-                        }}
-                        onDragOver={(event) => {
-                          if (draggingGroupIndex === null || saveMutation.isPending) {
-                            return
-                          }
-
-                          event.preventDefault()
-                          event.dataTransfer.dropEffect = 'move'
-                          setDragOverGroupIndex(index)
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault()
-                          handleMoveGroup(index)
-                        }}
-                        onDragEnd={clearGroupDragState}
-                        className={cn(
-                          `${compactSectionCardClass} transition`,
-                          !saveMutation.isPending && 'cursor-grab',
-                          isDragging && 'cursor-grabbing opacity-55',
-                          isDropTarget && 'border-primary/40 ring-2 ring-primary/10'
-                        )}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="mt-1.5 rounded-lg border border-border/70 bg-muted/35 p-1.5 text-muted-foreground">
-                            <GripVertical className="h-4 w-4" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-col gap-2.5 md:flex-row md:items-center">
-                              <Input
-                                value={groupDrafts[index] ?? ''}
-                                onChange={(event) => {
-                                  const nextDrafts = [...groupDrafts]
-                                  nextDrafts[index] = event.target.value
-                                  setGroupDrafts(nextDrafts)
-                                  setFeedback(null)
-                                }}
-                                placeholder={
-                                  messages.bookmarkManage.groupSection.groupNamePlaceholder
-                                }
-                                className="h-10 md:flex-1"
-                              />
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleRenameGroup(index)}
-                                  disabled={saveMutation.isPending}
-                                >
-                                  {messages.bookmarkManage.groupSection.saveButton}
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() => handleDeleteGroup(index)}
-                                  disabled={saveMutation.isPending}
-                                >
-                                  {messages.bookmarkManage.groupSection.deleteButton}
-                                </Button>
-                              </div>
-                            </div>
-                            <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-xs leading-5 text-muted-foreground">
-                              <span>{messages.common.bookmarkCount(group.items.length)}</span>
-                              <span>{messages.bookmarkManage.groupSection.dragHint}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })
-                ) : (
-                  <div className="rounded-[1.2rem] border border-dashed border-border/80 bg-background/46 px-4 py-10 text-center text-sm text-muted-foreground">
-                    {messages.bookmarkManage.groupSection.emptyState}
+                <div className="config-panel-card space-y-4 p-4">
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <Input value={sceneNameDraft} onChange={(event) => setSceneNameDraft(event.target.value)} />
+                    <Button type="button" variant="outline" onClick={handleRenameScene}>保存名称</Button>
                   </div>
-                )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" onClick={() => moveScene(-1)}><ArrowUp className="h-4 w-4" />前移</Button>
+                    <Button type="button" variant="outline" onClick={() => moveScene(1)}><ArrowDown className="h-4 w-4" />后移</Button>
+                    <Button type="button" variant="outline" onClick={handleDuplicateScene}><Copy className="h-4 w-4" />复制场景</Button>
+                    <Button type="button" variant="outline" onClick={setDefaultScene} disabled={navigation.defaultSceneId === selectedScene.id}>设为默认</Button>
+                    <Button type="button" variant="destructive" onClick={() => void handleDeleteScene()} disabled={navigation.scenes.length <= 1}><Trash2 className="h-4 w-4" />删除场景</Button>
+                  </div>
+                </div>
+                <div className="config-panel-card space-y-3 p-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold"><KeyRound className="h-4 w-4" />场景密码</div>
+                  <p className="text-xs leading-5 text-muted-foreground">密码只在进入该场景时请求，普通场景切换不受影响。</p>
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                    <Input type="password" value={scenePassword} onChange={(event) => setScenePassword(event.target.value)} placeholder={selectedScene.protected ? '输入新密码以替换' : '至少 6 位'} />
+                    <Button type="button" onClick={() => saveScenePassword(scenePassword)} disabled={scenePassword.length < 6 || passwordMutation.isPending}>设置密码</Button>
+                    <Button type="button" variant="outline" onClick={() => saveScenePassword(null)} disabled={!selectedScene.protected || passwordMutation.isPending}>移除密码</Button>
+                  </div>
+                </div>
+              </div>
+            </ConfigPanelSection>
+          ) : activeSection === 'groups' ? (
+            <ConfigPanelSection title={`${selectedScene.name} · 分组管理`} summary="每个场景拥有独立分组；删除分组不会彻底删除共享书签。" headerActions={sceneSelector}>
+              <div className="config-panel-card mb-3 grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Input value={newGroupName} onChange={(event) => setNewGroupName(event.target.value)} placeholder={messages.bookmarkManage.groupSection.createPlaceholder} />
+                <Button type="button" onClick={handleAddGroup}><Plus className="h-4 w-4" />{messages.bookmarkManage.groupSection.createButton}</Button>
+              </div>
+              <div className="space-y-2">
+                {selectedScene.groups.map((group, index) => (
+                  <div key={group.id} className="config-panel-card grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <div><Input value={groupDrafts[group.id] ?? ''} onChange={(event) => setGroupDrafts((current) => ({ ...current, [group.id]: event.target.value }))} /><p className="mt-1 text-xs text-muted-foreground">{group.bookmarkIds.length} 个书签</p></div>
+                    <div className="flex flex-wrap items-start gap-1.5">
+                      <Button type="button" size="icon" variant="outline" disabled={index === 0} onClick={() => moveGroup(group.id, -1)}><ArrowUp className="h-4 w-4" /></Button>
+                      <Button type="button" size="icon" variant="outline" disabled={index === selectedScene.groups.length - 1} onClick={() => moveGroup(group.id, 1)}><ArrowDown className="h-4 w-4" /></Button>
+                      <Button type="button" variant="outline" onClick={() => handleRenameGroup(group.id)}>保存</Button>
+                      <Button type="button" variant="destructive" onClick={() => void handleDeleteGroup(group.id)}>删除</Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </ConfigPanelSection>
           ) : activeSection === 'bookmark' ? (
-            <ConfigPanelSection
-              title={messages.bookmarkManage.bookmarkSection.title}
-              summary={messages.bookmarkManage.bookmarkSection.summary}
-              bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0"
-            >
-              <BookmarkForm
-                config={activeConfig}
-                values={bookmarkDraft}
-                feedback={feedback}
-                submitLabel={messages.bookmarkManage.bookmarkSection.submitButton}
-                submitDisabled={saveMutation.isPending}
-                onSubmit={handleAddBookmark}
-                onCancel={() => setIsOpen(false)}
-                onFieldChange={handleBookmarkFieldChange}
-              />
+            <ConfigPanelSection title="添加书签" summary="每个发布位置分别选择场景及其分组。" headerActions={sceneSelector} bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
+              <BookmarkForm config={manageableNavigation} values={bookmarkDraft} feedback={feedback} submitLabel={messages.bookmarkManage.bookmarkSection.submitButton} submitDisabled={saveMutation.isPending} onSubmit={handleAddBookmark} onCancel={() => setIsOpen(false)} onFieldChange={handleBookmarkFieldChange} />
             </ConfigPanelSection>
           ) : (
-            <ConfigPanelSection
-              title={messages.bookmarkManage.importSection.title}
-              summary={messages.bookmarkManage.importSection.summary}
-              footer={
-                <>
-                  <div className={getFeedbackNoticeClass(feedback?.type)}>
-                    {feedback?.message ?? messages.bookmarkManage.importSection.footerHint}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsOpen(false)}
-                    className="w-full sm:w-auto"
-                  >
-                    {messages.common.close}
-                  </Button>
-                </>
-              }
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".html,.htm,text/html"
-                className="hidden"
-                onChange={handleImportBookmarksFile}
-              />
-
-              <div className="grid gap-3">
-                <div className={sectionCardClass}>
-                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <Upload className="h-4.5 w-4.5 text-primary" />
-                    {messages.bookmarkManage.importSection.fileTitle}
-                  </div>
-                  <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                    {messages.bookmarkManage.importSection.fileHint}
-                  </p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={openImportPicker}
-                      disabled={saveMutation.isPending}
-                    >
-                      <Upload className="h-4 w-4" />
-                      {messages.bookmarkManage.importSection.selectButton}
-                    </Button>
-                    <span className="text-xs leading-5 text-muted-foreground">
-                      {messages.bookmarkManage.importSection.browserHint}
-                    </span>
-                  </div>
-                </div>
-
-                <div className={sectionCardClass}>
-                  <div className="text-sm font-semibold text-foreground">
-                    {messages.bookmarkManage.importSection.targetGroupTitle}
-                  </div>
-                  <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                    {messages.bookmarkManage.importSection.targetGroupHint(
-                      IMPORTED_BOOKMARK_GROUP_NAME
-                    )}
-                  </p>
-                </div>
+            <ConfigPanelSection title="导入浏览器书签" summary="先选择目标场景，多层文件夹会按完整路径生成该场景内的一级分组。" headerActions={sceneSelector} footer={<div className={getFeedbackNoticeClass(feedback?.type)}>{feedback?.message ?? `无文件夹书签会进入“${IMPORTED_BOOKMARK_GROUP_NAME}”。`}</div>}>
+              <input ref={fileInputRef} type="file" accept=".html,.htm,text/html" className="hidden" onChange={handleImportBookmarksFile} />
+              <div className="config-panel-card space-y-3 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold"><Upload className="h-4 w-4" />导入到“{selectedScene.name}”</div>
+                <p className="text-xs leading-5 text-muted-foreground">例如“书签栏 / 开发 / 前端”会成为一个一级分组；相同 URL 会复用已有书签。</p>
+                <Button type="button" onClick={() => fileInputRef.current?.click()} disabled={saveMutation.isPending}><Upload className="h-4 w-4" />选择 HTML 文件</Button>
               </div>
             </ConfigPanelSection>
           )}

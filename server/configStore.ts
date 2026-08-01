@@ -4,15 +4,13 @@ import { randomUUID } from 'node:crypto'
 import type { z } from 'zod'
 import {
   appConfigSchema,
-  servicesConfigSchema,
+  storedNavigationConfigSchema,
   systemConfigSchema,
   type AppConfig,
 } from '../src/config/schema.js'
 
 const configDir = path.resolve(process.env.CONFIG_DIR ?? path.join(process.cwd(), 'config'))
 const configFilename = 'config.json'
-const legacyServicesFilename = 'services.json'
-const legacySystemFilename = 'system.json'
 
 let ensureConfigPromise: Promise<string> | null = null
 let writeQueue: Promise<void> = Promise.resolve()
@@ -57,18 +55,6 @@ async function readJsonFile<TSchema extends z.ZodTypeAny>(
   return schema.parse(json ?? undefined)
 }
 
-async function readOptionalJsonFile<TSchema extends z.ZodTypeAny>(
-  filename: string,
-  schema: TSchema
-): Promise<z.output<TSchema> | null> {
-  const filePath = path.join(configDir, filename)
-  if (!(await exists(filePath))) {
-    return null
-  }
-
-  return readJsonFile(filePath, filename, schema)
-}
-
 async function writeJsonFile(filePath: string, value: unknown) {
   const tempPath = `${filePath}.${randomUUID()}.tmp`
 
@@ -82,24 +68,6 @@ async function writeJsonFile(filePath: string, value: unknown) {
   }
 }
 
-async function hasLegacyConfigFiles() {
-  return (
-    (await exists(path.join(configDir, legacyServicesFilename))) ||
-    (await exists(path.join(configDir, legacySystemFilename)))
-  )
-}
-
-async function readLegacyAppConfig() {
-  const defaultConfig = appConfigSchema.parse({})
-  const services =
-    (await readOptionalJsonFile(legacyServicesFilename, servicesConfigSchema)) ??
-    defaultConfig.services
-  const system =
-    (await readOptionalJsonFile(legacySystemFilename, systemConfigSchema)) ?? defaultConfig.system
-
-  return appConfigSchema.parse({ system, services })
-}
-
 async function ensureAppConfigFile() {
   if (ensureConfigPromise) {
     return ensureConfigPromise
@@ -110,12 +78,6 @@ async function ensureAppConfigFile() {
 
     const targetPath = path.join(configDir, configFilename)
     if (await exists(targetPath)) {
-      return targetPath
-    }
-
-    if (await hasLegacyConfigFiles()) {
-      const migratedConfig = await readLegacyAppConfig()
-      await writeJsonFile(targetPath, migratedConfig)
       return targetPath
     }
 
@@ -141,7 +103,9 @@ async function withWriteLock<T>(operation: () => Promise<T>) {
 
 export async function readAppConfig() {
   const filePath = await ensureAppConfigFile()
-  return readJsonFile(filePath, configFilename, appConfigSchema)
+  const config = await readJsonFile(filePath, configFilename, appConfigSchema)
+  storedNavigationConfigSchema.parse(config.navigation)
+  return config
 }
 
 export async function writeAppConfig(value: unknown) {
@@ -150,6 +114,7 @@ export async function writeAppConfig(value: unknown) {
   }
 
   const parsed = appConfigSchema.parse(value)
+  storedNavigationConfigSchema.parse(parsed.navigation)
 
   return withWriteLock(async () => {
     const filePath = await ensureAppConfigFile()
@@ -158,28 +123,28 @@ export async function writeAppConfig(value: unknown) {
   })
 }
 
-export async function readServicesConfig() {
+export async function readNavigationConfig() {
   const config = await readAppConfig()
-  return config.services
+  return config.navigation
 }
 
-export async function writeServicesConfig(value: unknown) {
-  if (!Array.isArray(value)) {
-    throw new Error('书签配置格式错误')
+export async function writeNavigationConfig(value: unknown) {
+  if (!isRecord(value)) {
+    throw new Error('导航配置格式错误')
   }
 
-  const services = servicesConfigSchema.parse(value)
+  const navigation = storedNavigationConfigSchema.parse(value)
 
   return withWriteLock(async () => {
     const currentConfig = await readAppConfig()
     const nextConfig: AppConfig = {
       ...currentConfig,
-      services,
+      navigation,
     }
 
     const filePath = await ensureAppConfigFile()
     await writeJsonFile(filePath, nextConfig)
-    return nextConfig.services
+    return nextConfig.navigation
   })
 }
 

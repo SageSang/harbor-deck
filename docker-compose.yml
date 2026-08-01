@@ -1,0 +1,29 @@
+services:
+  smart-harbor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: smart-harbor:local
+    container_name: smart-harbor
+    restart: always
+    ports:
+      - "8080:80"
+    environment:
+      NODE_ENV: production
+      PORT: "80"
+      CONFIG_DIR: /app/config
+      TZ: Asia/Shanghai
+    volumes:
+      - /volume1/docker/smart-harbor/config:/app/config
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

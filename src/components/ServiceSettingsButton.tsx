@@ -40,6 +40,7 @@ import { useWebdavBackupVersions } from '@/features/backup/useWebdavBackupVersio
 import { getLocalizedSearchEngineName, getMessages, type Language } from '@/i18n/messages'
 import { useI18n } from '@/i18n/runtime'
 import { defaultSystemConfig } from '@/features/config/api'
+import { defaultNavigationConfig } from '@/config/defaultConfig'
 import {
   buildAppConfig,
   defaultAppConfig,
@@ -52,8 +53,8 @@ import { useSaveSystemConfig } from '@/features/config/useSaveSystemConfig'
 import { useSystemConfig } from '@/features/config/useSystemConfig'
 import { useFeedback } from '@/features/feedback/useFeedback'
 import { useAuthStatus, useLogout, useUpdateCredentials } from '@/features/auth/useAuth'
-import { cloneServicesConfig, defaultServicesConfig } from '@/features/services/servicesConfig'
-import { useServicesConfig } from '@/features/services/useServices'
+import { cloneNavigationConfig } from '@/features/navigation/navigationConfig'
+import { useNavigationConfig } from '@/features/navigation/useNavigation'
 import { useAppStore } from '@/store/appStore'
 
 interface FeedbackState {
@@ -125,7 +126,7 @@ const networkProbeSettingsFormId = 'network-probe-settings-form'
 const webdavSettingsFormId = 'webdav-settings-form'
 
 export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsButtonProps) {
-  const { data: servicesConfig, refetch } = useServicesConfig()
+  const { data: navigationConfig, refetch } = useNavigationConfig()
   const { data: systemConfig, refetch: refetchSystemConfig } = useSystemConfig()
   const activeSystemConfig = systemConfig ?? defaultSystemConfig
   const savedWebdavBackupConfig = activeSystemConfig.webdavBackup
@@ -169,13 +170,13 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
     isOpen && activeSection === 'webdav-backup' && webdavVersionsEnabled
   )
 
-  const activeConfig = useMemo(
-    () => cloneServicesConfig(servicesConfig ?? defaultServicesConfig),
-    [servicesConfig]
+  const activeNavigation = useMemo(
+    () => cloneNavigationConfig(navigationConfig ?? defaultNavigationConfig),
+    [navigationConfig]
   )
   const activeAppConfig = useMemo(
-    () => buildAppConfig(activeSystemConfig, activeConfig),
-    [activeConfig, activeSystemConfig]
+    () => buildAppConfig(activeSystemConfig, activeNavigation),
+    [activeNavigation, activeSystemConfig]
   )
   const availableSearchEngines = useMemo(
     () => getSearchEngines(systemDraft.customSearchEngines),
@@ -240,13 +241,13 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
   }
 
   async function handleReload() {
-    const [{ data: nextServicesConfig }, { data: nextSystemConfig }] = await Promise.all([
+    const [{ data: nextNavigationConfig }, { data: nextSystemConfig }] = await Promise.all([
       refetch(),
       refetchSystemConfig(),
     ])
     const nextAppConfig = buildAppConfig(
       nextSystemConfig ?? defaultSystemConfig,
-      nextServicesConfig ?? defaultServicesConfig
+      nextNavigationConfig ?? defaultNavigationConfig
     )
 
     setJsonDraft(formatAppConfig(nextAppConfig))

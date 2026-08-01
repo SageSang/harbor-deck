@@ -27,7 +27,18 @@ describe('appConfig helpers', () => {
           maxVersions: 10,
         },
       },
-      services: [],
+      navigation: {
+        defaultSceneId: 'default',
+        bookmarks: [],
+        scenes: [
+          {
+            id: 'default',
+            name: '默认',
+            protected: false,
+            groups: [],
+          },
+        ],
+      },
     })
   })
 

@@ -1,10 +1,13 @@
-import type { ServicesConfig } from '@/config/schema'
+import type { NavigationConfig } from '@/config/schema'
 import { getCurrentMessages } from '@/i18n/runtime'
 import {
-  buildUniqueSlug,
   cleanServiceConfig,
-  cloneServicesConfig,
 } from '@/features/services/servicesConfig'
+import {
+  buildUniqueNavigationId,
+  cloneNavigationConfig,
+  parseNavigationConfig,
+} from '@/features/navigation/navigationConfig'
 
 export interface ImportedBrowserBookmark {
   name: string
@@ -144,8 +147,9 @@ export function parseBrowserBookmarksHtml(input: string): ImportedBrowserBookmar
 }
 
 export function importBrowserBookmarks(
-  config: ServicesConfig,
+  config: NavigationConfig,
   bookmarks: readonly ImportedBrowserBookmark[],
+  sceneId: string,
   defaultGroupName: string = IMPORTED_BOOKMARK_GROUP_NAME
 ) {
   const messages = getCurrentMessages()
@@ -154,10 +158,17 @@ export function importBrowserBookmarks(
     throw new Error(messages.bookmarkManage.importSection.emptyState)
   }
 
-  const nextConfig = cloneServicesConfig(config)
-  const groupsByName = new Map(nextConfig.map((group) => [group.category, group]))
+  const nextConfig = cloneNavigationConfig(config)
+  const scene = nextConfig.scenes.find((item) => item.id === sceneId)
+  if (!scene) {
+    throw new Error('导入目标场景不存在')
+  }
+  const targetScene = scene
+  const groupsByName = new Map(targetScene.groups.map((group) => [group.name, group]))
   const occupiedGroupNames = new Set(groupsByName.keys())
   const resolvedImportGroups = new Map<string, string>()
+  const occupiedGroupIds = new Set(targetScene.groups.map((group) => group.id))
+  const occupiedBookmarkIds = new Set(nextConfig.bookmarks.map((bookmark) => bookmark.slug))
 
   function ensureDefaultGroup() {
     const existing = groupsByName.get(defaultGroupName)
@@ -166,12 +177,14 @@ export function importBrowserBookmarks(
     }
 
     const nextGroup = {
-      category: defaultGroupName,
-      items: [],
+      id: buildUniqueNavigationId(defaultGroupName, occupiedGroupIds, 'imported'),
+      name: defaultGroupName,
+      bookmarkIds: [],
     }
-    nextConfig.push(nextGroup)
+    targetScene.groups.push(nextGroup)
     groupsByName.set(defaultGroupName, nextGroup)
     occupiedGroupNames.add(defaultGroupName)
+    occupiedGroupIds.add(nextGroup.id)
     return nextGroup
   }
 
@@ -186,12 +199,14 @@ export function importBrowserBookmarks(
       : importGroupName
 
     const nextGroup = {
-      category: targetGroupName,
-      items: [],
+      id: buildUniqueNavigationId(targetGroupName, occupiedGroupIds, 'group'),
+      name: targetGroupName,
+      bookmarkIds: [],
     }
-    nextConfig.push(nextGroup)
+    targetScene.groups.push(nextGroup)
     groupsByName.set(targetGroupName, nextGroup)
     occupiedGroupNames.add(targetGroupName)
+    occupiedGroupIds.add(nextGroup.id)
     resolvedImportGroups.set(importGroupName, targetGroupName)
     return nextGroup
   }
@@ -200,17 +215,30 @@ export function importBrowserBookmarks(
     const targetGroup = bookmark.groupName
       ? ensureImportGroup(bookmark.groupName)
       : ensureDefaultGroup()
+    const existingBookmark = nextConfig.bookmarks.find(
+      (item) => item.primaryUrl === bookmark.url
+    )
     const name = deriveBookmarkName(bookmark.name, bookmark.url)
-    const slug = buildUniqueSlug(name, nextConfig)
-
-    targetGroup.items.push(
+    const bookmarkConfig =
+      existingBookmark ??
       cleanServiceConfig({
-        slug,
+        slug: buildUniqueNavigationId(name, occupiedBookmarkIds, 'bookmark'),
         name,
         primaryUrl: bookmark.url,
       })
+
+    if (!existingBookmark) {
+      nextConfig.bookmarks.push(bookmarkConfig)
+      occupiedBookmarkIds.add(bookmarkConfig.slug)
+    }
+
+    const alreadyPlaced = targetScene.groups.some((group) =>
+      group.bookmarkIds.includes(bookmarkConfig.slug)
     )
+    if (!alreadyPlaced) {
+      targetGroup.bookmarkIds.push(bookmarkConfig.slug)
+    }
   })
 
-  return nextConfig
+  return parseNavigationConfig(nextConfig)
 }

@@ -27,6 +27,9 @@ Smart Harbor 是一个面向个人自托管服务的智能导航主页。
 ## 适合用来做什么
 
 - 按网络环境自动切换书签的局域网和公网地址
+- 支持动态创建导航场景，每个场景拥有独立分组和排序
+- 同一个书签可放入多个场景，并在各场景使用不同分组
+- 场景可单独设置密码，解锁状态仅在当前浏览器会话内保留
 - 拖拽整理分组书签，并支持图标展示
 - 内置搜索框，支持自定义搜索引擎
 - WebDAV 备份、恢复和版本保留
@@ -40,14 +43,26 @@ Smart Harbor 是一个面向个人自托管服务的智能导航主页。
 ```yaml
 services:
   smart-harbor:
-    image: goalonez/smart-harbor:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: smart-harbor:local
     container_name: smart-harbor
+    restart: always
     ports:
-      - 8080:80
+      - "8080:80"
+    environment:
+      NODE_ENV: production
+      PORT: "80"
+      CONFIG_DIR: /app/config
+      TZ: Asia/Shanghai
     volumes:
-      - ./smart-harbor/config:/app/config
-    restart: unless-stopped
+      - /volume1/docker/smart-harbor/config:/app/config
+    security_opt:
+      - no-new-privileges:true
 ```
+
+仓库根目录已经包含适用于群晖 Container Manager 的 `docker-compose.yml`。把仓库（包括 `Dockerfile`）放入项目目录，按实际情况修改左侧的群晖配置目录，然后选择“构建并启动”。宿主机目录可以改成你自己的共享文件夹路径；容器内路径 `/app/config` 不要修改。
 
 ### Docker Run
 
@@ -56,14 +71,14 @@ docker run -d \
   --name smart-harbor \
   -p 8080:80 \
   -v ./smart-harbor/config:/app/config \
-  goalonez/smart-harbor:latest
+  smart-harbor:local
 ```
 
 启动后：
 
 1. 打开 `http://localhost:8080`。
 2. 首次访问时创建管理员账号。
-3. 进入设置面板，开始添加分组和书签。
+3. 在书签管理中创建场景和分组，然后添加或导入书签。
 
 ## 配置文件说明
 
@@ -82,8 +97,9 @@ docker run -d \
 | `system.middleClickOpenTarget` | 中键打开书签和搜索结果的方式 |
 | `system.defaultSearchEngine` | 搜索框默认搜索引擎 |
 | `system.webdavBackup` | WebDAV 备份地址、周期和保留策略 |
-| `services[].category` | 分组名称 |
-| `services[].items[]` | 每个分组下的书签列表 |
+| `navigation.defaultSceneId` | 没有设备偏好时使用的默认场景 |
+| `navigation.scenes[]` | 可动态维护的场景及其独立分组 |
+| `navigation.bookmarks[]` | 由各场景分组引用的共享书签定义 |
 
 <details>
 <summary>完整配置字段</summary>
@@ -111,20 +127,26 @@ docker run -d \
 | `system.auth.username` | 管理员用户名 | 首次设置后写入 |
 | `system.auth.passwordHash` | 管理员密码哈希 | 不要保存明文密码 |
 
-#### `services`
+#### `navigation`
 
 | 路径 | 说明 | 备注 |
 | --- | --- | --- |
-| `services[]` | 顶层书签分组列表 | 数组 |
-| `services[].category` | 分组名称 | 非空字符串 |
-| `services[].items[]` | 分组中的书签项 | 数组 |
-| `services[].items[].slug` | 书签唯一标识 | 仅允许小写字母、数字和短横线 |
-| `services[].items[].name` | 书签显示名称 | 非空字符串 |
-| `services[].items[].icon` | Lucide 图标名称 | 可选 |
-| `services[].items[].primaryUrl` | 主地址，通常填局域网地址 | 必填 URL |
-| `services[].items[].secondaryUrl` | 切换地址，通常填外网地址 | 可选 URL |
-| `services[].items[].probes[]` | 用于探测当前网络可达性的地址列表 | 可选，至少一个 URL |
-| `services[].items[].forceNewTab` | 是否强制在新标签页打开该书签 | 可选布尔值 |
+| `navigation.defaultSceneId` | 默认场景标识 | 必须引用一个已有场景 |
+| `navigation.scenes[]` | 有序场景列表 | 至少保留一个场景 |
+| `navigation.scenes[].id` | 场景唯一标识 | 仅允许小写字母、数字和短横线 |
+| `navigation.scenes[].name` | 场景显示名称 | 非空字符串 |
+| `navigation.scenes[].protected` | 是否需要额外的场景密码 | 布尔值 |
+| `navigation.scenes[].passwordHash` | 服务端维护的场景密码哈希 | 不要写入明文密码 |
+| `navigation.scenes[].groups[]` | 当前场景拥有的分组 | 有序数组 |
+| `navigation.scenes[].groups[].bookmarkIds[]` | 分组中展示的书签标识 | 引用 `navigation.bookmarks[].slug` |
+| `navigation.bookmarks[]` | 全局共享的书签定义 | 同一书签可被多个场景引用 |
+| `navigation.bookmarks[].slug` | 书签唯一标识 | 仅允许小写字母、数字和短横线 |
+| `navigation.bookmarks[].name` | 书签显示名称 | 非空字符串 |
+| `navigation.bookmarks[].icon` | Lucide 图标名称 | 可选 |
+| `navigation.bookmarks[].primaryUrl` | 主地址，通常填局域网地址 | 必填 URL |
+| `navigation.bookmarks[].secondaryUrl` | 切换地址，通常填外网地址 | 可选 URL |
+| `navigation.bookmarks[].probes[]` | 用于探测当前网络可达性的地址列表 | 可选，至少一个 URL |
+| `navigation.bookmarks[].forceNewTab` | 是否强制在新标签页打开该书签 | 可选布尔值 |
 
 </details>
 
@@ -160,24 +182,34 @@ docker run -d \
       "passwordHash": "<generated-after-setup>"
     }
   },
-  "services": [
-    {
-      "category": "基础设施",
-      "items": [
-        {
-          "slug": "proxmox",
-          "name": "Proxmox",
-          "icon": "Server",
-          "primaryUrl": "http://192.168.1.10:8006",
-          "secondaryUrl": "https://proxmox.example.com",
-          "probes": [
-            "http://192.168.1.1"
-          ],
-          "forceNewTab": true
-        }
-      ]
-    }
-  ]
+  "navigation": {
+    "defaultSceneId": "personal",
+    "bookmarks": [
+      {
+        "slug": "proxmox",
+        "name": "Proxmox",
+        "icon": "Server",
+        "primaryUrl": "http://192.168.1.10:8006",
+        "secondaryUrl": "https://proxmox.example.com",
+        "probes": ["http://192.168.1.1"],
+        "forceNewTab": true
+      }
+    ],
+    "scenes": [
+      {
+        "id": "personal",
+        "name": "个人",
+        "protected": false,
+        "groups": [
+          {
+            "id": "infrastructure",
+            "name": "基础设施",
+            "bookmarkIds": ["proxmox"]
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
@@ -186,8 +218,18 @@ docker run -d \
 ## 账号与安全
 
 - 首次访问会引导你创建管理员账号。
+- 项目只保留一个管理员账号，不提供游客模式。
+- 受保护场景需要单独解锁：浏览器使用会话存储保存令牌，服务端令牌最长有效一小时。
+- 普通书签或分组编辑不会结束场景解锁；关闭浏览器/标签页、修改场景密码、恢复备份或重启服务后需要重新输入。
 - 如果需要重置登录信息，删除 `config.json` 中的 `system.auth` 段后刷新页面即可。
 - 连续登录失败 5 次后，会锁定 30 分钟。
+
+## 场景与导入规则
+
+- 后台支持新增、重命名、复制、排序、设为默认和删除场景。
+- 每个场景独立维护分组及顺序；书签定义全局共享，因此同一书签可以加入多个场景，并分别选择不同分组。
+- 新增书签时可一次选择多个“场景 + 分组”发布位置。
+- 浏览器书签导入时先选择一个目标场景。多层文件夹会按完整路径扁平化为一级分组，例如 `书签栏 / 开发 / 前端`；根目录书签进入“导入书签”分组。
 
 ## Chrome 新标签页插件
 

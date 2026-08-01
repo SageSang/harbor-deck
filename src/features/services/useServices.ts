@@ -1,29 +1,23 @@
-import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo } from 'react'
 import { getCurrentMessages } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
-import { fetchServicesConfig, servicesConfigQueryKey } from '@/features/config/api'
 import { normalizeServicesConfig } from '@/features/services/servicesConfig'
+import { useActiveSceneServices } from '@/features/navigation/useNavigation'
 
 export function useServicesConfig() {
   const setError = useAppStore((state) => state.setError)
+  const query = useActiveSceneServices()
 
-  return useQuery({
-    queryKey: servicesConfigQueryKey,
-    queryFn: async () => {
-      try {
-        const config = await fetchServicesConfig()
-        setError(null)
-        return config
-      } catch (error) {
-        const fallbackMessage = getCurrentMessages().common.invalidContentRetry
-        const errorMessage = error instanceof Error ? error.message : fallbackMessage
-        setError(errorMessage)
-        throw error
-      }
-    },
-    staleTime: 30_000,
-  })
+  useEffect(() => {
+    if (!query.error) {
+      setError(null)
+      return
+    }
+    const fallbackMessage = getCurrentMessages().common.invalidContentRetry
+    setError(query.error instanceof Error ? query.error.message : fallbackMessage)
+  }, [query.error, setError])
+
+  return query
 }
 
 export function useServices() {

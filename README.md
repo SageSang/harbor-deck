@@ -27,6 +27,9 @@ It automatically detects your current network environment and switches between L
 ## Why Use It
 
 - Automatic LAN/WAN routing for each bookmark
+- Configurable navigation scenes with independent groups and ordering
+- Shared bookmark definitions that can be placed in multiple scenes
+- Optional per-scene passwords with session-scoped unlocking
 - Drag-and-drop bookmark groups with icon support
 - Built-in and custom search engines
 - WebDAV backup, restore, and version retention
@@ -37,17 +40,31 @@ It automatically detects your current network environment and switches between L
 
 ### Docker Compose
 
+This repository includes a Synology-friendly `docker-compose.yml`. Put the repository (including the `Dockerfile`) in a Synology Container Manager project directory, change the host config path if needed, and choose **Build and start**.
+
 ```yaml
 services:
   smart-harbor:
-    image: goalonez/smart-harbor:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: smart-harbor:local
     container_name: smart-harbor
+    restart: always
     ports:
-      - 8080:80
+      - "8080:80"
+    environment:
+      NODE_ENV: production
+      PORT: "80"
+      CONFIG_DIR: /app/config
+      TZ: Asia/Shanghai
     volumes:
-      - ./smart-harbor/config:/app/config
-    restart: unless-stopped
+      - /volume1/docker/smart-harbor/config:/app/config
+    security_opt:
+      - no-new-privileges:true
 ```
+
+The left side of the volume is a Synology host path. Create `/volume1/docker/smart-harbor/config` first, or replace it with the shared-folder path used on your NAS. The right side (`/app/config`) must stay unchanged.
 
 ### Docker Run
 
@@ -56,14 +73,14 @@ docker run -d \
   --name smart-harbor \
   -p 8080:80 \
   -v ./smart-harbor/config:/app/config \
-  goalonez/smart-harbor:latest
+  smart-harbor:local
 ```
 
 Then:
 
 1. Open `http://localhost:8080`.
 2. Create your admin account on first visit.
-3. Add bookmark groups and services from the settings panel.
+3. Create scenes and groups, then add or import bookmarks from the bookmark manager.
 
 ## Configuration
 
@@ -82,8 +99,9 @@ On first start, Smart Harbor writes a single `config.json` into your mounted con
 | `system.middleClickOpenTarget` | Where middle-click opens services and search results |
 | `system.defaultSearchEngine` | Default engine used by the search box |
 | `system.webdavBackup` | Backup destination, schedule, and retention policy |
-| `services[].category` | Bookmark group name |
-| `services[].items[]` | Bookmarks inside each group |
+| `navigation.defaultSceneId` | Scene selected when no device preference exists |
+| `navigation.scenes[]` | Configurable scenes and their independent groups |
+| `navigation.bookmarks[]` | Shared bookmark definitions referenced by scene groups |
 
 <details>
 <summary>Full config reference</summary>
@@ -111,20 +129,26 @@ On first start, Smart Harbor writes a single `config.json` into your mounted con
 | `system.auth.username` | Admin username stored after setup | Created from the setup form |
 | `system.auth.passwordHash` | Hashed admin password | Never store plaintext here |
 
-#### `services`
+#### `navigation`
 
 | Path | Description | Notes |
 | --- | --- | --- |
-| `services[]` | Top-level bookmark groups | Array |
-| `services[].category` | Group name shown in the UI | Non-empty string |
-| `services[].items[]` | Services inside a group | Array |
-| `services[].items[].slug` | Stable service identifier | Lowercase letters, numbers, and hyphens |
-| `services[].items[].name` | Service display name | Non-empty string |
-| `services[].items[].icon` | Lucide icon name | Optional |
-| `services[].items[].primaryUrl` | Preferred address, usually LAN | Required URL |
-| `services[].items[].secondaryUrl` | Fallback address, usually WAN | Optional URL |
-| `services[].items[].probes[]` | Probe URLs used to detect network reachability | Optional; one or more URLs |
-| `services[].items[].forceNewTab` | Always open this bookmark in a new tab | Optional boolean |
+| `navigation.defaultSceneId` | Default scene identifier | Must reference an existing scene |
+| `navigation.scenes[]` | Ordered scene list | At least one scene |
+| `navigation.scenes[].id` | Stable scene identifier | Lowercase letters, numbers, and hyphens |
+| `navigation.scenes[].name` | Scene display name | Non-empty string |
+| `navigation.scenes[].protected` | Whether the scene requires an extra password | Boolean |
+| `navigation.scenes[].passwordHash` | Server-managed scene password hash | Never store plaintext here |
+| `navigation.scenes[].groups[]` | Groups owned by this scene | Ordered array |
+| `navigation.scenes[].groups[].bookmarkIds[]` | Bookmark IDs shown in the group | References `navigation.bookmarks[].slug` |
+| `navigation.bookmarks[]` | Shared bookmark definitions | A bookmark may be referenced by multiple scenes |
+| `navigation.bookmarks[].slug` | Stable bookmark identifier | Lowercase letters, numbers, and hyphens |
+| `navigation.bookmarks[].name` | Bookmark display name | Non-empty string |
+| `navigation.bookmarks[].icon` | Lucide icon name | Optional |
+| `navigation.bookmarks[].primaryUrl` | Preferred address, usually LAN | Required URL |
+| `navigation.bookmarks[].secondaryUrl` | Fallback address, usually WAN | Optional URL |
+| `navigation.bookmarks[].probes[]` | Probe URLs used to detect network reachability | Optional; one or more URLs |
+| `navigation.bookmarks[].forceNewTab` | Always open this bookmark in a new tab | Optional boolean |
 
 </details>
 
@@ -160,24 +184,34 @@ On first start, Smart Harbor writes a single `config.json` into your mounted con
       "passwordHash": "<generated-after-setup>"
     }
   },
-  "services": [
-    {
-      "category": "Infrastructure",
-      "items": [
-        {
-          "slug": "proxmox",
-          "name": "Proxmox",
-          "icon": "Server",
-          "primaryUrl": "http://192.168.1.10:8006",
-          "secondaryUrl": "https://proxmox.example.com",
-          "probes": [
-            "http://192.168.1.1"
-          ],
-          "forceNewTab": true
-        }
-      ]
-    }
-  ]
+  "navigation": {
+    "defaultSceneId": "personal",
+    "bookmarks": [
+      {
+        "slug": "proxmox",
+        "name": "Proxmox",
+        "icon": "Server",
+        "primaryUrl": "http://192.168.1.10:8006",
+        "secondaryUrl": "https://proxmox.example.com",
+        "probes": ["http://192.168.1.1"],
+        "forceNewTab": true
+      }
+    ],
+    "scenes": [
+      {
+        "id": "personal",
+        "name": "Personal",
+        "protected": false,
+        "groups": [
+          {
+            "id": "infrastructure",
+            "name": "Infrastructure",
+            "bookmarkIds": ["proxmox"]
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
@@ -186,8 +220,18 @@ On first start, Smart Harbor writes a single `config.json` into your mounted con
 ## Account And Security
 
 - First visit walks you through creating an admin account.
+- There is one administrator account and no guest mode.
+- Protected scenes are unlocked separately. The browser keeps their token in session storage, while the server expires it after one hour.
+- Editing ordinary bookmarks or groups does not end an unlocked scene session. Closing the browser/tab, changing the scene password, restoring a backup, or restarting the server does.
 - Remove the `system.auth` section from `config.json` if you need to reset login credentials.
 - After 5 failed login attempts, access is locked for 30 minutes.
+
+## Scene And Import Behavior
+
+- Scenes can be created, renamed, copied, reordered, set as default, or deleted from the bookmark manager.
+- Each scene owns its groups and group ordering. Bookmark definitions are shared, so one bookmark can be placed in different groups across multiple scenes.
+- Adding a bookmark supports one or more `(scene, group)` placements.
+- Browser bookmark import first selects one target scene. Nested browser folders are flattened into one-level groups using the full folder path, for example `Bookmarks Bar / Dev / Frontend`. Root bookmarks go to `Imported Bookmarks`.
 
 ## Chrome New Tab Extension
 

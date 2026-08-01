@@ -7,8 +7,9 @@ import { useI18n } from '@/i18n/runtime'
 import { cn } from '@/lib/utils'
 import { useSystemConfig } from '@/features/config/useSystemConfig'
 import { useAppStore } from '@/store/appStore'
+import { SceneSwitcher } from '@/features/navigation/SceneSwitcher'
 
-const REPOSITORY_URL = 'https://github.com/Goalonez/smart-harbor'
+const REPOSITORY_URL = 'https://github.com/SageSang/multi-scenario-smart-harbor'
 
 function GitHubMarkIcon() {
   return (
@@ -223,6 +224,7 @@ export function TopBar() {
               </div>
             )}
           </div>
+          <SceneSwitcher />
         </div>
 
         <div className="flex shrink-0 items-center gap-2">

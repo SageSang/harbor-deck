@@ -88,6 +88,146 @@ export const serviceSchema = canonicalServiceConfigSchema.extend({
 
 export const servicesSchema = z.array(serviceSchema)
 
+export const sceneGroupConfigSchema = z.object({
+  id: slugSchema,
+  name: trimmedString,
+  bookmarkIds: z.array(slugSchema).default([]),
+})
+
+export const navigationSceneConfigSchema = z.object({
+  id: slugSchema,
+  name: trimmedString,
+  protected: z.boolean().default(false),
+  passwordHash: authPasswordHashSchema.optional(),
+  groups: z.array(sceneGroupConfigSchema).default([]),
+})
+
+const defaultNavigationConfigValue = {
+  defaultSceneId: 'default',
+  bookmarks: [],
+  scenes: [
+    {
+      id: 'default',
+      name: '默认',
+      protected: false,
+      groups: [],
+    },
+  ],
+}
+
+export const navigationConfigSchema = z
+  .object({
+    defaultSceneId: slugSchema,
+    bookmarks: z.array(serviceConfigSchema).default([]),
+    scenes: z.array(navigationSceneConfigSchema).min(1),
+  })
+  .superRefine((config, ctx) => {
+    const bookmarkIds = new Set<string>()
+    const sceneIds = new Set<string>()
+
+    config.bookmarks.forEach((bookmark, index) => {
+      if (bookmarkIds.has(bookmark.slug)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['bookmarks', index, 'slug'],
+          message: `书签标识重复：${bookmark.slug}`,
+        })
+      }
+      bookmarkIds.add(bookmark.slug)
+    })
+
+    config.scenes.forEach((scene, sceneIndex) => {
+      if (sceneIds.has(scene.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['scenes', sceneIndex, 'id'],
+          message: `场景标识重复：${scene.id}`,
+        })
+      }
+      sceneIds.add(scene.id)
+
+      const groupIds = new Set<string>()
+      const groupNames = new Set<string>()
+      const placedBookmarkIds = new Set<string>()
+
+      scene.groups.forEach((group, groupIndex) => {
+        if (groupIds.has(group.id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['scenes', sceneIndex, 'groups', groupIndex, 'id'],
+            message: `场景分组标识重复：${group.id}`,
+          })
+        }
+        groupIds.add(group.id)
+
+        if (groupNames.has(group.name)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['scenes', sceneIndex, 'groups', groupIndex, 'name'],
+            message: `场景分组名称重复：${group.name}`,
+          })
+        }
+        groupNames.add(group.name)
+
+        group.bookmarkIds.forEach((bookmarkId, bookmarkIndex) => {
+          if (!bookmarkIds.has(bookmarkId)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [
+                'scenes',
+                sceneIndex,
+                'groups',
+                groupIndex,
+                'bookmarkIds',
+                bookmarkIndex,
+              ],
+              message: `场景引用了不存在的书签：${bookmarkId}`,
+            })
+          }
+
+          if (placedBookmarkIds.has(bookmarkId)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [
+                'scenes',
+                sceneIndex,
+                'groups',
+                groupIndex,
+                'bookmarkIds',
+                bookmarkIndex,
+              ],
+              message: `同一书签不能在一个场景中重复出现：${bookmarkId}`,
+            })
+          }
+          placedBookmarkIds.add(bookmarkId)
+        })
+      })
+    })
+
+    if (!sceneIds.has(config.defaultSceneId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['defaultSceneId'],
+        message: `默认场景不存在：${config.defaultSceneId}`,
+      })
+    }
+  })
+  .default(defaultNavigationConfigValue)
+
+export const storedNavigationConfigSchema = navigationConfigSchema.superRefine(
+  (config, ctx) => {
+    config.scenes.forEach((scene, sceneIndex) => {
+      if (scene.protected && !scene.passwordHash) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['scenes', sceneIndex, 'passwordHash'],
+          message: '受保护场景必须设置密码哈希',
+        })
+      }
+    })
+  }
+)
+
 const searchEngineTemplateSchema = z
   .string()
   .trim()
@@ -235,7 +375,7 @@ export const systemConfigSchema = z
 export const appConfigSchema = z
   .object({
     system: systemConfigSchema,
-    services: servicesConfigSchema,
+    navigation: navigationConfigSchema,
   })
   .default({})
 
@@ -245,6 +385,9 @@ export type ServiceGroupConfig = z.infer<typeof serviceGroupConfigSchema>
 export type ServicesConfig = z.infer<typeof servicesConfigSchema>
 export type Service = z.infer<typeof serviceSchema>
 export type Services = z.infer<typeof servicesSchema>
+export type SceneGroupConfig = z.infer<typeof sceneGroupConfigSchema>
+export type NavigationSceneConfig = z.infer<typeof navigationSceneConfigSchema>
+export type NavigationConfig = z.infer<typeof navigationConfigSchema>
 export type AuthConfig = z.infer<typeof authConfigSchema>
 export type NetworkProbeConfig = z.infer<typeof networkProbeConfigSchema>
 export type WebdavBackupConfig = z.infer<typeof webdavBackupConfigSchema>

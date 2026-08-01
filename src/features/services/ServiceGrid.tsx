@@ -11,11 +11,13 @@ import { LazyBookmarkEditDialog } from '@/features/services/LazyBookmarkEditDial
 import {
   cloneServicesConfig,
   defaultServicesConfig,
-  findServiceLocation,
-  moveService,
-  removeService,
 } from '@/features/services/servicesConfig'
-import { useSaveServicesConfig } from '@/features/services/useSaveServicesConfig'
+import {
+  cloneNavigationConfig,
+  findScene,
+  removeBookmarkFromScene,
+} from '@/features/navigation/navigationConfig'
+import { useNavigationConfig, useSaveNavigationConfig } from '@/features/navigation/useNavigation'
 import { ServiceCard } from './ServiceCard'
 import { preloadServiceIcons } from './iconRegistry'
 import { useServices } from './useServices'
@@ -66,7 +68,9 @@ export function ServiceGrid() {
   const searchKeyword = useAppStore((state) => state.searchKeyword)
   const networkMode = useAppStore((state) => state.networkMode)
   const { data: systemConfig } = useSystemConfig()
-  const saveMutation = useSaveServicesConfig()
+  const navigationQuery = useNavigationConfig()
+  const activeSceneId = useAppStore((state) => state.activeSceneId)
+  const saveMutation = useSaveNavigationConfig()
   const { showToast, confirm } = useFeedback()
   const { messages } = useI18n()
   const [draggingSlug, setDraggingSlug] = useState<string | null>(null)
@@ -216,21 +220,33 @@ export function ServiceGrid() {
       return
     }
 
-    const source = findServiceLocation(activeConfig, draggingSlug)
-    if (!source) {
+    const navigation = navigationQuery.data
+    const scene = navigation && activeSceneId ? findScene(navigation, activeSceneId) : undefined
+    if (!navigation || !scene) {
       clearDragState()
       return
     }
 
-    const sourceGroup = activeConfig[source.groupIndex]
-    const isSameGroup = source.groupIndex === targetGroupIndex
+    const sourceGroupIndex = scene.groups.findIndex((group) => group.bookmarkIds.includes(draggingSlug))
+    const sourceGroup = scene.groups[sourceGroupIndex]
+    if (!sourceGroup) {
+      clearDragState()
+      return
+    }
+    const targetGroup = scene.groups[targetGroupIndex]
+    if (!targetGroup) {
+      clearDragState()
+      return
+    }
+    const sourceServiceIndex = sourceGroup.bookmarkIds.indexOf(draggingSlug)
+    const isSameGroup = sourceGroupIndex === targetGroupIndex
     const isDropToSameSpot =
       isSameGroup &&
       ((typeof targetServiceIndex === 'number' &&
-        (targetServiceIndex === source.serviceIndex ||
-          targetServiceIndex === source.serviceIndex + 1)) ||
+        (targetServiceIndex === sourceServiceIndex ||
+          targetServiceIndex === sourceServiceIndex + 1)) ||
         (typeof targetServiceIndex === 'undefined' &&
-          source.serviceIndex === sourceGroup.items.length - 1))
+          sourceServiceIndex === sourceGroup.bookmarkIds.length - 1))
 
     if (isDropToSameSpot) {
       clearDragState()
@@ -238,7 +254,20 @@ export function ServiceGrid() {
     }
 
     try {
-      const nextConfig = moveService(activeConfig, source, targetGroupIndex, targetServiceIndex)
+      const nextConfig = cloneNavigationConfig(navigation)
+      const nextScene = findScene(nextConfig, activeSceneId!)!
+      const nextSourceGroup = nextScene.groups[sourceGroupIndex]
+      const nextTargetGroup = nextScene.groups[targetGroupIndex]
+      const [bookmarkId] = nextSourceGroup.bookmarkIds.splice(sourceServiceIndex, 1)
+      const adjustedIndex =
+        typeof targetServiceIndex === 'number' && isSameGroup && sourceServiceIndex < targetServiceIndex
+          ? targetServiceIndex - 1
+          : targetServiceIndex
+      const insertIndex =
+        typeof adjustedIndex === 'number'
+          ? Math.min(Math.max(adjustedIndex, 0), nextTargetGroup.bookmarkIds.length)
+          : nextTargetGroup.bookmarkIds.length
+      nextTargetGroup.bookmarkIds.splice(insertIndex, 0, bookmarkId)
       clearDragState()
       saveMutation.mutate(nextConfig)
     } catch {
@@ -247,12 +276,12 @@ export function ServiceGrid() {
   }
 
   async function handleDeleteBookmark(slug: string) {
-    const location = findServiceLocation(activeConfig, slug)
-    if (!location) {
+    const navigation = navigationQuery.data
+    if (!navigation || !activeSceneId) {
       return
     }
-
-    const service = activeConfig[location.groupIndex].items[location.serviceIndex]
+    const service = navigation.bookmarks.find((bookmark) => bookmark.slug === slug)
+    if (!service) return
     const serviceName = service.name
     setContextMenu(null)
     const confirmed = await confirm({
@@ -267,7 +296,7 @@ export function ServiceGrid() {
       return
     }
 
-    const nextConfig = removeService(activeConfig, location)
+    const nextConfig = removeBookmarkFromScene(navigation, activeSceneId, slug)
     saveMutation.mutate(nextConfig, {
       onSuccess: () => {
         showToast({ type: 'success', message: messages.serviceGrid.deleted(serviceName) })
@@ -444,7 +473,7 @@ export function ServiceGrid() {
 
       <LazyBookmarkEditDialog
         open={editingSlug !== null}
-        config={activeConfig}
+        config={navigationQuery.data}
         serviceSlug={editingSlug}
         onClose={() => setEditingSlug(null)}
       />

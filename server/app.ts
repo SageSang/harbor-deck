@@ -1,20 +1,68 @@
 import path from 'node:path'
 import Fastify from 'fastify'
+import type { FastifyRequest } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import { ZodError, z } from 'zod'
 import {
+  appConfigSchema,
+  storedNavigationConfigSchema,
+  type NavigationConfig,
+  type NavigationSceneConfig,
+} from '../src/config/schema.js'
+import {
   readAppConfig,
-  readServicesConfig,
+  readNavigationConfig,
   readSystemConfig,
   writeAppConfig,
-  writeServicesConfig,
+  writeNavigationConfig,
   writeSystemConfig,
 } from './configStore.js'
 import { createAuthService } from './auth.js'
 import { createWebdavBackupManager } from './webdavBackupManager.js'
+import { createSceneAccessService } from './sceneAccess.js'
+import { hashPassword, verifyPassword } from './password.js'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getSceneWithoutPassword(scene: NavigationSceneConfig) {
+  const sanitized = { ...scene }
+  delete sanitized.passwordHash
+  return sanitized
+}
+
+function protectedSceneChanged(
+  currentNavigation: NavigationConfig,
+  nextNavigation: NavigationConfig,
+  currentScene: NavigationSceneConfig
+) {
+  const nextScene = nextNavigation.scenes.find((scene) => scene.id === currentScene.id)
+  if (!nextScene) {
+    return true
+  }
+  if (
+    JSON.stringify(getSceneWithoutPassword(currentScene)) !==
+    JSON.stringify(getSceneWithoutPassword(nextScene))
+  ) {
+    return true
+  }
+
+  const referencedBookmarkIds = new Set(
+    currentScene.groups.flatMap((group) => group.bookmarkIds)
+  )
+  const currentBookmarks = new Map(
+    currentNavigation.bookmarks.map((bookmark) => [bookmark.slug, bookmark])
+  )
+  const nextBookmarks = new Map(
+    nextNavigation.bookmarks.map((bookmark) => [bookmark.slug, bookmark])
+  )
+
+  return Array.from(referencedBookmarkIds).some(
+    (bookmarkId) =>
+      JSON.stringify(currentBookmarks.get(bookmarkId)) !==
+      JSON.stringify(nextBookmarks.get(bookmarkId))
+  )
 }
 
 function sanitizeSystemConfig(system: Awaited<ReturnType<typeof readSystemConfig>>) {
@@ -27,7 +75,41 @@ function sanitizeAppConfig(config: Awaited<ReturnType<typeof readAppConfig>>) {
   return {
     ...config,
     system: sanitizeSystemConfig(config.system),
+    navigation: sanitizeNavigationConfig(config.navigation),
   }
+}
+
+function sanitizeNavigationConfig(
+  navigation: Awaited<ReturnType<typeof readNavigationConfig>>
+) {
+  return {
+    ...navigation,
+    scenes: navigation.scenes.map((scene) => {
+      const sanitizedScene = { ...scene }
+      delete sanitizedScene.passwordHash
+      return sanitizedScene
+    }),
+  }
+}
+
+function resolveSceneServices(
+  navigation: Awaited<ReturnType<typeof readNavigationConfig>>,
+  sceneId: string
+) {
+  const scene = navigation.scenes.find((item) => item.id === sceneId)
+  if (!scene) {
+    return []
+  }
+  const bookmarksById = new Map(
+    navigation.bookmarks.map((bookmark) => [bookmark.slug, bookmark])
+  )
+  return scene.groups.map((group) => ({
+    category: group.name,
+    items: group.bookmarkIds.flatMap((bookmarkId) => {
+      const bookmark = bookmarksById.get(bookmarkId)
+      return bookmark ? [bookmark] : []
+    }),
+  }))
 }
 
 function mergeSystemAuth(
@@ -58,6 +140,47 @@ function mergeAppAuth(
   }
 }
 
+function mergeNavigationPasswords(
+  navigationPayload: unknown,
+  currentNavigation: Awaited<ReturnType<typeof readNavigationConfig>>
+) {
+  if (!isRecord(navigationPayload)) {
+    return navigationPayload
+  }
+
+  const passwordHashes = new Map(
+    currentNavigation.scenes.map((scene) => [scene.id, scene.passwordHash])
+  )
+  const scenes = Array.isArray(navigationPayload.scenes)
+    ? navigationPayload.scenes.map((scene) => {
+        if (!isRecord(scene) || typeof scene.id !== 'string') {
+          return scene
+        }
+        const passwordHash = passwordHashes.get(scene.id)
+        return passwordHash ? { ...scene, protected: true, passwordHash } : scene
+      })
+    : navigationPayload.scenes
+
+  return {
+    ...navigationPayload,
+    scenes,
+  }
+}
+
+function mergeAppSecrets(
+  appPayload: unknown,
+  currentConfig: Awaited<ReturnType<typeof readAppConfig>>
+) {
+  const withAuth = mergeAppAuth(appPayload, currentConfig.system.auth)
+  if (!isRecord(withAuth)) {
+    return withAuth
+  }
+  return {
+    ...withAuth,
+    navigation: mergeNavigationPasswords(withAuth.navigation, currentConfig.navigation),
+  }
+}
+
 function applySecurityHeaders(reply: { header: (name: string, value: string) => unknown }) {
   reply.header('X-Content-Type-Options', 'nosniff')
   reply.header('Referrer-Policy', 'same-origin')
@@ -68,10 +191,55 @@ const clientDistDir = path.resolve(process.cwd(), 'dist')
 const restoreWebdavBackupBodySchema = z.object({
   versionId: z.string().trim().min(1),
 })
+const sceneIdParamsSchema = z.object({ sceneId: z.string().trim().min(1) })
+const sceneNavigationQuerySchema = z.object({ sceneId: z.string().trim().min(1).optional() })
+const sceneUnlockBodySchema = z.object({ password: z.string().min(1).max(128) })
+const scenePasswordBodySchema = z.object({
+  password: z.string().min(6).max(128).nullable(),
+})
 
 export async function buildServer() {
   const app = Fastify({ logger: true, trustProxy: true })
   const authService = createAuthService()
+  const sceneAccessService = createSceneAccessService()
+
+  function getSuppliedSceneToken(request: FastifyRequest, sceneId: string) {
+    const rawTokens = request.headers['x-scene-tokens']
+    if (typeof rawTokens === 'string') {
+      try {
+        const parsed = JSON.parse(rawTokens)
+        if (isRecord(parsed) && typeof parsed[sceneId] === 'string') {
+          return parsed[sceneId]
+        }
+      } catch {
+        return undefined
+      }
+    }
+    const singleToken = request.headers['x-scene-token']
+    return typeof singleToken === 'string' ? singleToken : undefined
+  }
+
+  function hasProtectedSceneAccess(request: FastifyRequest, sceneId: string) {
+    const sessionKey = authService.getSessionKey(request)
+    return Boolean(
+      sessionKey &&
+        sceneAccessService.validate(getSuppliedSceneToken(request, sceneId), sessionKey, sceneId)
+    )
+  }
+
+  function findUnauthorizedProtectedScene(
+    request: FastifyRequest,
+    currentNavigation: NavigationConfig,
+    nextNavigation: NavigationConfig
+  ) {
+    return currentNavigation.scenes.find(
+      (scene) =>
+        scene.protected &&
+        protectedSceneChanged(currentNavigation, nextNavigation, scene) &&
+        !hasProtectedSceneAccess(request, scene.id)
+    )
+  }
+
   const webdavBackupManager = createWebdavBackupManager({
     readAppConfig,
     readSystemConfig,
@@ -88,6 +256,7 @@ export async function buildServer() {
 
   app.addHook('onClose', async () => {
     webdavBackupManager.stop()
+    sceneAccessService.clear()
   })
 
   app.setErrorHandler((error, request, reply) => {
@@ -125,9 +294,22 @@ export async function buildServer() {
     }
 
     try {
-      const currentSystem = await readSystemConfig()
-      const nextConfig = mergeAppAuth(request.body, currentSystem.auth)
-      const savedConfig = await writeAppConfig(nextConfig)
+      const currentConfig = await readAppConfig()
+      const nextConfig = mergeAppSecrets(request.body, currentConfig)
+      const parsedNextConfig = appConfigSchema.parse(nextConfig)
+      const nextNavigation = storedNavigationConfigSchema.parse(parsedNextConfig.navigation)
+      const unauthorizedScene = findUnauthorizedProtectedScene(
+        request,
+        currentConfig.navigation,
+        nextNavigation
+      )
+      if (unauthorizedScene) {
+        return reply.code(403).send(`请先解锁场景“${unauthorizedScene.name}”`)
+      }
+      const savedConfig = await writeAppConfig({
+        ...parsedNextConfig,
+        navigation: nextNavigation,
+      })
       await webdavBackupManager.reloadSchedule()
       return sanitizeAppConfig(savedConfig)
     } catch (error) {
@@ -137,26 +319,153 @@ export async function buildServer() {
     }
   })
 
-  app.get('/api/config/services', async (request, reply) => {
+  app.get('/api/config/navigation', async (request, reply) => {
     if (!(await authService.requireAuthenticated(request, reply))) {
       return reply
     }
 
-    return readServicesConfig()
+    return sanitizeNavigationConfig(await readNavigationConfig())
   })
 
-  app.put('/api/config/services', async (request, reply) => {
+  app.put('/api/config/navigation', async (request, reply) => {
     if (!(await authService.requireAuthenticated(request, reply))) {
       return reply
     }
 
     try {
-      return await writeServicesConfig(request.body)
+      const currentNavigation = await readNavigationConfig()
+      const nextNavigation = mergeNavigationPasswords(request.body, currentNavigation)
+      const parsedNextNavigation = storedNavigationConfigSchema.parse(nextNavigation)
+      const unauthorizedScene = findUnauthorizedProtectedScene(
+        request,
+        currentNavigation,
+        parsedNextNavigation
+      )
+      if (unauthorizedScene) {
+        return reply.code(403).send(`请先解锁场景“${unauthorizedScene.name}”`)
+      }
+      const savedNavigation = await writeNavigationConfig(parsedNextNavigation)
+      return sanitizeNavigationConfig(savedNavigation)
     } catch (error) {
-      const message = error instanceof Error ? error.message : '保存书签配置失败'
+      const message = error instanceof Error ? error.message : '保存导航配置失败'
       reply.code(400)
       return message
     }
+  })
+
+  app.put('/api/config/navigation/scenes/:sceneId/password', async (request, reply) => {
+    if (!(await authService.requireAuthenticated(request, reply))) {
+      return reply
+    }
+
+    const { sceneId } = sceneIdParamsSchema.parse(request.params)
+    const { password } = scenePasswordBodySchema.parse(request.body)
+    const navigation = await readNavigationConfig()
+    const sceneIndex = navigation.scenes.findIndex((scene) => scene.id === sceneId)
+    if (sceneIndex < 0) {
+      return reply.code(404).send('场景不存在')
+    }
+    const currentScene = navigation.scenes[sceneIndex]
+    if (currentScene.protected && !hasProtectedSceneAccess(request, currentScene.id)) {
+      return reply.code(403).send(`请先解锁场景“${currentScene.name}”`)
+    }
+
+    const passwordHash = password ? await hashPassword(password) : undefined
+    const scenes = navigation.scenes.map((scene, index) =>
+      index === sceneIndex
+        ? {
+            ...scene,
+            protected: Boolean(password),
+            passwordHash,
+          }
+        : scene
+    )
+    const savedNavigation = await writeNavigationConfig({ ...navigation, scenes })
+    sceneAccessService.clear()
+    return sanitizeNavigationConfig(savedNavigation)
+  })
+
+  app.get('/api/navigation/scenes', async (request, reply) => {
+    if (!(await authService.requireAuthenticated(request, reply))) {
+      return reply
+    }
+
+    const navigation = await readNavigationConfig()
+    return {
+      defaultSceneId: navigation.defaultSceneId,
+      scenes: navigation.scenes.map((scene) => ({
+        id: scene.id,
+        name: scene.name,
+        protected: scene.protected,
+      })),
+    }
+  })
+
+  app.get('/api/navigation', async (request, reply) => {
+    if (!(await authService.requireAuthenticated(request, reply))) {
+      return reply
+    }
+
+    const navigation = await readNavigationConfig()
+    const query = sceneNavigationQuerySchema.parse(request.query)
+    const sceneId = query.sceneId ?? navigation.defaultSceneId
+    const scene = navigation.scenes.find((item) => item.id === sceneId)
+    if (!scene) {
+      return reply.code(404).send('场景不存在')
+    }
+
+    if (scene.protected) {
+      const sessionKey = authService.getSessionKey(request)
+      const sceneToken = request.headers['x-scene-token']
+      const token = typeof sceneToken === 'string' ? sceneToken : undefined
+      if (!sessionKey || !sceneAccessService.validate(token, sessionKey, scene.id)) {
+        return reply.code(403).send('场景需要解锁')
+      }
+    }
+
+    return resolveSceneServices(navigation, scene.id)
+  })
+
+  app.post('/api/navigation/scenes/:sceneId/unlock', async (request, reply) => {
+    if (!(await authService.requireAuthenticated(request, reply))) {
+      return reply
+    }
+
+    const { sceneId } = sceneIdParamsSchema.parse(request.params)
+    const { password } = sceneUnlockBodySchema.parse(request.body)
+    const navigation = await readNavigationConfig()
+    const scene = navigation.scenes.find((item) => item.id === sceneId)
+    if (!scene) {
+      return reply.code(404).send('场景不存在')
+    }
+    if (!scene.protected || !scene.passwordHash) {
+      return { token: null, expiresAt: null }
+    }
+
+    const sessionKey = authService.getSessionKey(request)
+    if (!sessionKey) {
+      return reply.code(401).send('请先登录')
+    }
+    if (!sceneAccessService.ensureCanAttempt(sessionKey, sceneId, request.ip)) {
+      return reply.code(429).send('尝试过于频繁，请稍后再试')
+    }
+    if (!(await verifyPassword(password, scene.passwordHash))) {
+      sceneAccessService.registerFailure(sessionKey, sceneId, request.ip)
+      return reply.code(401).send('场景密码错误')
+    }
+
+    sceneAccessService.clearFailures(sessionKey, sceneId, request.ip)
+    return sceneAccessService.issue(sessionKey, sceneId)
+  })
+
+  app.post('/api/navigation/scenes/:sceneId/lock', async (request, reply) => {
+    if (!(await authService.requireAuthenticated(request, reply))) {
+      return reply
+    }
+    sceneIdParamsSchema.parse(request.params)
+    const sceneToken = request.headers['x-scene-token']
+    sceneAccessService.lock(typeof sceneToken === 'string' ? sceneToken : undefined)
+    return { ok: true }
   })
 
   app.get('/api/config/system', async (request, reply) => {
@@ -225,6 +534,7 @@ export async function buildServer() {
       if (result.requiresReauth) {
         authService.invalidateAllSessions(reply, request)
       }
+      sceneAccessService.clear()
 
       return {
         requiresReauth: result.requiresReauth,

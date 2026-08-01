@@ -1,15 +1,22 @@
 import { ZodError } from 'zod'
-import type { ServiceConfig, ServicesConfig } from '@/config/schema'
+import type { NavigationConfig, ServiceConfig } from '@/config/schema'
 import { getCurrentMessages } from '@/i18n/runtime'
+import { cleanServiceConfig, slugify } from '@/features/services/servicesConfig'
 import {
-  buildUniqueSlug,
-  cleanServiceConfig,
-  validateGroupName,
-} from '@/features/services/servicesConfig'
+  buildUniqueNavigationId,
+  createSceneGroup,
+  getBookmarkPlacements,
+  type BookmarkPlacement,
+} from '@/features/navigation/navigationConfig'
+
+export interface BookmarkPlacementFormValue {
+  sceneId: string
+  groupId: string
+  newGroupName: string
+}
 
 export interface BookmarkFormValues {
-  groupIndex: string
-  newGroupName: string
+  placements: BookmarkPlacementFormValue[]
   name: string
   slug: string
   icon: string
@@ -22,24 +29,36 @@ interface ValidateBookmarkFormOptions {
   currentSlug?: string
 }
 
-function getNextBookmarkIndex(config: ServicesConfig) {
-  return config.reduce((count, group) => count + group.items.length, 0) + 1
+function getNextBookmarkIndex(config: NavigationConfig) {
+  return config.bookmarks.length + 1
 }
 
-function buildDefaultBookmarkSlugFallback(config: ServicesConfig) {
-  return `service-${getNextBookmarkIndex(config)}`
+function createPlacement(config: NavigationConfig, sceneId: string): BookmarkPlacementFormValue {
+  const scene = config.scenes.find((item) => item.id === sceneId) ?? config.scenes[0]
+  return {
+    sceneId: scene.id,
+    groupId: scene.groups[0]?.id ?? '',
+    newGroupName: '',
+  }
 }
 
-export function createEmptyBookmarkForm(config: ServicesConfig): BookmarkFormValues {
+export function createEmptyBookmarkForm(
+  config: NavigationConfig,
+  sceneId?: string | null
+): BookmarkFormValues {
   const messages = getCurrentMessages()
   const nextIndex = getNextBookmarkIndex(config)
-  const name = messages.common.newBookmarkName(nextIndex)
+  const targetSceneId =
+    config.scenes.find((scene) => scene.id === sceneId)?.id ?? config.defaultSceneId
 
   return {
-    groupIndex: config.length > 0 ? '0' : '',
-    newGroupName: '',
-    name,
-    slug: buildUniqueSlug(`service-${nextIndex}`, config),
+    placements: [createPlacement(config, targetSceneId)],
+    name: messages.common.newBookmarkName(nextIndex),
+    slug: buildUniqueNavigationId(
+      `service-${nextIndex}`,
+      config.bookmarks.map((bookmark) => bookmark.slug),
+      'bookmark'
+    ),
     icon: '',
     primaryUrl: 'http://127.0.0.1',
     secondaryUrl: '',
@@ -48,12 +67,14 @@ export function createEmptyBookmarkForm(config: ServicesConfig): BookmarkFormVal
 }
 
 export function createBookmarkFormFromService(
-  groupIndex: number,
+  config: NavigationConfig,
   service: ServiceConfig
 ): BookmarkFormValues {
   return {
-    groupIndex: String(groupIndex),
-    newGroupName: '',
+    placements: getBookmarkPlacements(config, service.slug).map((placement) => ({
+      ...placement,
+      newGroupName: '',
+    })),
     name: service.name,
     slug: service.slug,
     icon: service.icon ?? '',
@@ -65,26 +86,26 @@ export function createBookmarkFormFromService(
 
 export function buildSuggestedSlug(
   name: string,
-  config: ServicesConfig,
+  config: NavigationConfig,
   currentSlug?: string,
   fallback?: string
 ) {
-  const nextFallback =
-    fallback?.trim() || currentSlug || buildDefaultBookmarkSlugFallback(config)
-
-  return buildUniqueSlug(name, config, currentSlug, nextFallback)
+  const occupied = config.bookmarks
+    .map((bookmark) => bookmark.slug)
+    .filter((slug) => slug !== currentSlug)
+  const normalized = slugify(name, fallback?.trim() || currentSlug || 'bookmark')
+  return buildUniqueNavigationId(normalized, occupied, fallback?.trim() || 'bookmark')
 }
 
 export function validateBookmarkForm(
   values: BookmarkFormValues,
-  config: ServicesConfig,
+  config: NavigationConfig,
   options?: ValidateBookmarkFormOptions
 ) {
   const messages = getCurrentMessages()
-  const hasGroups = config.length > 0
   const nextSlug =
     values.slug.trim() || buildSuggestedSlug(values.name, config, options?.currentSlug)
-  const nextService = cleanServiceConfig({
+  const bookmark = cleanServiceConfig({
     slug: nextSlug,
     name: values.name.trim(),
     icon: values.icon.trim() || undefined,
@@ -93,65 +114,51 @@ export function validateBookmarkForm(
     forceNewTab: values.forceNewTab,
   })
 
-  const duplicatedSlug = config.some((group) =>
-    group.items.some(
-      (service) => service.slug === nextService.slug && service.slug !== options?.currentSlug
-    )
-  )
-
-  if (duplicatedSlug) {
-    throw new Error(messages.errors.bookmarkSlugExists(nextService.slug))
-  }
-
-  if (!hasGroups) {
-    return {
-      targetGroupIndex: 0,
-      newGroupName: validateGroupName(values.newGroupName, config),
-      service: nextService,
-    }
-  }
-
-  const targetGroupIndex = Number(values.groupIndex)
   if (
-    !Number.isInteger(targetGroupIndex) ||
-    targetGroupIndex < 0 ||
-    targetGroupIndex >= config.length
+    config.bookmarks.some(
+      (item) => item.slug === bookmark.slug && item.slug !== options?.currentSlug
+    )
   ) {
-    throw new Error(messages.errors.selectBookmarkGroup)
+    throw new Error(messages.errors.bookmarkSlugExists(bookmark.slug))
+  }
+  if (values.placements.length === 0) {
+    throw new Error('请至少选择一个场景和分组')
   }
 
-  return {
-    targetGroupIndex,
-    newGroupName: undefined,
-    service: nextService,
-  }
+  const seenScenes = new Set<string>()
+  const groupsToCreate: Array<{ sceneId: string; name: string }> = []
+  const placements: BookmarkPlacement[] = values.placements.map((placement) => {
+    const scene = config.scenes.find((item) => item.id === placement.sceneId)
+    if (!scene || seenScenes.has(scene.id)) {
+      throw new Error('书签场景选择无效或重复')
+    }
+    seenScenes.add(scene.id)
+
+    if (scene.groups.length === 0) {
+      const group = createSceneGroup(scene, placement.newGroupName)
+      groupsToCreate.push({ sceneId: scene.id, name: group.name })
+      return { sceneId: scene.id, groupId: group.id }
+    }
+
+    if (!scene.groups.some((group) => group.id === placement.groupId)) {
+      throw new Error(messages.errors.selectBookmarkGroup)
+    }
+    return { sceneId: scene.id, groupId: placement.groupId }
+  })
+
+  return { bookmark, placements, groupsToCreate }
 }
 
 export function formatBookmarkError(error: unknown) {
   const messages = getCurrentMessages()
-
   if (error instanceof ZodError) {
     const firstIssue = error.issues[0]
     const field = String(firstIssue?.path?.[0] ?? '')
-
-    if (field === 'name') {
-      return messages.errors.bookmarkNameRequired
-    }
-
-    if (field === 'slug') {
-      return messages.errors.bookmarkSlugFormat
-    }
-
-    if (field === 'primaryUrl') {
-      return messages.errors.primaryUrlInvalid
-    }
-
-    if (field === 'secondaryUrl') {
-      return messages.errors.secondaryUrlInvalid
-    }
-
+    if (field === 'name') return messages.errors.bookmarkNameRequired
+    if (field === 'slug') return messages.errors.bookmarkSlugFormat
+    if (field === 'primaryUrl') return messages.errors.primaryUrlInvalid
+    if (field === 'secondaryUrl') return messages.errors.secondaryUrlInvalid
     return firstIssue?.message ?? messages.errors.validationFailed
   }
-
   return error instanceof Error ? error.message : messages.common.genericActionFailed
 }

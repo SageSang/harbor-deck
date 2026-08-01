@@ -1,8 +1,9 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { IconPicker } from '@/components/IconPicker'
+import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '@/i18n/runtime'
-import type { ServicesConfig } from '@/config/schema'
+import type { NavigationConfig } from '@/config/schema'
 import { getFeedbackNoticeClass } from '@/features/feedback/feedbackStyles'
 import type { BookmarkFormValues } from '@/features/services/bookmarkForm'
 
@@ -12,7 +13,7 @@ interface FeedbackState {
 }
 
 interface BookmarkFormProps {
-  config: ServicesConfig
+  config: NavigationConfig
   values: BookmarkFormValues
   feedback: FeedbackState | null
   submitLabel: string
@@ -40,6 +41,18 @@ export function BookmarkForm({
   const fieldLabelClass =
     'text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/90'
 
+  function updatePlacement(
+    index: number,
+    next: Partial<BookmarkFormValues['placements'][number]>
+  ) {
+    onFieldChange(
+      'placements',
+      values.placements.map((placement, placementIndex) =>
+        placementIndex === index ? { ...placement, ...next } : placement
+      )
+    )
+  }
+
   return (
     <form
       className="flex min-h-0 flex-1 flex-col"
@@ -50,38 +63,120 @@ export function BookmarkForm({
     >
       <div className="config-scroll min-h-0 flex-1 overflow-y-auto px-3.5 py-3 pb-5 sm:px-5 sm:py-4 sm:pb-6">
         <div className="grid gap-3 md:grid-cols-2">
-          {config.length === 0 ? (
-            <label className={`${fieldCardClass} md:col-span-2`}>
-              <span className={`block ${fieldLabelClass}`}>{messages.bookmarkForm.firstGroup}</span>
-              <Input
-                value={values.newGroupName}
-                onChange={(event) => onFieldChange('newGroupName', event.target.value)}
-                placeholder={messages.common.firstGroupExample}
-                className="h-10"
-              />
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                {messages.bookmarkForm.firstGroupHint}
-              </p>
-            </label>
-          ) : (
-            <label className={fieldCardClass}>
-              <span className={`block ${fieldLabelClass}`}>{messages.bookmarkForm.group}</span>
-              <select
-                value={values.groupIndex}
-                onChange={(event) => onFieldChange('groupIndex', event.target.value)}
-                className="config-panel-select"
+          <div className={`${fieldCardClass} md:col-span-2`}>
+            <div className="flex items-center justify-between gap-3">
+              <span className={`block ${fieldLabelClass}`}>发布位置</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={values.placements.length >= config.scenes.length}
+                onClick={() => {
+                  const used = new Set(values.placements.map((placement) => placement.sceneId))
+                  const scene = config.scenes.find((item) => !used.has(item.id))
+                  if (!scene) return
+                  onFieldChange('placements', [
+                    ...values.placements,
+                    {
+                      sceneId: scene.id,
+                      groupId: scene.groups[0]?.id ?? '',
+                      newGroupName: '',
+                    },
+                  ])
+                }}
               >
-                {config.map((group, index) => (
-                  <option key={group.category} value={index}>
-                    {group.category}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                {messages.bookmarkForm.groupHint}
-              </p>
-            </label>
-          )}
+                <Plus className="h-3.5 w-3.5" />
+                添加场景
+              </Button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {values.placements.map((placement, index) => {
+                const scene =
+                  config.scenes.find((item) => item.id === placement.sceneId) ?? config.scenes[0]
+                const usedByOthers = new Set(
+                  values.placements
+                    .filter((_, placementIndex) => placementIndex !== index)
+                    .map((item) => item.sceneId)
+                )
+                return (
+                  <div
+                    key={`${placement.sceneId}-${index}`}
+                    className="grid gap-2 rounded-xl border border-border/70 bg-background/65 p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                  >
+                    <select
+                      value={placement.sceneId}
+                      onChange={(event) => {
+                        const nextScene = config.scenes.find(
+                          (item) => item.id === event.target.value
+                        )!
+                        updatePlacement(index, {
+                          sceneId: nextScene.id,
+                          groupId: nextScene.groups[0]?.id ?? '',
+                          newGroupName: '',
+                        })
+                      }}
+                      className="config-panel-select"
+                    >
+                      {config.scenes.map((item) => (
+                        <option
+                          key={item.id}
+                          value={item.id}
+                          disabled={usedByOthers.has(item.id)}
+                        >
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                    {scene.groups.length > 0 ? (
+                      <select
+                        value={placement.groupId}
+                        onChange={(event) =>
+                          updatePlacement(index, { groupId: event.target.value })
+                        }
+                        className="config-panel-select"
+                      >
+                        {scene.groups.map((group) => (
+                          <option key={group.id} value={group.id}>
+                            {group.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Input
+                        value={placement.newGroupName}
+                        onChange={(event) =>
+                          updatePlacement(index, { newGroupName: event.target.value })
+                        }
+                        placeholder={messages.common.firstGroupExample}
+                        className="h-10"
+                      />
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={values.placements.length === 1}
+                      aria-label={messages.common.delete}
+                      onClick={() =>
+                        onFieldChange(
+                          'placements',
+                          values.placements.filter(
+                            (_, placementIndex) => placementIndex !== index
+                          )
+                        )
+                      }
+                      className="h-10 w-10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              同一个书签可以加入多个场景，并在每个场景选择不同分组。
+            </p>
+          </div>
 
           <label className={fieldCardClass}>
             <span className={`block ${fieldLabelClass}`}>{messages.bookmarkForm.name}</span>

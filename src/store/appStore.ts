@@ -10,6 +10,13 @@ import {
   type NetworkModeStrategy,
 } from '@/core/network/networkModePreference'
 import { persistLanguage, resolveInitialLanguage, type Language } from '@/i18n/messages'
+import {
+  persistSceneState,
+  readInitialActiveSceneId,
+  readLastRegularSceneId,
+  readSceneTokens,
+  removeSceneToken,
+} from '@/features/navigation/scenePreference'
 
 interface AppState {
   networkMode: NetworkMode
@@ -20,6 +27,9 @@ interface AppState {
   theme: 'light' | 'dark'
   language: Language
   error: string | null
+  activeSceneId: string | null
+  lastRegularSceneId: string | null
+  sceneTokens: Record<string, string>
   setDetectedNetworkMode: (mode: NetworkMode) => void
   setNetworkModeStrategy: (strategy: NetworkModeStrategy) => void
   setManualNetworkMode: (mode: ManualNetworkMode) => void
@@ -27,6 +37,9 @@ interface AppState {
   setTheme: (theme: 'light' | 'dark') => void
   setLanguage: (language: Language) => void
   setError: (error: string | null) => void
+  setActiveScene: (sceneId: string, options: { protected: boolean; token?: string }) => void
+  initializeActiveScene: (sceneId: string, protectedScene: boolean) => void
+  clearSceneToken: (sceneId: string) => void
 }
 
 const initialDetectedNetworkMode: NetworkMode = 'unknown'
@@ -46,6 +59,9 @@ export const useAppStore = create<AppState>()((set) => ({
   theme: 'light',
   language: resolveInitialLanguage(),
   error: null,
+  activeSceneId: readInitialActiveSceneId(),
+  lastRegularSceneId: readLastRegularSceneId(),
+  sceneTokens: readSceneTokens(),
   setDetectedNetworkMode: (mode) =>
     set((state) => ({
       detectedNetworkMode: mode,
@@ -91,4 +107,29 @@ export const useAppStore = create<AppState>()((set) => ({
     set({ language })
   },
   setError: (error) => set({ error }),
+  setActiveScene: (sceneId, options) => {
+    persistSceneState(sceneId, options)
+    set((state) => ({
+      activeSceneId: sceneId,
+      lastRegularSceneId: options.protected ? state.lastRegularSceneId : sceneId,
+      sceneTokens: options.token
+        ? { ...state.sceneTokens, [sceneId]: options.token }
+        : state.sceneTokens,
+    }))
+  },
+  initializeActiveScene: (sceneId, protectedScene) => {
+    persistSceneState(sceneId, { protected: protectedScene })
+    set((state) => ({
+      activeSceneId: sceneId,
+      lastRegularSceneId: protectedScene ? state.lastRegularSceneId : sceneId,
+    }))
+  },
+  clearSceneToken: (sceneId) => {
+    removeSceneToken(sceneId)
+    set((state) => {
+      const sceneTokens = { ...state.sceneTokens }
+      delete sceneTokens[sceneId]
+      return { sceneTokens }
+    })
+  },
 }))

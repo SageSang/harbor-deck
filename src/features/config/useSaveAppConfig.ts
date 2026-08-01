@@ -3,7 +3,8 @@ import type { AppConfig } from '@/config/schema'
 import {
   appConfigQueryKey,
   saveAppConfig,
-  servicesConfigQueryKey,
+    navigationConfigQueryKey,
+    sceneListQueryKey,
   systemConfigQueryKey,
 } from '@/features/config/api'
 
@@ -15,7 +16,9 @@ export function useSaveAppConfig() {
     onSuccess: (savedConfig) => {
       queryClient.setQueryData(appConfigQueryKey, savedConfig)
       queryClient.setQueryData(systemConfigQueryKey, savedConfig.system)
-      queryClient.setQueryData(servicesConfigQueryKey, savedConfig.services)
+      queryClient.setQueryData(navigationConfigQueryKey, savedConfig.navigation)
+      void queryClient.invalidateQueries({ queryKey: sceneListQueryKey })
+      void queryClient.invalidateQueries({ queryKey: ['navigation', 'services'] })
     },
   })
 }

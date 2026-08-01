@@ -16,44 +16,16 @@
       "maxVersions": 10
     }
   },
-  "services": [
-    {
-      "category": "示例分组",
-      "items": [
-        {
-          "slug": "example-docs",
-          "name": "Example Docs",
-          "icon": "BookOpen",
-          "primaryUrl": "https://example.com/docs",
-          "secondaryUrl": "https://example.com/docs"
-        },
-        {
-          "slug": "example-status",
-          "name": "Example Status",
-          "icon": "Activity",
-          "primaryUrl": "https://example.com/status",
-          "secondaryUrl": "https://example.com/status"
-        }
-      ]
-    },
-    {
-      "category": "示例工具",
-      "items": [
-        {
-          "slug": "example-dashboard",
-          "name": "Example Dashboard",
-          "icon": "LayoutDashboard",
-          "primaryUrl": "https://example.com/dashboard",
-          "secondaryUrl": "https://example.com/dashboard"
-        },
-        {
-          "slug": "example-search",
-          "name": "Example Search",
-          "icon": "Search",
-          "primaryUrl": "https://example.com/search",
-          "secondaryUrl": "https://example.com/search"
-        }
-      ]
-    }
-  ]
+  "navigation": {
+    "defaultSceneId": "default",
+    "bookmarks": [],
+    "scenes": [
+      {
+        "id": "default",
+        "name": "默认",
+        "protected": false,
+        "groups": []
+      }
+    ]
+  }
 }
