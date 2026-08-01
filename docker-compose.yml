@@ -1,6 +1,6 @@
 services:
   smart-harbor:
-    image: ghcr.io/sagesang/multi-scenario-smart-harbor:1.4.1
+    image: ghcr.io/sagesang/multi-scenario-smart-harbor:1.4.2
     pull_policy: always
     container_name: smart-harbor
     restart: always

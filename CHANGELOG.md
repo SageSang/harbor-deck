@@ -3,6 +3,16 @@
 本文件用于在 `main` 分支记录每个正式版本的简洁更新说明。
 Each release on `main` should add a short bilingual summary here.
 
+## v1.4.2-web - 2026-08-02
+
+### 中文
+- 多选模式支持将选中的书签作为一个有序整体拖动，可跨分组移动或在分组内重新排序。
+- 多选状态条改为固定浮层，复选框保持绝对定位，避免进入多选时页面尺寸变化和明显抖动。
+
+### English
+- Added ordered multi-bookmark dragging across groups and within a group while selection mode is active.
+- Moved selection status UI to a fixed overlay and kept checkboxes out of layout flow to prevent page shifts.
+
 ## v1.4.1-web - 2026-08-02
 
 ### 中文

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  moveBookmarksInScene,
   parseNavigationConfig,
   removeBookmarksFromScene,
   removeGroupFromScene,
@@ -82,5 +83,58 @@ describe('navigation removal helpers', () => {
   it('does not change the config when the target group does not exist', () => {
     const config = createNavigationConfig()
     expect(removeGroupFromScene(config, 'personal', 'missing')).toEqual(config)
+  })
+})
+
+describe('moveBookmarksInScene', () => {
+  it('moves bookmarks from multiple groups as one ordered block', () => {
+    const config = parseNavigationConfig({
+      defaultSceneId: 'personal',
+      bookmarks: ['a', 'b', 'c', 'd', 'e'].map((slug) => ({
+        slug,
+        name: slug.toUpperCase(),
+        primaryUrl: `https://${slug}.example.com`,
+      })),
+      scenes: [
+        {
+          id: 'personal',
+          name: 'Personal',
+          protected: false,
+          groups: [
+            { id: 'first', name: 'First', bookmarkIds: ['a', 'b', 'c'] },
+            { id: 'second', name: 'Second', bookmarkIds: ['d', 'e'] },
+          ],
+        },
+      ],
+    })
+
+    const result = moveBookmarksInScene(config, 'personal', ['d', 'b'], 'second', 1)
+    const groups = result.scenes[0].groups
+
+    expect(groups[0].bookmarkIds).toEqual(['a', 'c'])
+    expect(groups[1].bookmarkIds).toEqual(['b', 'd', 'e'])
+  })
+
+  it('keeps selected bookmark order when moving within the same group', () => {
+    const config = parseNavigationConfig({
+      defaultSceneId: 'personal',
+      bookmarks: ['a', 'b', 'c', 'd'].map((slug) => ({
+        slug,
+        name: slug.toUpperCase(),
+        primaryUrl: `https://${slug}.example.com`,
+      })),
+      scenes: [
+        {
+          id: 'personal',
+          name: 'Personal',
+          protected: false,
+          groups: [{ id: 'main', name: 'Main', bookmarkIds: ['a', 'b', 'c', 'd'] }],
+        },
+      ],
+    })
+
+    const result = moveBookmarksInScene(config, 'personal', ['a', 'c'], 'main')
+
+    expect(result.scenes[0].groups[0].bookmarkIds).toEqual(['b', 'd', 'a', 'c'])
   })
 })

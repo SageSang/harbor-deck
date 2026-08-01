@@ -10,8 +10,8 @@ import { useFeedback } from '@/features/feedback/useFeedback'
 import { LazyBookmarkEditDialog } from '@/features/services/LazyBookmarkEditDialog'
 import { cloneServicesConfig, defaultServicesConfig } from '@/features/services/servicesConfig'
 import {
-  cloneNavigationConfig,
   findScene,
+  moveBookmarksInScene,
   removeBookmarksFromScene,
   removeGroupFromScene,
   removeBookmarkFromScene,
@@ -97,7 +97,7 @@ export function ServiceGrid() {
   const saveMutation = useSaveNavigationConfig()
   const { showToast, confirm } = useFeedback()
   const { messages } = useI18n()
-  const [draggingSlug, setDraggingSlug] = useState<string | null>(null)
+  const [draggingSlugs, setDraggingSlugs] = useState<string[]>([])
   const [dragOver, setDragOver] = useState<DragOverState | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [selectionMode, setSelectionMode] = useState(false)
@@ -127,7 +127,7 @@ export function ServiceGrid() {
   const activeSystemConfig = systemConfig ?? defaultSystemConfig
 
   const activeConfig = useMemo(() => cloneServicesConfig(config ?? defaultServicesConfig), [config])
-  const canDrag = searchKeyword.trim().length === 0 && !saveMutation.isPending && !selectionMode
+  const canDrag = searchKeyword.trim().length === 0 && !saveMutation.isPending
 
   const displayGroups = useMemo(() => {
     const scene =
@@ -265,7 +265,7 @@ export function ServiceGrid() {
   }, [displayGroups.length, isLoading])
 
   function clearDragState() {
-    setDraggingSlug(null)
+    setDraggingSlugs([])
     setDragOver(null)
   }
 
@@ -336,62 +336,31 @@ export function ServiceGrid() {
   }
 
   function commitDrop(targetGroupIndex: number, targetServiceIndex?: number) {
-    if (!draggingSlug) {
+    if (draggingSlugs.length === 0) {
       return
     }
 
     const navigation = navigationQuery.data
     const scene = navigation && activeSceneId ? findScene(navigation, activeSceneId) : undefined
-    if (!navigation || !scene) {
+    if (!navigation || !scene || !activeSceneId) {
       clearDragState()
       return
     }
 
-    const sourceGroupIndex = scene.groups.findIndex((group) =>
-      group.bookmarkIds.includes(draggingSlug)
-    )
-    const sourceGroup = scene.groups[sourceGroupIndex]
-    if (!sourceGroup) {
-      clearDragState()
-      return
-    }
     const targetGroup = scene.groups[targetGroupIndex]
     if (!targetGroup) {
       clearDragState()
       return
     }
-    const sourceServiceIndex = sourceGroup.bookmarkIds.indexOf(draggingSlug)
-    const isSameGroup = sourceGroupIndex === targetGroupIndex
-    const isDropToSameSpot =
-      isSameGroup &&
-      ((typeof targetServiceIndex === 'number' &&
-        (targetServiceIndex === sourceServiceIndex ||
-          targetServiceIndex === sourceServiceIndex + 1)) ||
-        (typeof targetServiceIndex === 'undefined' &&
-          sourceServiceIndex === sourceGroup.bookmarkIds.length - 1))
-
-    if (isDropToSameSpot) {
-      clearDragState()
-      return
-    }
 
     try {
-      const nextConfig = cloneNavigationConfig(navigation)
-      const nextScene = findScene(nextConfig, activeSceneId!)!
-      const nextSourceGroup = nextScene.groups[sourceGroupIndex]
-      const nextTargetGroup = nextScene.groups[targetGroupIndex]
-      const [bookmarkId] = nextSourceGroup.bookmarkIds.splice(sourceServiceIndex, 1)
-      const adjustedIndex =
-        typeof targetServiceIndex === 'number' &&
-        isSameGroup &&
-        sourceServiceIndex < targetServiceIndex
-          ? targetServiceIndex - 1
-          : targetServiceIndex
-      const insertIndex =
-        typeof adjustedIndex === 'number'
-          ? Math.min(Math.max(adjustedIndex, 0), nextTargetGroup.bookmarkIds.length)
-          : nextTargetGroup.bookmarkIds.length
-      nextTargetGroup.bookmarkIds.splice(insertIndex, 0, bookmarkId)
+      const nextConfig = moveBookmarksInScene(
+        navigation,
+        activeSceneId,
+        draggingSlugs,
+        targetGroup.id,
+        targetServiceIndex
+      )
       clearDragState()
       saveMutation.mutate(nextConfig)
     } catch {
@@ -553,17 +522,19 @@ export function ServiceGrid() {
   return (
     <>
       {selectionMode ? (
-        <div className="mb-3 flex items-center justify-between rounded-[1rem] border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-muted-foreground">
-          <span>{messages.serviceGrid.selectedCount(selectedSlugs.size)}</span>
-          <button
-            type="button"
-            aria-label={messages.serviceGrid.exitSelection}
-            title={messages.serviceGrid.exitSelection}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-accent hover:text-foreground"
-            onClick={leaveSelectionMode}
-          >
-            <X className="h-4 w-4" />
-          </button>
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[90] flex justify-center px-4 [padding-bottom:env(safe-area-inset-bottom)]">
+          <div className="pointer-events-auto flex min-h-10 items-center gap-3 rounded-full border border-primary/25 bg-popover/96 px-4 py-1.5 text-sm text-muted-foreground shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl dark:shadow-[0_18px_44px_rgba(0,0,0,0.4)]">
+            <span>{messages.serviceGrid.selectedCount(selectedSlugs.size)}</span>
+            <button
+              type="button"
+              aria-label={messages.serviceGrid.exitSelection}
+              title={messages.serviceGrid.exitSelection}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition hover:bg-accent hover:text-foreground"
+              onClick={leaveSelectionMode}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       ) : null}
       <div ref={gridRef} className="flex w-full flex-wrap items-start gap-3 md:gap-3.5">
@@ -614,7 +585,7 @@ export function ServiceGrid() {
                   className={`grid min-h-[76px] w-full flex-1 grid-cols-2 gap-2 rounded-[1.15rem] bg-background/34 p-1 transition sm:grid-cols-3 md:grid-cols-4 md:gap-2.5 md:p-1.5 ${canKeepSingleRow ? 'lg:w-fit lg:flex-none lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[var(--desktop-card-width)]' : 'lg:grid-cols-6 xl:grid-cols-8'} ${isGroupDropTarget ? 'bg-primary/6 ring-1 ring-primary/10' : ''}`}
                   style={compactGridStyle}
                   onDragOver={(event) => {
-                    if (!canDrag || !draggingSlug) {
+                    if (!canDrag || draggingSlugs.length === 0) {
                       return
                     }
                     event.preventDefault()
@@ -646,8 +617,10 @@ export function ServiceGrid() {
                             networkMode={networkMode}
                             clickOpenTarget={activeSystemConfig.clickOpenTarget}
                             middleClickOpenTarget={activeSystemConfig.middleClickOpenTarget}
-                            draggable={canDrag}
-                            isDragging={draggingSlug === service.slug}
+                            draggable={
+                              canDrag && (!selectionMode || selectedSlugs.has(service.slug))
+                            }
+                            isDragging={draggingSlugs.includes(service.slug)}
                             isDropTarget={isCardDropTarget}
                             className={
                               selectedSlugs.has(service.slug)
@@ -670,18 +643,21 @@ export function ServiceGrid() {
                             onMouseUp={finishBookmarkPress}
                             onMouseLeave={finishBookmarkPress}
                             onDragStart={(event) => {
-                              if (!canDrag) {
+                              if (!canDrag || (selectionMode && !selectedSlugs.has(service.slug))) {
                                 event.preventDefault()
                                 return
                               }
                               clearLongPress()
+                              const nextDraggingSlugs = selectionMode
+                                ? Array.from(selectedSlugs)
+                                : [service.slug]
                               event.dataTransfer.effectAllowed = 'move'
-                              event.dataTransfer.setData('text/plain', service.slug)
+                              event.dataTransfer.setData('text/plain', nextDraggingSlugs.join('\n'))
                               setContextMenu(null)
-                              setDraggingSlug(service.slug)
+                              setDraggingSlugs(nextDraggingSlugs)
                             }}
                             onDragOver={(event) => {
-                              if (!canDrag || !draggingSlug) {
+                              if (!canDrag || draggingSlugs.length === 0) {
                                 return
                               }
                               event.preventDefault()
