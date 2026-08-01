@@ -243,6 +243,13 @@ const zhCN = {
     confirmDeleteGroupMessage: (name: string, count: number) =>
       `将从当前场景删除分组“${name}”及其中 ${count} 个书签引用。仍被其他场景引用的书签会保留，没有其他引用的书签会被彻底删除。`,
     deleteGroupAction: '删除整个分组',
+    editGroupAction: '编辑分组',
+    editGroupTitle: '编辑分组名称',
+    editGroupDescription: '修改当前场景中的分组名称，不会改变分组或书签顺序。',
+    groupNameLabel: '分组名称',
+    saveGroupAction: '保存名称',
+    groupRenamed: (name: string) => `分组“${name}”已更新。`,
+    renameGroupFailed: '更新分组名称失败，请稍后再试。',
     groupDeleted: (name: string) => `分组“${name}”已删除。`,
     deleteGroupFailed: '删除分组失败，请稍后再试。',
     selectedCount: (count: number) => `已选择 ${count} 个书签`,
@@ -706,6 +713,14 @@ const en: typeof zhCN = {
     confirmDeleteGroupMessage: (name: string, count: number) =>
       `This removes group “${name}” and its ${count} bookmark references from the current scene. Bookmarks referenced by other scenes are kept; bookmarks with no remaining references are deleted permanently.`,
     deleteGroupAction: 'Delete Entire Group',
+    editGroupAction: 'Edit Group',
+    editGroupTitle: 'Edit Group Name',
+    editGroupDescription:
+      'Rename this group in the current scene without changing group or bookmark order.',
+    groupNameLabel: 'Group Name',
+    saveGroupAction: 'Save Name',
+    groupRenamed: (name: string) => `Group “${name}” updated.`,
+    renameGroupFailed: 'Failed to update the group name. Please try again later.',
     groupDeleted: (name: string) => `Group “${name}” deleted.`,
     deleteGroupFailed: 'Failed to delete group. Please try again later.',
     selectedCount: (count: number) => `${count} bookmark${count === 1 ? '' : 's'} selected`,

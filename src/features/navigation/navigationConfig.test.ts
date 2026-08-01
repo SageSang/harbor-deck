@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   moveBookmarksInScene,
   parseNavigationConfig,
+  renameGroupInScene,
   removeBookmarksFromScene,
   removeGroupFromScene,
 } from '@/features/navigation/navigationConfig'
@@ -136,5 +137,16 @@ describe('moveBookmarksInScene', () => {
     const result = moveBookmarksInScene(config, 'personal', ['a', 'c'], 'main')
 
     expect(result.scenes[0].groups[0].bookmarkIds).toEqual(['b', 'd', 'a', 'c'])
+  })
+})
+
+describe('renameGroupInScene', () => {
+  it('renames only the requested scene group', () => {
+    const config = createNavigationConfig()
+
+    const result = renameGroupInScene(config, 'personal', 'personal-main', 'Favorites')
+
+    expect(result.scenes.find((scene) => scene.id === 'personal')?.groups[0].name).toBe('Favorites')
+    expect(result.scenes.find((scene) => scene.id === 'work')?.groups[0].name).toBe('Main')
   })
 })

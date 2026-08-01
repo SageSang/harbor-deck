@@ -269,6 +269,22 @@ export function moveBookmarksInScene(
   return parseNavigationConfig(next)
 }
 
+export function renameGroupInScene(
+  config: NavigationConfig,
+  sceneId: string,
+  groupId: string,
+  name: string
+) {
+  const next = cloneNavigationConfig(config)
+  const group = findScene(next, sceneId)?.groups.find((item) => item.id === groupId)
+  if (!group) {
+    return next
+  }
+
+  group.name = name.trim()
+  return parseNavigationConfig(next)
+}
+
 export function deleteBookmark(config: NavigationConfig, bookmarkId: string) {
   const next = cloneNavigationConfig(config)
   next.bookmarks = next.bookmarks.filter((bookmark) => bookmark.slug !== bookmarkId)

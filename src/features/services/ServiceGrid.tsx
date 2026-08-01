@@ -2,6 +2,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Copy, Pencil, Trash2, X } from 'lucide-react'
+import { GroupRenameDialog } from '@/features/services/GroupRenameDialog'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 import { useSystemConfig } from '@/features/config/useSystemConfig'
@@ -12,6 +13,7 @@ import { cloneServicesConfig, defaultServicesConfig } from '@/features/services/
 import {
   findScene,
   moveBookmarksInScene,
+  renameGroupInScene,
   removeBookmarksFromScene,
   removeGroupFromScene,
   removeBookmarkFromScene,
@@ -51,6 +53,11 @@ interface SelectionContextMenuState {
 interface BookmarkDialogState {
   mode: 'edit' | 'duplicate'
   slug: string
+}
+
+interface GroupRenameState {
+  groupId: string
+  groupName: string
 }
 
 type ContextMenuState = BookmarkContextMenuState | GroupContextMenuState | SelectionContextMenuState
@@ -103,6 +110,7 @@ export function ServiceGrid() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
   const [bookmarkDialog, setBookmarkDialog] = useState<BookmarkDialogState | null>(null)
+  const [renamingGroup, setRenamingGroup] = useState<GroupRenameState | null>(null)
   const [gridWidth, setGridWidth] = useState(0)
   const [desktopColumnCount, setDesktopColumnCount] = useState(() => {
     if (typeof window === 'undefined') {
@@ -483,6 +491,44 @@ export function ServiceGrid() {
     })
   }
 
+  function handleRenameGroup(groupId: string, groupName: string) {
+    const navigation = navigationQuery.data
+    if (!navigation || !activeSceneId) {
+      return
+    }
+
+    const name = groupName.trim()
+    if (!name) {
+      showToast({ type: 'error', message: messages.errors.groupNameRequired })
+      return
+    }
+
+    const scene = findScene(navigation, activeSceneId)
+    if (scene?.groups.some((group) => group.id !== groupId && group.name === name)) {
+      showToast({ type: 'error', message: messages.errors.groupExists(name) })
+      return
+    }
+
+    try {
+      const nextConfig = renameGroupInScene(navigation, activeSceneId, groupId, name)
+      saveMutation.mutate(nextConfig, {
+        onSuccess: () => {
+          setRenamingGroup(null)
+          showToast({ type: 'success', message: messages.serviceGrid.groupRenamed(name) })
+        },
+        onError: (error) => {
+          const message =
+            error instanceof Error ? error.message : messages.serviceGrid.renameGroupFailed
+          showToast({ type: 'error', message })
+        },
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : messages.serviceGrid.renameGroupFailed
+      showToast({ type: 'error', message })
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex min-h-[420px] items-center justify-center">
@@ -742,6 +788,18 @@ export function ServiceGrid() {
         onClose={() => setBookmarkDialog(null)}
       />
 
+      <GroupRenameDialog
+        open={renamingGroup !== null}
+        currentName={renamingGroup?.groupName ?? ''}
+        saving={saveMutation.isPending}
+        onClose={() => setRenamingGroup(null)}
+        onSave={(name) => {
+          if (renamingGroup) {
+            handleRenameGroup(renamingGroup.groupId, name)
+          }
+        }}
+      />
+
       {contextMenu &&
         createPortal(
           <div className="fixed inset-0 z-[95]" onClick={() => setContextMenu(null)}>
@@ -785,14 +843,32 @@ export function ServiceGrid() {
                 </>
               ) : null}
               {contextMenu.kind === 'group' ? (
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteGroup(contextMenu.groupId, contextMenu.groupName)}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {messages.serviceGrid.deleteGroupAction}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenamingGroup({
+                        groupId: contextMenu.groupId,
+                        groupName: contextMenu.groupName,
+                      })
+                      setContextMenu(null)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    {messages.serviceGrid.editGroupAction}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleDeleteGroup(contextMenu.groupId, contextMenu.groupName)
+                    }
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {messages.serviceGrid.deleteGroupAction}
+                  </button>
+                </>
               ) : null}
               {contextMenu.kind === 'selection' ? (
                 <button

@@ -33,6 +33,7 @@ import {
   cloneNavigationConfig,
   createScene,
   createSceneGroup,
+  renameGroupInScene,
   removeGroupFromScene,
   upsertBookmark,
 } from '@/features/navigation/navigationConfig'
@@ -93,18 +94,14 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       scenes,
     }
   }, [navigation, sceneTokens])
-  const selectedScene = manageableNavigation?.scenes.find(
-    (scene) => scene.id === selectedSceneId
-  )
+  const selectedScene = manageableNavigation?.scenes.find((scene) => scene.id === selectedSceneId)
 
   useEffect(() => {
     if (!manageableNavigation) return
-    const nextSceneId = manageableNavigation.scenes.some(
-      (scene) => scene.id === selectedSceneId
-    )
+    const nextSceneId = manageableNavigation.scenes.some((scene) => scene.id === selectedSceneId)
       ? selectedSceneId
-      : manageableNavigation.scenes.find((scene) => scene.id === activeSceneId)?.id ??
-        manageableNavigation.defaultSceneId
+      : (manageableNavigation.scenes.find((scene) => scene.id === activeSceneId)?.id ??
+        manageableNavigation.defaultSceneId)
     const scene = manageableNavigation.scenes.find((item) => item.id === nextSceneId)!
     setSelectedSceneId(nextSceneId)
     setSceneNameDraft(scene.name)
@@ -124,9 +121,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   useEffect(() => {
     if (!selectedScene) return
     setSceneNameDraft(selectedScene.name)
-    setGroupDrafts(
-      Object.fromEntries(selectedScene.groups.map((group) => [group.id, group.name]))
-    )
+    setGroupDrafts(Object.fromEntries(selectedScene.groups.map((group) => [group.id, group.name])))
   }, [selectedScene])
 
   function notify(type: FeedbackState['type'], message: string) {
@@ -287,10 +282,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       notify('error', '当前场景已存在同名分组')
       return
     }
-    const next = cloneNavigationConfig(navigation)
-    next.scenes
-      .find((scene) => scene.id === selectedScene.id)!
-      .groups.find((group) => group.id === groupId)!.name = name
+    const next = renameGroupInScene(navigation, selectedScene.id, groupId, name)
     saveNavigation(next, '分组名称已更新。')
   }
 
@@ -300,10 +292,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     if (!group) return
     const accepted = await confirm({
       title: messages.serviceGrid.confirmDeleteGroupTitle,
-      message: messages.serviceGrid.confirmDeleteGroupMessage(
-        group.name,
-        group.bookmarkIds.length
-      ),
+      message: messages.serviceGrid.confirmDeleteGroupMessage(group.name, group.bookmarkIds.length),
       confirmLabel: messages.serviceGrid.deleteGroupAction,
       cancelLabel: messages.common.cancel,
       variant: 'destructive',
@@ -373,10 +362,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     try {
       const bookmarks = parseBrowserBookmarksHtml(await file.text())
       const next = importBrowserBookmarks(navigation, bookmarks, selectedScene.id)
-      saveNavigation(
-        next,
-        `已向“${selectedScene.name}”导入 ${bookmarks.length} 个浏览器书签。`
-      )
+      saveNavigation(next, `已向“${selectedScene.name}”导入 ${bookmarks.length} 个浏览器书签。`)
     } catch (error) {
       notify(
         'error',
@@ -387,10 +373,30 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
 
   const panelTabs = useMemo(
     () => [
-      { key: 'scenes' as const, label: '场景管理', description: '新增、复制、保护和删除', icon: Layers3 },
-      { key: 'groups' as const, label: messages.bookmarkManage.groupSection.label, description: '维护当前场景分组', icon: FolderTree },
-      { key: 'bookmark' as const, label: messages.bookmarkManage.bookmarkSection.label, description: '添加到一个或多个场景', icon: SquarePen },
-      { key: 'import' as const, label: messages.bookmarkManage.importSection.label, description: '导入到所选场景', icon: Upload },
+      {
+        key: 'scenes' as const,
+        label: '场景管理',
+        description: '新增、复制、保护和删除',
+        icon: Layers3,
+      },
+      {
+        key: 'groups' as const,
+        label: messages.bookmarkManage.groupSection.label,
+        description: '维护当前场景分组',
+        icon: FolderTree,
+      },
+      {
+        key: 'bookmark' as const,
+        label: messages.bookmarkManage.bookmarkSection.label,
+        description: '添加到一个或多个场景',
+        icon: SquarePen,
+      },
+      {
+        key: 'import' as const,
+        label: messages.bookmarkManage.importSection.label,
+        description: '导入到所选场景',
+        icon: Upload,
+      },
     ],
     [messages]
   )
@@ -445,69 +451,230 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
           onTabChange={setActiveSection}
         >
           {activeSection === 'scenes' ? (
-            <ConfigPanelSection title="场景管理" summary="场景可自由新增、复制、排序、保护和删除。" headerActions={sceneSelector}>
+            <ConfigPanelSection
+              title="场景管理"
+              summary="场景可自由新增、复制、排序、保护和删除。"
+              headerActions={sceneSelector}
+            >
               <div className="space-y-4">
                 <div className="config-panel-card grid gap-2 p-4 sm:grid-cols-[minmax(0,1fr)_auto]">
-                  <Input value={newSceneName} onChange={(event) => setNewSceneName(event.target.value)} placeholder="新场景名称" />
-                  <Button type="button" onClick={handleAddScene} disabled={!newSceneName.trim() || saveMutation.isPending}>
-                    <Plus className="h-4 w-4" />新增场景
+                  <Input
+                    value={newSceneName}
+                    onChange={(event) => setNewSceneName(event.target.value)}
+                    placeholder="新场景名称"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleAddScene}
+                    disabled={!newSceneName.trim() || saveMutation.isPending}
+                  >
+                    <Plus className="h-4 w-4" />
+                    新增场景
                   </Button>
                 </div>
                 <div className="config-panel-card space-y-4 p-4">
                   <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <Input value={sceneNameDraft} onChange={(event) => setSceneNameDraft(event.target.value)} />
-                    <Button type="button" variant="outline" onClick={handleRenameScene}>保存名称</Button>
+                    <Input
+                      value={sceneNameDraft}
+                      onChange={(event) => setSceneNameDraft(event.target.value)}
+                    />
+                    <Button type="button" variant="outline" onClick={handleRenameScene}>
+                      保存名称
+                    </Button>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" onClick={() => moveScene(-1)}><ArrowUp className="h-4 w-4" />前移</Button>
-                    <Button type="button" variant="outline" onClick={() => moveScene(1)}><ArrowDown className="h-4 w-4" />后移</Button>
-                    <Button type="button" variant="outline" onClick={handleDuplicateScene}><Copy className="h-4 w-4" />复制场景</Button>
-                    <Button type="button" variant="outline" onClick={setDefaultScene} disabled={navigation.defaultSceneId === selectedScene.id}>设为默认</Button>
-                    <Button type="button" variant="destructive" onClick={() => void handleDeleteScene()} disabled={navigation.scenes.length <= 1}><Trash2 className="h-4 w-4" />删除场景</Button>
+                    <Button type="button" variant="outline" onClick={() => moveScene(-1)}>
+                      <ArrowUp className="h-4 w-4" />
+                      前移
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => moveScene(1)}>
+                      <ArrowDown className="h-4 w-4" />
+                      后移
+                    </Button>
+                    <Button type="button" variant="outline" onClick={handleDuplicateScene}>
+                      <Copy className="h-4 w-4" />
+                      复制场景
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={setDefaultScene}
+                      disabled={navigation.defaultSceneId === selectedScene.id}
+                    >
+                      设为默认
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => void handleDeleteScene()}
+                      disabled={navigation.scenes.length <= 1}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      删除场景
+                    </Button>
                   </div>
                 </div>
                 <div className="config-panel-card space-y-3 p-4">
-                  <div className="flex items-center gap-2 text-sm font-semibold"><KeyRound className="h-4 w-4" />场景密码</div>
-                  <p className="text-xs leading-5 text-muted-foreground">密码只在进入该场景时请求，普通场景切换不受影响。</p>
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <KeyRound className="h-4 w-4" />
+                    场景密码
+                  </div>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    密码只在进入该场景时请求，普通场景切换不受影响。
+                  </p>
                   <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                    <Input type="password" value={scenePassword} onChange={(event) => setScenePassword(event.target.value)} placeholder={selectedScene.protected ? '输入新密码以替换' : '至少 6 位'} />
-                    <Button type="button" onClick={() => saveScenePassword(scenePassword)} disabled={scenePassword.length < 6 || passwordMutation.isPending}>设置密码</Button>
-                    <Button type="button" variant="outline" onClick={() => saveScenePassword(null)} disabled={!selectedScene.protected || passwordMutation.isPending}>移除密码</Button>
+                    <Input
+                      type="password"
+                      value={scenePassword}
+                      onChange={(event) => setScenePassword(event.target.value)}
+                      placeholder={selectedScene.protected ? '输入新密码以替换' : '至少 6 位'}
+                    />
+                    <Button
+                      type="button"
+                      onClick={() => saveScenePassword(scenePassword)}
+                      disabled={scenePassword.length < 6 || passwordMutation.isPending}
+                    >
+                      设置密码
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => saveScenePassword(null)}
+                      disabled={!selectedScene.protected || passwordMutation.isPending}
+                    >
+                      移除密码
+                    </Button>
                   </div>
                 </div>
               </div>
             </ConfigPanelSection>
           ) : activeSection === 'groups' ? (
-            <ConfigPanelSection title={`${selectedScene.name} · 分组管理`} summary="每个场景拥有独立分组；删除分组不会彻底删除共享书签。" headerActions={sceneSelector}>
+            <ConfigPanelSection
+              title={`${selectedScene.name} · 分组管理`}
+              summary="每个场景拥有独立分组；删除分组不会彻底删除共享书签。"
+              headerActions={sceneSelector}
+            >
               <div className="config-panel-card mb-3 grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-                <Input value={newGroupName} onChange={(event) => setNewGroupName(event.target.value)} placeholder={messages.bookmarkManage.groupSection.createPlaceholder} />
-                <Button type="button" onClick={handleAddGroup}><Plus className="h-4 w-4" />{messages.bookmarkManage.groupSection.createButton}</Button>
+                <Input
+                  value={newGroupName}
+                  onChange={(event) => setNewGroupName(event.target.value)}
+                  placeholder={messages.bookmarkManage.groupSection.createPlaceholder}
+                />
+                <Button type="button" onClick={handleAddGroup}>
+                  <Plus className="h-4 w-4" />
+                  {messages.bookmarkManage.groupSection.createButton}
+                </Button>
               </div>
               <div className="space-y-2">
                 {selectedScene.groups.map((group, index) => (
-                  <div key={group.id} className="config-panel-card grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <div><Input value={groupDrafts[group.id] ?? ''} onChange={(event) => setGroupDrafts((current) => ({ ...current, [group.id]: event.target.value }))} /><p className="mt-1 text-xs text-muted-foreground">{group.bookmarkIds.length} 个书签</p></div>
+                  <div
+                    key={group.id}
+                    className="config-panel-card grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+                  >
+                    <div>
+                      <Input
+                        value={groupDrafts[group.id] ?? ''}
+                        onChange={(event) =>
+                          setGroupDrafts((current) => ({
+                            ...current,
+                            [group.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {group.bookmarkIds.length} 个书签
+                      </p>
+                    </div>
                     <div className="flex flex-wrap items-start gap-1.5">
-                      <Button type="button" size="icon" variant="outline" disabled={index === 0} onClick={() => moveGroup(group.id, -1)}><ArrowUp className="h-4 w-4" /></Button>
-                      <Button type="button" size="icon" variant="outline" disabled={index === selectedScene.groups.length - 1} onClick={() => moveGroup(group.id, 1)}><ArrowDown className="h-4 w-4" /></Button>
-                      <Button type="button" variant="outline" onClick={() => handleRenameGroup(group.id)}>保存</Button>
-                      <Button type="button" variant="destructive" onClick={() => void handleDeleteGroup(group.id)}>删除</Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        disabled={index === 0}
+                        onClick={() => moveGroup(group.id, -1)}
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        disabled={index === selectedScene.groups.length - 1}
+                        onClick={() => moveGroup(group.id, 1)}
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleRenameGroup(group.id)}
+                      >
+                        保存
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={() => void handleDeleteGroup(group.id)}
+                      >
+                        删除
+                      </Button>
                     </div>
                   </div>
                 ))}
               </div>
             </ConfigPanelSection>
           ) : activeSection === 'bookmark' ? (
-            <ConfigPanelSection title="添加书签" summary="每个发布位置分别选择场景及其分组。" headerActions={sceneSelector} bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-              <BookmarkForm config={manageableNavigation} values={bookmarkDraft} feedback={feedback} submitLabel={messages.bookmarkManage.bookmarkSection.submitButton} submitDisabled={saveMutation.isPending} onSubmit={handleAddBookmark} onCancel={() => setIsOpen(false)} onFieldChange={handleBookmarkFieldChange} />
+            <ConfigPanelSection
+              title="添加书签"
+              summary="每个发布位置分别选择场景及其分组。"
+              headerActions={sceneSelector}
+              bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0"
+            >
+              <BookmarkForm
+                config={manageableNavigation}
+                values={bookmarkDraft}
+                feedback={feedback}
+                submitLabel={messages.bookmarkManage.bookmarkSection.submitButton}
+                submitDisabled={saveMutation.isPending}
+                onSubmit={handleAddBookmark}
+                onCancel={() => setIsOpen(false)}
+                onFieldChange={handleBookmarkFieldChange}
+              />
             </ConfigPanelSection>
           ) : (
-            <ConfigPanelSection title="导入浏览器书签" summary="先选择目标场景，多层文件夹会按完整路径生成该场景内的一级分组。" headerActions={sceneSelector} footer={<div className={getFeedbackNoticeClass(feedback?.type)}>{feedback?.message ?? `无文件夹书签会进入“${IMPORTED_BOOKMARK_GROUP_NAME}”。`}</div>}>
-              <input ref={fileInputRef} type="file" accept=".html,.htm,text/html" className="hidden" onChange={handleImportBookmarksFile} />
+            <ConfigPanelSection
+              title="导入浏览器书签"
+              summary="先选择目标场景，多层文件夹会按完整路径生成该场景内的一级分组。"
+              headerActions={sceneSelector}
+              footer={
+                <div className={getFeedbackNoticeClass(feedback?.type)}>
+                  {feedback?.message ?? `无文件夹书签会进入“${IMPORTED_BOOKMARK_GROUP_NAME}”。`}
+                </div>
+              }
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".html,.htm,text/html"
+                className="hidden"
+                onChange={handleImportBookmarksFile}
+              />
               <div className="config-panel-card space-y-3 p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold"><Upload className="h-4 w-4" />导入到“{selectedScene.name}”</div>
-                <p className="text-xs leading-5 text-muted-foreground">例如“书签栏 / 开发 / 前端”会成为一个一级分组；相同 URL 会复用已有书签。</p>
-                <Button type="button" onClick={() => fileInputRef.current?.click()} disabled={saveMutation.isPending}><Upload className="h-4 w-4" />选择 HTML 文件</Button>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Upload className="h-4 w-4" />
+                  导入到“{selectedScene.name}”
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  例如“书签栏 / 开发 / 前端”会成为一个一级分组；相同 URL 会复用已有书签。
+                </p>
+                <Button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={saveMutation.isPending}
+                >
+                  <Upload className="h-4 w-4" />
+                  选择 HTML 文件
+                </Button>
               </div>
             </ConfigPanelSection>
           )}
