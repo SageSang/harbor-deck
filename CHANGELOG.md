@@ -3,6 +3,20 @@
 本文件用于在 `main` 分支记录每个正式版本的简洁更新说明。
 Each release on `main` should add a short bilingual summary here.
 
+## v1.3.0 - 2026-08-02
+
+### 中文
+- 新增可动态维护的多场景导航，每个场景独立管理分组与排序，同一书签可放入多个场景。
+- 新增受密码保护的场景、浏览器会话解锁、服务端访问控制和失败限流。
+- 新增按场景导入浏览器书签，并将嵌套文件夹按完整路径转换为一级分组。
+- 新增从 GitHub Container Registry 拉取远端镜像的群晖 Container Manager 部署配置。
+
+### English
+- Added dynamic navigation scenes with independent groups and ordering, while allowing shared bookmarks across scenes.
+- Added password-protected scenes with session-scoped unlocking, server-side authorization, and rate limiting.
+- Added scene-targeted browser bookmark imports with nested folders flattened into full-path groups.
+- Added Synology Container Manager deployment using a prebuilt GitHub Container Registry image.
+
 ## v1.2.6-web - 2026-03-30
 
 ### 中文

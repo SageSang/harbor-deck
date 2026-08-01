@@ -43,10 +43,8 @@ Smart Harbor 是一个面向个人自托管服务的智能导航主页。
 ```yaml
 services:
   smart-harbor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: smart-harbor:local
+    image: ghcr.io/sagesang/multi-scenario-smart-harbor:1.3.0
+    pull_policy: always
     container_name: smart-harbor
     restart: always
     ports:
@@ -62,7 +60,7 @@ services:
       - no-new-privileges:true
 ```
 
-仓库根目录已经包含适用于群晖 Container Manager 的 `docker-compose.yml`。把仓库（包括 `Dockerfile`）放入项目目录，按实际情况修改左侧的群晖配置目录，然后选择“构建并启动”。宿主机目录可以改成你自己的共享文件夹路径；容器内路径 `/app/config` 不要修改。
+仓库根目录已经包含适用于群晖 Container Manager 的 `docker-compose.yml`，会直接从 GitHub Container Registry 拉取预构建的多架构镜像，不需要在群晖上编译源码。按实际情况修改左侧的群晖配置目录，然后创建或更新项目即可。宿主机目录可以改成你自己的共享文件夹路径；容器内路径 `/app/config` 不要修改。
 
 ### Docker Run
 
@@ -71,7 +69,7 @@ docker run -d \
   --name smart-harbor \
   -p 8080:80 \
   -v ./smart-harbor/config:/app/config \
-  smart-harbor:local
+  ghcr.io/sagesang/multi-scenario-smart-harbor:1.3.0
 ```
 
 启动后：

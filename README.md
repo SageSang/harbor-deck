@@ -40,15 +40,13 @@ It automatically detects your current network environment and switches between L
 
 ### Docker Compose
 
-This repository includes a Synology-friendly `docker-compose.yml`. Put the repository (including the `Dockerfile`) in a Synology Container Manager project directory, change the host config path if needed, and choose **Build and start**.
+This repository includes a Synology-friendly `docker-compose.yml` that pulls a prebuilt multi-architecture image from GitHub Container Registry. Change the host config path if needed, then create or update the project in Synology Container Manager.
 
 ```yaml
 services:
   smart-harbor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: smart-harbor:local
+    image: ghcr.io/sagesang/multi-scenario-smart-harbor:1.3.0
+    pull_policy: always
     container_name: smart-harbor
     restart: always
     ports:
@@ -73,7 +71,7 @@ docker run -d \
   --name smart-harbor \
   -p 8080:80 \
   -v ./smart-harbor/config:/app/config \
-  smart-harbor:local
+  ghcr.io/sagesang/multi-scenario-smart-harbor:1.3.0
 ```
 
 Then:
