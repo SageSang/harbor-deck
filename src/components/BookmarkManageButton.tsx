@@ -33,6 +33,7 @@ import {
   cloneNavigationConfig,
   createScene,
   createSceneGroup,
+  removeGroupFromScene,
   upsertBookmark,
 } from '@/features/navigation/navigationConfig'
 import {
@@ -298,16 +299,17 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     const group = selectedScene.groups.find((item) => item.id === groupId)
     if (!group) return
     const accepted = await confirm({
-      title: messages.bookmarkManage.groupSection.confirmDeleteTitle,
-      message: `删除“${group.name}”会从当前场景移除其中 ${group.bookmarkIds.length} 个书签，但不会彻底删除书签。`,
-      confirmLabel: messages.common.delete,
+      title: messages.serviceGrid.confirmDeleteGroupTitle,
+      message: messages.serviceGrid.confirmDeleteGroupMessage(
+        group.name,
+        group.bookmarkIds.length
+      ),
+      confirmLabel: messages.serviceGrid.deleteGroupAction,
       cancelLabel: messages.common.cancel,
       variant: 'destructive',
     })
     if (!accepted) return
-    const next = cloneNavigationConfig(navigation)
-    const scene = next.scenes.find((item) => item.id === selectedScene.id)!
-    scene.groups = scene.groups.filter((item) => item.id !== groupId)
+    const next = removeGroupFromScene(navigation, selectedScene.id, groupId)
     saveNavigation(next, `分组“${group.name}”已删除。`)
   }
 

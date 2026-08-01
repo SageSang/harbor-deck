@@ -160,14 +160,63 @@ export function removeBookmarkFromScene(
   sceneId: string,
   bookmarkId: string
 ) {
+  return removeBookmarksFromScene(config, sceneId, [bookmarkId])
+}
+
+export function removeBookmarksFromScene(
+  config: NavigationConfig,
+  sceneId: string,
+  bookmarkIds: string[]
+) {
   const next = cloneNavigationConfig(config)
   const scene = findScene(next, sceneId)
   if (!scene) {
     return next
   }
+
+  const removedBookmarkIds = new Set(bookmarkIds)
   scene.groups.forEach((group) => {
-    group.bookmarkIds = group.bookmarkIds.filter((id) => id !== bookmarkId)
+    group.bookmarkIds = group.bookmarkIds.filter((id) => !removedBookmarkIds.has(id))
   })
+
+  const referencedBookmarkIds = new Set(
+    next.scenes.flatMap((item) => item.groups.flatMap((group) => group.bookmarkIds))
+  )
+  next.bookmarks = next.bookmarks.filter(
+    (bookmark) =>
+      !removedBookmarkIds.has(bookmark.slug) || referencedBookmarkIds.has(bookmark.slug)
+  )
+
+  return parseNavigationConfig(next)
+}
+
+export function removeGroupFromScene(
+  config: NavigationConfig,
+  sceneId: string,
+  groupId: string
+) {
+  const next = cloneNavigationConfig(config)
+  const scene = findScene(next, sceneId)
+  if (!scene) {
+    return next
+  }
+
+  const groupIndex = scene.groups.findIndex((group) => group.id === groupId)
+  if (groupIndex < 0) {
+    return next
+  }
+
+  const [removedGroup] = scene.groups.splice(groupIndex, 1)
+  const removedBookmarkIds = new Set(removedGroup.bookmarkIds)
+  const referencedBookmarkIds = new Set(
+    next.scenes.flatMap((item) => item.groups.flatMap((group) => group.bookmarkIds))
+  )
+
+  next.bookmarks = next.bookmarks.filter(
+    (bookmark) =>
+      !removedBookmarkIds.has(bookmark.slug) || referencedBookmarkIds.has(bookmark.slug)
+  )
+
   return parseNavigationConfig(next)
 }
 

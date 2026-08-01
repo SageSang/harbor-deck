@@ -50,6 +50,32 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    if (!confirmation) {
+      return
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeConfirmation(false)
+        return
+      }
+
+      if (
+        event.key === 'Enter' &&
+        confirmation.variant === 'destructive' &&
+        !event.isComposing
+      ) {
+        event.preventDefault()
+        closeConfirmation(true)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [closeConfirmation, confirmation])
+
+  useEffect(() => {
     return () => {
       resolverRef.current?.(false)
       resolverRef.current = null

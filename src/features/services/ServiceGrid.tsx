@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Check, Pencil, Trash2, X } from 'lucide-react'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 import { useSystemConfig } from '@/features/config/useSystemConfig'
@@ -15,6 +15,8 @@ import {
 import {
   cloneNavigationConfig,
   findScene,
+  removeBookmarksFromScene,
+  removeGroupFromScene,
   removeBookmarkFromScene,
 } from '@/features/navigation/navigationConfig'
 import { useNavigationConfig, useSaveNavigationConfig } from '@/features/navigation/useNavigation'
@@ -27,11 +29,32 @@ interface DragOverState {
   serviceIndex?: number
 }
 
-interface ContextMenuState {
+interface BookmarkContextMenuState {
+  kind: 'bookmark'
   slug: string
   x: number
   y: number
 }
+
+interface GroupContextMenuState {
+  kind: 'group'
+  groupId: string
+  groupName: string
+  x: number
+  y: number
+}
+
+interface SelectionContextMenuState {
+  kind: 'selection'
+  slugs: string[]
+  x: number
+  y: number
+}
+
+type ContextMenuState =
+  | BookmarkContextMenuState
+  | GroupContextMenuState
+  | SelectionContextMenuState
 
 const DESKTOP_SECTION_HORIZONTAL_PADDING_PX = 24
 const DESKTOP_LABEL_WIDTH_PX = 84
@@ -39,6 +62,8 @@ const DESKTOP_SECTION_GAP_PX = 12
 const DESKTOP_GRID_HORIZONTAL_PADDING_PX = 12
 const DESKTOP_CARD_GAP_PX = 10
 const DESKTOP_CARD_MIN_WIDTH_PX = 130
+const LONG_PRESS_DELAY_MS = 550
+const LONG_PRESS_MOVE_THRESHOLD_PX = 8
 
 function getDesktopCardWidth(containerWidth: number, desktopColumnCount: number) {
   const availableWidth =
@@ -76,6 +101,8 @@ export function ServiceGrid() {
   const [draggingSlug, setDraggingSlug] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState<DragOverState | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
   const [editingSlug, setEditingSlug] = useState<string | null>(null)
   const [gridWidth, setGridWidth] = useState(0)
   const [desktopColumnCount, setDesktopColumnCount] = useState(() => {
@@ -95,20 +122,35 @@ export function ServiceGrid() {
   })
   const [, setIconRenderVersion] = useState(0)
   const gridRef = useRef<HTMLDivElement | null>(null)
+  const longPressTimerRef = useRef<number | null>(null)
+  const longPressPointerRef = useRef<{ slug: string; x: number; y: number } | null>(null)
+  const justLongPressedRef = useRef(false)
   const activeSystemConfig = systemConfig ?? defaultSystemConfig
 
   const activeConfig = useMemo(() => cloneServicesConfig(config ?? defaultServicesConfig), [config])
-  const canDrag = searchKeyword.trim().length === 0 && !saveMutation.isPending
+  const canDrag = searchKeyword.trim().length === 0 && !saveMutation.isPending && !selectionMode
 
   const displayGroups = useMemo(
-    () =>
-      groupedServices
-        .map((group) => ({
-          ...group,
-          actualGroupIndex: activeConfig.findIndex((item) => item.category === group.category),
-        }))
-        .filter((group) => group.actualGroupIndex >= 0),
-    [activeConfig, groupedServices]
+    () => {
+      const scene =
+        navigationQuery.data && activeSceneId
+          ? findScene(navigationQuery.data, activeSceneId)
+          : undefined
+
+      return groupedServices
+        .map((group) => {
+          const actualGroupIndex = activeConfig.findIndex(
+            (item) => item.category === group.category
+          )
+          return {
+            ...group,
+            actualGroupIndex,
+            groupId: scene?.groups[actualGroupIndex]?.id ?? '',
+          }
+        })
+        .filter((group) => group.actualGroupIndex >= 0)
+    },
+    [activeConfig, activeSceneId, groupedServices, navigationQuery.data]
   )
   const visibleServiceIcons = useMemo(
     () =>
@@ -157,6 +199,25 @@ export function ServiceGrid() {
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [contextMenu])
+
+  useEffect(() => {
+    setSelectionMode(false)
+    setSelectedSlugs(new Set())
+  }, [activeSceneId, searchKeyword])
+
+  useEffect(() => {
+    if (selectionMode && selectedSlugs.size === 0) {
+      setSelectionMode(false)
+    }
+  }, [selectedSlugs.size, selectionMode])
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current !== null) {
+        window.clearTimeout(longPressTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -213,6 +274,72 @@ export function ServiceGrid() {
   function clearDragState() {
     setDraggingSlug(null)
     setDragOver(null)
+  }
+
+  function clearLongPress() {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+    longPressPointerRef.current = null
+  }
+
+  function beginBookmarkLongPress(slug: string, event: MouseEvent<HTMLDivElement>) {
+    if (selectionMode || event.button !== 0 || !canDrag) {
+      return
+    }
+
+    clearLongPress()
+    longPressPointerRef.current = { slug, x: event.clientX, y: event.clientY }
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null
+      longPressPointerRef.current = null
+      justLongPressedRef.current = true
+      setSelectionMode(true)
+      setSelectedSlugs(new Set([slug]))
+      clearDragState()
+    }, LONG_PRESS_DELAY_MS)
+  }
+
+  function trackBookmarkLongPress(event: MouseEvent<HTMLDivElement>) {
+    const pointer = longPressPointerRef.current
+    if (!pointer) {
+      return
+    }
+
+    const moved =
+      Math.abs(event.clientX - pointer.x) > LONG_PRESS_MOVE_THRESHOLD_PX ||
+      Math.abs(event.clientY - pointer.y) > LONG_PRESS_MOVE_THRESHOLD_PX
+    if (moved) {
+      clearLongPress()
+    }
+  }
+
+  function finishBookmarkPress() {
+    clearLongPress()
+    if (justLongPressedRef.current) {
+      window.setTimeout(() => {
+        justLongPressedRef.current = false
+      }, 0)
+    }
+  }
+
+  function toggleBookmarkSelection(slug: string) {
+    setSelectedSlugs((current) => {
+      const next = new Set(current)
+      if (next.has(slug)) {
+        next.delete(slug)
+      } else {
+        next.add(slug)
+      }
+      return next
+    })
+  }
+
+  function leaveSelectionMode() {
+    setSelectionMode(false)
+    setSelectedSlugs(new Set())
+    setContextMenu(null)
   }
 
   function commitDrop(targetGroupIndex: number, targetServiceIndex?: number) {
@@ -308,6 +435,87 @@ export function ServiceGrid() {
     })
   }
 
+  async function handleDeleteSelected(slugs: string[]) {
+    const navigation = navigationQuery.data
+    if (!navigation || !activeSceneId || slugs.length === 0) {
+      return
+    }
+
+    setContextMenu(null)
+    const selected = new Set(slugs)
+    const availableSlugs = navigation.bookmarks
+      .filter((bookmark) => selected.has(bookmark.slug))
+      .map((bookmark) => bookmark.slug)
+    if (availableSlugs.length === 0) {
+      leaveSelectionMode()
+      return
+    }
+
+    const confirmed = await confirm({
+      title: messages.serviceGrid.confirmDeleteSelectedTitle,
+      message: messages.serviceGrid.confirmDeleteSelectedMessage(availableSlugs.length),
+      confirmLabel: messages.serviceGrid.deleteSelectedAction,
+      cancelLabel: messages.common.cancel,
+      variant: 'destructive',
+    })
+
+    if (!confirmed) {
+      return
+    }
+
+    const nextConfig = removeBookmarksFromScene(navigation, activeSceneId, availableSlugs)
+    saveMutation.mutate(nextConfig, {
+      onSuccess: () => {
+        leaveSelectionMode()
+        showToast({
+          type: 'success',
+          message: messages.serviceGrid.selectedDeleted(availableSlugs.length),
+        })
+      },
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : messages.serviceGrid.deleteFailed
+        showToast({ type: 'error', message })
+      },
+    })
+  }
+
+  async function handleDeleteGroup(groupId: string, groupName: string) {
+    const navigation = navigationQuery.data
+    if (!navigation || !activeSceneId) {
+      return
+    }
+
+    const scene = findScene(navigation, activeSceneId)
+    const group = scene?.groups.find((item) => item.id === groupId)
+    if (!group) {
+      return
+    }
+
+    setContextMenu(null)
+    const confirmed = await confirm({
+      title: messages.serviceGrid.confirmDeleteGroupTitle,
+      message: messages.serviceGrid.confirmDeleteGroupMessage(groupName, group.bookmarkIds.length),
+      confirmLabel: messages.serviceGrid.deleteGroupAction,
+      cancelLabel: messages.common.cancel,
+      variant: 'destructive',
+    })
+
+    if (!confirmed) {
+      return
+    }
+
+    const nextConfig = removeGroupFromScene(navigation, activeSceneId, groupId)
+    saveMutation.mutate(nextConfig, {
+      onSuccess: () => {
+        showToast({ type: 'success', message: messages.serviceGrid.groupDeleted(groupName) })
+      },
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : messages.serviceGrid.deleteGroupFailed
+        showToast({ type: 'error', message })
+      },
+    })
+  }
+
   if (isLoading) {
     return (
       <div className="flex min-h-[420px] items-center justify-center">
@@ -337,8 +545,12 @@ export function ServiceGrid() {
     )
   }
 
-  const menuLeft = contextMenu ? Math.min(contextMenu.x, window.innerWidth - 180) : 0
-  const menuTop = contextMenu ? Math.min(contextMenu.y, window.innerHeight - 120) : 0
+  const menuLeft = contextMenu
+    ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 208))
+    : 0
+  const menuTop = contextMenu
+    ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - 120))
+    : 0
   const desktopCardWidth =
     desktopColumnCount > 0 && gridWidth > 0
       ? getDesktopCardWidth(gridWidth, desktopColumnCount)
@@ -346,6 +558,20 @@ export function ServiceGrid() {
 
   return (
     <>
+      {selectionMode ? (
+        <div className="mb-3 flex items-center justify-between rounded-[1rem] border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-muted-foreground">
+          <span>{messages.serviceGrid.selectedCount(selectedSlugs.size)}</span>
+          <button
+            type="button"
+            aria-label={messages.serviceGrid.exitSelection}
+            title={messages.serviceGrid.exitSelection}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-accent hover:text-foreground"
+            onClick={leaveSelectionMode}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
       <div ref={gridRef} className="flex w-full flex-wrap items-start gap-3 md:gap-3.5">
         {displayGroups.map((group, groupIndex) => {
           const isGroupDropTarget =
@@ -368,7 +594,22 @@ export function ServiceGrid() {
               className={`w-full rounded-[1.55rem] border border-border/75 bg-card/62 p-2.5 shadow-[0_16px_34px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition duration-300 md:p-3 dark:bg-card/60 dark:shadow-[0_18px_44px_rgba(0,0,0,0.28)] ${canKeepSingleRow ? 'lg:w-fit lg:flex-none' : 'lg:flex-1 lg:basis-full'} ${isGroupDropTarget ? 'border-primary/40 ring-2 ring-primary/10' : ''}`}
             >
               <div className="flex flex-col gap-2.5 md:flex-row md:items-start md:gap-3">
-                <div className="flex w-full shrink-0 items-center justify-center rounded-[1.15rem] border border-border/70 bg-[linear-gradient(180deg,hsl(var(--background)/0.96),hsl(var(--background)/0.84))] px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:w-[5.25rem] md:flex-col md:justify-center md:self-stretch">
+                <div
+                  className="flex w-full shrink-0 cursor-context-menu items-center justify-center rounded-[1.15rem] border border-border/70 bg-[linear-gradient(180deg,hsl(var(--background)/0.96),hsl(var(--background)/0.84))] px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:w-[5.25rem] md:flex-col md:justify-center md:self-stretch"
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    if (selectionMode || !group.groupId) {
+                      return
+                    }
+                    setContextMenu({
+                      kind: 'group',
+                      groupId: group.groupId,
+                      groupName: group.category,
+                      x: event.clientX,
+                      y: event.clientY,
+                    })
+                  }}
+                >
                   <h3 className="break-words text-[14px] font-semibold leading-5 tracking-tight text-foreground md:text-[15px]">
                     {group.category}
                   </h3>
@@ -405,7 +646,7 @@ export function ServiceGrid() {
                       return (
                         <div
                           key={service.slug}
-                          className="transform-gpu animate-slide-up motion-reduce:animate-none"
+                          className="relative transform-gpu animate-slide-up motion-reduce:animate-none"
                           style={{ animationDelay: `${(groupIndex * 3 + index) * 45}ms` }}
                         >
                           <ServiceCard
@@ -416,11 +657,32 @@ export function ServiceGrid() {
                             draggable={canDrag}
                             isDragging={draggingSlug === service.slug}
                             isDropTarget={isCardDropTarget}
+                            className={
+                              selectedSlugs.has(service.slug)
+                                ? 'border-primary/60 ring-2 ring-primary/20'
+                                : undefined
+                            }
+                            onClick={(event) => {
+                              if (justLongPressedRef.current) {
+                                event.preventDefault()
+                                justLongPressedRef.current = false
+                                return
+                              }
+                              if (selectionMode) {
+                                event.preventDefault()
+                                toggleBookmarkSelection(service.slug)
+                              }
+                            }}
+                            onMouseDown={(event) => beginBookmarkLongPress(service.slug, event)}
+                            onMouseMove={trackBookmarkLongPress}
+                            onMouseUp={finishBookmarkPress}
+                            onMouseLeave={finishBookmarkPress}
                             onDragStart={(event) => {
                               if (!canDrag) {
                                 event.preventDefault()
                                 return
                               }
+                              clearLongPress()
                               event.dataTransfer.effectAllowed = 'move'
                               event.dataTransfer.setData('text/plain', service.slug)
                               setContextMenu(null)
@@ -449,13 +711,46 @@ export function ServiceGrid() {
                             onDragEnd={clearDragState}
                             onContextMenu={(event) => {
                               event.preventDefault()
+                              clearLongPress()
+                              if (selectionMode) {
+                                const slugs = selectedSlugs.has(service.slug)
+                                  ? Array.from(selectedSlugs)
+                                  : [service.slug]
+                                if (!selectedSlugs.has(service.slug)) {
+                                  setSelectedSlugs(new Set(slugs))
+                                }
+                                setContextMenu({
+                                  kind: 'selection',
+                                  slugs,
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                })
+                                return
+                              }
                               setContextMenu({
+                                kind: 'bookmark',
                                 slug: service.slug,
                                 x: event.clientX,
                                 y: event.clientY,
                               })
                             }}
                           />
+                          {selectionMode ? (
+                            <button
+                              type="button"
+                              aria-label={messages.serviceGrid.toggleSelection(service.name)}
+                              aria-pressed={selectedSlugs.has(service.slug)}
+                              className={`absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border shadow-sm transition ${selectedSlugs.has(service.slug) ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background/95 text-transparent hover:border-primary/50'}`}
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                toggleBookmarkSelection(service.slug)
+                              }}
+                              onContextMenu={(event) => event.stopPropagation()}
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
                         </div>
                       )
                     })
@@ -486,25 +781,51 @@ export function ServiceGrid() {
               style={{ left: menuLeft, top: menuTop }}
               onClick={(event) => event.stopPropagation()}
             >
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingSlug(contextMenu.slug)
-                  setContextMenu(null)
-                }}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
-              >
-                <Pencil className="h-4 w-4" />
-                {messages.serviceGrid.editAction}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDeleteBookmark(contextMenu.slug)}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
-              >
-                <Trash2 className="h-4 w-4" />
-                {messages.serviceGrid.deleteAction}
-              </button>
+              {contextMenu.kind === 'bookmark' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingSlug(contextMenu.slug)
+                      setContextMenu(null)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    {messages.serviceGrid.editAction}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteBookmark(contextMenu.slug)}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {messages.serviceGrid.deleteAction}
+                  </button>
+                </>
+              ) : null}
+              {contextMenu.kind === 'group' ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void handleDeleteGroup(contextMenu.groupId, contextMenu.groupName)
+                  }
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {messages.serviceGrid.deleteGroupAction}
+                </button>
+              ) : null}
+              {contextMenu.kind === 'selection' ? (
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteSelected(contextMenu.slugs)}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {messages.serviceGrid.deleteSelectedActionWithCount(contextMenu.slugs.length)}
+                </button>
+              ) : null}
             </div>
           </div>,
           document.body

@@ -45,7 +45,7 @@ This repository includes a Synology-friendly `docker-compose.yml` that pulls a p
 ```yaml
 services:
   smart-harbor:
-    image: ghcr.io/sagesang/multi-scenario-smart-harbor:1.3.0
+    image: ghcr.io/sagesang/multi-scenario-smart-harbor:1.4.0
     pull_policy: always
     container_name: smart-harbor
     restart: always
@@ -71,7 +71,7 @@ docker run -d \
   --name smart-harbor \
   -p 8080:80 \
   -v ./smart-harbor/config:/app/config \
-  ghcr.io/sagesang/multi-scenario-smart-harbor:1.3.0
+  ghcr.io/sagesang/multi-scenario-smart-harbor:1.4.0
 ```
 
 Then:

@@ -3,6 +3,20 @@
 本文件用于在 `main` 分支记录每个正式版本的简洁更新说明。
 Each release on `main` should add a short bilingual summary here.
 
+## v1.4.0-web - 2026-08-02
+
+### 中文
+- 首页分组名称新增右键删除，可直接移除当前场景中的整个分组。
+- 书签支持长按进入多选模式，并通过右键菜单批量删除当前场景中的书签引用。
+- 删除分组或书签时会保留其他场景仍在使用的共享书签，只清理不再被任何场景引用的书签。
+- 破坏性确认弹窗支持按 Enter 确认删除、按 Escape 取消。
+
+### English
+- Added group deletion from the home page through the group-name context menu.
+- Added long-press bookmark selection and batch removal from the active scene.
+- Preserved bookmarks still referenced by other scenes and removed only orphaned bookmarks.
+- Added Enter-to-confirm and Escape-to-cancel keyboard handling for destructive confirmations.
+
 ## v1.3.0 - 2026-08-02
 
 ### 中文
