@@ -5,6 +5,7 @@ interface BookmarkEditDialogProps {
   open: boolean
   config?: NavigationConfig
   serviceSlug: string | null
+  mode?: 'edit' | 'duplicate'
   onClose: () => void
 }
 
@@ -21,9 +22,8 @@ function loadBookmarkEditDialog() {
 }
 
 export function LazyBookmarkEditDialog(props: BookmarkEditDialogProps) {
-  const [LoadedComponent, setLoadedComponent] = useState<ComponentType<BookmarkEditDialogProps> | null>(
-    null
-  )
+  const [LoadedComponent, setLoadedComponent] =
+    useState<ComponentType<BookmarkEditDialogProps> | null>(null)
 
   useEffect(() => {
     if (!props.open || LoadedComponent) {

@@ -84,6 +84,20 @@ export function createBookmarkFormFromService(
   }
 }
 
+export function createDuplicateBookmarkForm(
+  config: NavigationConfig,
+  service: ServiceConfig
+): BookmarkFormValues {
+  return {
+    ...createBookmarkFormFromService(config, service),
+    slug: buildUniqueNavigationId(
+      `${service.slug}-copy`,
+      config.bookmarks.map((bookmark) => bookmark.slug),
+      'bookmark'
+    ),
+  }
+}
+
 export function buildSuggestedSlug(
   name: string,
   config: NavigationConfig,

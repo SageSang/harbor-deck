@@ -1,17 +1,14 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, Pencil, Trash2, X } from 'lucide-react'
+import { Check, Copy, Pencil, Trash2, X } from 'lucide-react'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 import { useSystemConfig } from '@/features/config/useSystemConfig'
 import { defaultSystemConfig } from '@/features/config/api'
 import { useFeedback } from '@/features/feedback/useFeedback'
 import { LazyBookmarkEditDialog } from '@/features/services/LazyBookmarkEditDialog'
-import {
-  cloneServicesConfig,
-  defaultServicesConfig,
-} from '@/features/services/servicesConfig'
+import { cloneServicesConfig, defaultServicesConfig } from '@/features/services/servicesConfig'
 import {
   cloneNavigationConfig,
   findScene,
@@ -51,10 +48,12 @@ interface SelectionContextMenuState {
   y: number
 }
 
-type ContextMenuState =
-  | BookmarkContextMenuState
-  | GroupContextMenuState
-  | SelectionContextMenuState
+interface BookmarkDialogState {
+  mode: 'edit' | 'duplicate'
+  slug: string
+}
+
+type ContextMenuState = BookmarkContextMenuState | GroupContextMenuState | SelectionContextMenuState
 
 const DESKTOP_SECTION_HORIZONTAL_PADDING_PX = 24
 const DESKTOP_LABEL_WIDTH_PX = 84
@@ -103,7 +102,7 @@ export function ServiceGrid() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
-  const [editingSlug, setEditingSlug] = useState<string | null>(null)
+  const [bookmarkDialog, setBookmarkDialog] = useState<BookmarkDialogState | null>(null)
   const [gridWidth, setGridWidth] = useState(0)
   const [desktopColumnCount, setDesktopColumnCount] = useState(() => {
     if (typeof window === 'undefined') {
@@ -130,28 +129,23 @@ export function ServiceGrid() {
   const activeConfig = useMemo(() => cloneServicesConfig(config ?? defaultServicesConfig), [config])
   const canDrag = searchKeyword.trim().length === 0 && !saveMutation.isPending && !selectionMode
 
-  const displayGroups = useMemo(
-    () => {
-      const scene =
-        navigationQuery.data && activeSceneId
-          ? findScene(navigationQuery.data, activeSceneId)
-          : undefined
+  const displayGroups = useMemo(() => {
+    const scene =
+      navigationQuery.data && activeSceneId
+        ? findScene(navigationQuery.data, activeSceneId)
+        : undefined
 
-      return groupedServices
-        .map((group) => {
-          const actualGroupIndex = activeConfig.findIndex(
-            (item) => item.category === group.category
-          )
-          return {
-            ...group,
-            actualGroupIndex,
-            groupId: scene?.groups[actualGroupIndex]?.id ?? '',
-          }
-        })
-        .filter((group) => group.actualGroupIndex >= 0)
-    },
-    [activeConfig, activeSceneId, groupedServices, navigationQuery.data]
-  )
+    return groupedServices
+      .map((group) => {
+        const actualGroupIndex = activeConfig.findIndex((item) => item.category === group.category)
+        return {
+          ...group,
+          actualGroupIndex,
+          groupId: scene?.groups[actualGroupIndex]?.id ?? '',
+        }
+      })
+      .filter((group) => group.actualGroupIndex >= 0)
+  }, [activeConfig, activeSceneId, groupedServices, navigationQuery.data])
   const visibleServiceIcons = useMemo(
     () =>
       Array.from(
@@ -226,8 +220,7 @@ export function ServiceGrid() {
 
     const updateDesktopColumnCount = () => {
       setDesktopColumnCount((current) => {
-        const next =
-          window.innerWidth >= 1280 ? 8 : window.innerWidth >= 1024 ? 6 : 0
+        const next = window.innerWidth >= 1280 ? 8 : window.innerWidth >= 1024 ? 6 : 0
 
         return current === next ? current : next
       })
@@ -354,7 +347,9 @@ export function ServiceGrid() {
       return
     }
 
-    const sourceGroupIndex = scene.groups.findIndex((group) => group.bookmarkIds.includes(draggingSlug))
+    const sourceGroupIndex = scene.groups.findIndex((group) =>
+      group.bookmarkIds.includes(draggingSlug)
+    )
     const sourceGroup = scene.groups[sourceGroupIndex]
     if (!sourceGroup) {
       clearDragState()
@@ -387,7 +382,9 @@ export function ServiceGrid() {
       const nextTargetGroup = nextScene.groups[targetGroupIndex]
       const [bookmarkId] = nextSourceGroup.bookmarkIds.splice(sourceServiceIndex, 1)
       const adjustedIndex =
-        typeof targetServiceIndex === 'number' && isSameGroup && sourceServiceIndex < targetServiceIndex
+        typeof targetServiceIndex === 'number' &&
+        isSameGroup &&
+        sourceServiceIndex < targetServiceIndex
           ? targetServiceIndex - 1
           : targetServiceIndex
       const insertIndex =
@@ -510,7 +507,8 @@ export function ServiceGrid() {
         showToast({ type: 'success', message: messages.serviceGrid.groupDeleted(groupName) })
       },
       onError: (error) => {
-        const message = error instanceof Error ? error.message : messages.serviceGrid.deleteGroupFailed
+        const message =
+          error instanceof Error ? error.message : messages.serviceGrid.deleteGroupFailed
         showToast({ type: 'error', message })
       },
     })
@@ -545,12 +543,8 @@ export function ServiceGrid() {
     )
   }
 
-  const menuLeft = contextMenu
-    ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 208))
-    : 0
-  const menuTop = contextMenu
-    ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - 120))
-    : 0
+  const menuLeft = contextMenu ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 208)) : 0
+  const menuTop = contextMenu ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - 120)) : 0
   const desktopCardWidth =
     desktopColumnCount > 0 && gridWidth > 0
       ? getDesktopCardWidth(gridWidth, desktopColumnCount)
@@ -579,9 +573,7 @@ export function ServiceGrid() {
             typeof dragOver.serviceIndex === 'undefined'
           const compactGroupWidth = getCompactGroupWidth(group.services.length, desktopCardWidth)
           const canKeepSingleRow =
-            desktopColumnCount > 0 &&
-            group.services.length > 0 &&
-            compactGroupWidth <= gridWidth
+            desktopColumnCount > 0 && group.services.length > 0 && compactGroupWidth <= gridWidth
           const compactGridStyle = canKeepSingleRow
             ? ({
                 '--desktop-card-width': `${desktopCardWidth}px`,
@@ -767,10 +759,11 @@ export function ServiceGrid() {
       </div>
 
       <LazyBookmarkEditDialog
-        open={editingSlug !== null}
+        open={bookmarkDialog !== null}
         config={navigationQuery.data}
-        serviceSlug={editingSlug}
-        onClose={() => setEditingSlug(null)}
+        serviceSlug={bookmarkDialog?.slug ?? null}
+        mode={bookmarkDialog?.mode}
+        onClose={() => setBookmarkDialog(null)}
       />
 
       {contextMenu &&
@@ -786,13 +779,24 @@ export function ServiceGrid() {
                   <button
                     type="button"
                     onClick={() => {
-                      setEditingSlug(contextMenu.slug)
+                      setBookmarkDialog({ mode: 'edit', slug: contextMenu.slug })
                       setContextMenu(null)
                     }}
                     className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
                   >
                     <Pencil className="h-4 w-4" />
                     {messages.serviceGrid.editAction}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBookmarkDialog({ mode: 'duplicate', slug: contextMenu.slug })
+                      setContextMenu(null)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                  >
+                    <Copy className="h-4 w-4" />
+                    {messages.serviceGrid.duplicateAction}
                   </button>
                   <button
                     type="button"
@@ -807,9 +811,7 @@ export function ServiceGrid() {
               {contextMenu.kind === 'group' ? (
                 <button
                   type="button"
-                  onClick={() =>
-                    void handleDeleteGroup(contextMenu.groupId, contextMenu.groupName)
-                  }
+                  onClick={() => void handleDeleteGroup(contextMenu.groupId, contextMenu.groupName)}
                   className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
                 >
                   <Trash2 className="h-4 w-4" />

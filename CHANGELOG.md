@@ -3,6 +3,16 @@
 本文件用于在 `main` 分支记录每个正式版本的简洁更新说明。
 Each release on `main` should add a short bilingual summary here.
 
+## v1.4.1-web - 2026-08-02
+
+### 中文
+- 单个书签的右键菜单新增“复制书签”，可在预填原内容后创建独立副本。
+- 副本会继承当前可管理场景中的分组位置，并自动生成不冲突的书签标识，避免覆盖原书签。
+
+### English
+- Added a Duplicate Bookmark action to the single-bookmark context menu with a prefilled creation form.
+- Copies inherit manageable scene placements and receive a unique slug so the source bookmark is never overwritten.
+
 ## v1.4.0-web - 2026-08-02
 
 ### 中文

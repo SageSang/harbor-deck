@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Pencil } from 'lucide-react'
+import { Copy, Pencil } from 'lucide-react'
 import { ModalShell } from '@/components/ModalShell'
 import type { NavigationConfig } from '@/config/schema'
 import { useFeedback } from '@/features/feedback/useFeedback'
@@ -8,11 +8,17 @@ import { useI18n } from '@/i18n/runtime'
 import {
   buildSuggestedSlug,
   createBookmarkFormFromService,
+  createDuplicateBookmarkForm,
   formatBookmarkError,
   type BookmarkFormValues,
   validateBookmarkForm,
 } from '@/features/services/bookmarkForm'
-import { cloneNavigationConfig, createSceneGroup, getBookmarkPlacements, upsertBookmark } from '@/features/navigation/navigationConfig'
+import {
+  cloneNavigationConfig,
+  createSceneGroup,
+  getBookmarkPlacements,
+  upsertBookmark,
+} from '@/features/navigation/navigationConfig'
 import { useNavigationConfig, useSaveNavigationConfig } from '@/features/navigation/useNavigation'
 import { useAppStore } from '@/store/appStore'
 
@@ -25,10 +31,17 @@ interface BookmarkEditDialogProps {
   open: boolean
   config?: NavigationConfig
   serviceSlug: string | null
+  mode?: 'edit' | 'duplicate'
   onClose: () => void
 }
 
-export function BookmarkEditDialog({ open, config, serviceSlug, onClose }: BookmarkEditDialogProps) {
+export function BookmarkEditDialog({
+  open,
+  config,
+  serviceSlug,
+  mode = 'edit',
+  onClose,
+}: BookmarkEditDialogProps) {
   const navigationQuery = useNavigationConfig()
   const saveMutation = useSaveNavigationConfig()
   const { showToast } = useFeedback()
@@ -56,18 +69,30 @@ export function BookmarkEditDialog({ open, config, serviceSlug, onClose }: Bookm
 
   useEffect(() => {
     if (!open || !editableNavigation || !activeService) return
-    setDraft(createBookmarkFormFromService(editableNavigation, activeService))
-    setSlugTouched(true)
+    setDraft(
+      mode === 'duplicate'
+        ? createDuplicateBookmarkForm(editableNavigation, activeService)
+        : createBookmarkFormFromService(editableNavigation, activeService)
+    )
+    setSlugTouched(mode === 'edit')
     setFeedback(null)
-  }, [activeService, editableNavigation, open])
+  }, [activeService, editableNavigation, mode, open])
 
-  function handleFieldChange<K extends keyof BookmarkFormValues>(field: K, value: BookmarkFormValues[K]) {
+  function handleFieldChange<K extends keyof BookmarkFormValues>(
+    field: K,
+    value: BookmarkFormValues[K]
+  ) {
     if (!editableNavigation) return
     setDraft((current) => {
       if (!current) return current
       const next = { ...current, [field]: value }
       if (field === 'name' && !slugTouched && activeService) {
-        next.slug = buildSuggestedSlug(String(value), editableNavigation, activeService.slug, current.slug)
+        next.slug = buildSuggestedSlug(
+          String(value),
+          editableNavigation,
+          mode === 'edit' ? activeService.slug : undefined,
+          current.slug
+        )
       }
       return next
     })
@@ -78,7 +103,11 @@ export function BookmarkEditDialog({ open, config, serviceSlug, onClose }: Bookm
   function handleSubmit() {
     if (!navigation || !editableNavigation || !activeService || !draft) return
     try {
-      const result = validateBookmarkForm(draft, editableNavigation, { currentSlug: activeService.slug })
+      const result = validateBookmarkForm(
+        draft,
+        editableNavigation,
+        mode === 'edit' ? { currentSlug: activeService.slug } : undefined
+      )
       let next = cloneNavigationConfig(navigation)
       const placements = result.placements.map((placement) => ({ ...placement }))
       result.groupsToCreate.forEach(({ sceneId, name }) => {
@@ -87,17 +116,35 @@ export function BookmarkEditDialog({ open, config, serviceSlug, onClose }: Bookm
         scene.groups.push(group)
         placements.find((placement) => placement.sceneId === sceneId)!.groupId = group.id
       })
-      const editableSceneIds = new Set(editableNavigation.scenes.map((scene) => scene.id))
-      const hiddenPlacements = getBookmarkPlacements(navigation, activeService.slug).filter(
-        (placement) => !editableSceneIds.has(placement.sceneId)
+      const hiddenPlacements =
+        mode === 'edit'
+          ? getBookmarkPlacements(navigation, activeService.slug).filter(
+              (placement) =>
+                !editableNavigation.scenes.some((scene) => scene.id === placement.sceneId)
+            )
+          : []
+      next = upsertBookmark(
+        next,
+        result.bookmark,
+        [...placements, ...hiddenPlacements],
+        mode === 'edit' ? activeService.slug : undefined
       )
-      next = upsertBookmark(next, result.bookmark, [...placements, ...hiddenPlacements], activeService.slug)
       saveMutation.mutate(next, {
         onSuccess: () => {
-          showToast({ type: 'success', message: messages.bookmarkEdit.saved(result.bookmark.name) })
+          showToast({
+            type: 'success',
+            message:
+              mode === 'duplicate'
+                ? messages.bookmarkEdit.duplicated(result.bookmark.name)
+                : messages.bookmarkEdit.saved(result.bookmark.name),
+          })
           onClose()
         },
-        onError: (error) => setFeedback({ type: 'error', message: error instanceof Error ? error.message : messages.bookmarkEdit.saveFailed }),
+        onError: (error) =>
+          setFeedback({
+            type: 'error',
+            message: error instanceof Error ? error.message : messages.bookmarkEdit.saveFailed,
+          }),
       })
     } catch (error) {
       setFeedback({ type: 'error', message: formatBookmarkError(error) })
@@ -106,10 +153,34 @@ export function BookmarkEditDialog({ open, config, serviceSlug, onClose }: Bookm
 
   if (!editableNavigation || !activeService || !draft) return null
 
+  const isDuplicate = mode === 'duplicate'
+
   return (
-    <ModalShell open={open} onClose={onClose} title={messages.bookmarkEdit.title} description={messages.bookmarkEdit.description} icon={Pencil} widthClassName="max-w-3xl">
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      title={isDuplicate ? messages.bookmarkEdit.duplicateTitle : messages.bookmarkEdit.title}
+      description={
+        isDuplicate ? messages.bookmarkEdit.duplicateDescription : messages.bookmarkEdit.description
+      }
+      icon={isDuplicate ? Copy : Pencil}
+      widthClassName="max-w-3xl"
+    >
       <div className="flex min-h-0 flex-1 overflow-hidden md:min-h-[520px]">
-        <BookmarkForm config={editableNavigation} values={draft} feedback={feedback} submitLabel={messages.bookmarkEdit.submitButton} submitDisabled={saveMutation.isPending} onSubmit={handleSubmit} onCancel={onClose} onFieldChange={handleFieldChange} />
+        <BookmarkForm
+          config={editableNavigation}
+          values={draft}
+          feedback={feedback}
+          submitLabel={
+            isDuplicate
+              ? messages.bookmarkEdit.duplicateSubmitButton
+              : messages.bookmarkEdit.submitButton
+          }
+          submitDisabled={saveMutation.isPending}
+          onSubmit={handleSubmit}
+          onCancel={onClose}
+          onFieldChange={handleFieldChange}
+        />
       </div>
     </ModalShell>
   )

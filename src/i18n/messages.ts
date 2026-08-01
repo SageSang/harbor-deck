@@ -69,7 +69,8 @@ const zhCN = {
       strategyManual: '手动切换',
       autoHint:
         '选“自动检测”时，系统会先尝试探测设置里的内网健康地址，再尝试外网健康地址；若未完整配置，则回退到第一个书签。',
-      manualHint: '适用于 iOS 等无法从 HTTPS 页面探测 HTTP 地址的场景，切换后会立即影响所有书签的打开地址。',
+      manualHint:
+        '适用于 iOS 等无法从 HTTPS 页面探测 HTTP 地址的场景，切换后会立即影响所有书签的打开地址。',
       manualModeLabel: '手动网络',
       manualModeHint: '请选择当前应该优先使用的地址类型。',
       lanRule: '检测为局域网时，所有书签统一使用主地址。',
@@ -185,6 +186,10 @@ const zhCN = {
     description: '可修改名称、图标、链接和所属分组，保存后会立即同步到首页。',
     submitButton: '保存书签',
     saved: (name: string) => `书签“${name}”已保存。`,
+    duplicateTitle: '复制书签',
+    duplicateDescription: '已填入原书签内容；调整后保存会创建一个新的独立书签。',
+    duplicateSubmitButton: '创建副本',
+    duplicated: (name: string) => `书签“${name}”的副本已创建。`,
     saveFailed: '保存书签失败，请稍后再试。',
   },
   bookmarkForm: {
@@ -251,6 +256,7 @@ const zhCN = {
     selectedDeleted: (count: number) => `已删除 ${count} 个书签引用。`,
     dropHint: '拖拽书签到这里即可迁移到当前分组',
     editAction: '修改书签',
+    duplicateAction: '复制书签',
     deleteAction: '删除书签',
   },
   settings: {
@@ -287,7 +293,8 @@ const zhCN = {
       label: '探测设置',
       description: '内外网健康检查地址',
       title: '探测设置',
-      summary: '优先使用这里配置的内外网健康地址判断网络模式；未完整配置时，会回退到第一个书签的探测逻辑。',
+      summary:
+        '优先使用这里配置的内外网健康地址判断网络模式；未完整配置时，会回退到第一个书签的探测逻辑。',
       connectionTitle: '健康检查地址',
       connectionHint: '这里只填写协议和主机/IP，系统会自动拼接固定的健康检查路径。',
       lanTitle: '内网健康地址',
@@ -298,7 +305,8 @@ const zhCN = {
       wanPlaceholder: '例如：nav.example.com',
       previewLabel: '最终地址',
       suffixHint: (path: string) => `固定路径为 ${path}，无需手动填写。`,
-      fallbackHint: '内外网地址需同时填写后才会优先用于自动检测；否则会回退到第一个书签的探测逻辑。',
+      fallbackHint:
+        '内外网地址需同时填写后才会优先用于自动检测；否则会回退到第一个书签的探测逻辑。',
       priorityReady: '当前状态：已完整配置，自动检测会优先使用这里的健康地址。',
       priorityFallback: '当前状态：配置未完成，自动检测仍会回退到第一个书签。',
       footerHint: '保存后会在下次自动检测时生效。',
@@ -636,6 +644,11 @@ const en: typeof zhCN = {
       'Update the name, icon, links, and group. Changes sync to the homepage right away after saving.',
     submitButton: 'Save Bookmark',
     saved: (name: string) => `Bookmark “${name}” saved.`,
+    duplicateTitle: 'Duplicate Bookmark',
+    duplicateDescription:
+      'The original bookmark details are prefilled. Saving creates a separate new bookmark.',
+    duplicateSubmitButton: 'Create Copy',
+    duplicated: (name: string) => `A copy of bookmark “${name}” was created.`,
     saveFailed: 'Failed to save bookmark. Please try again later.',
   },
   bookmarkForm: {
@@ -708,6 +721,7 @@ const en: typeof zhCN = {
       `${count} bookmark reference${count === 1 ? '' : 's'} deleted.`,
     dropHint: 'Drop a bookmark here to move it into this group',
     editAction: 'Edit Bookmark',
+    duplicateAction: 'Duplicate Bookmark',
     deleteAction: 'Delete Bookmark',
   },
   settings: {
