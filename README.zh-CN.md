@@ -6,6 +6,10 @@ HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家
 
 项目按单管理员设计，不提供游客模式。管理员登录后可以创建任意数量的场景；如果某个场景不希望被别人看到，还可以给它单独设置场景密码。
 
+## 致谢
+
+本项目是在 [Goalonez/smart-harbor](https://github.com/Goalonez/smart-harbor) 的基础上持续优化而来。感谢原作者开源了这个项目，为 HarborDeck 提供了很好的起点；本仓库在此基础上继续完善场景、书签管理、浏览器扩展和部署体验。
+
 ## 主要能力
 
 - 场景完全由后台创建、重命名、排序、设为默认、加密和删除，不写死为三个场景。
@@ -22,19 +26,31 @@ HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家
 
 ## 界面预览
 
-以下截图来自当前 Web 界面，和容器镜像中的布局一致。
+以下截图来自当前 HarborDeck Web 界面和浏览器扩展。
 
-![HarborDeck 首页](image/index.png)
+![HarborDeck 首页](docs/screenshots/home.png)
 
-![HarborDeck 设置](image/setting.png)
+![场景管理](docs/screenshots/scene-management.png)
 
-![HarborDeck 书签管理](image/bookmark.png)
+![分组管理](docs/screenshots/group-management.png)
 
-![HarborDeck 新标签页扩展](image/extension.png)
+![新建书签](docs/screenshots/new-bookmark.png)
 
-## 群晖远程镜像部署
+![批量添加书签](docs/screenshots/batch-add.png)
 
-项目自带适配群晖 Container Manager 的 Compose 文件。群晖会从 GitHub Container Registry 拉取已经构建好的多架构镜像，不需要在 NAS 上安装 Node.js，也不需要拉源码编译。
+![多选操作](docs/screenshots/multi-select.png)
+
+![私密场景密码保护](docs/screenshots/private-scene-password.png)
+
+![浏览器扩展快捷添加书签](docs/screenshots/extension-add-bookmark.png)
+
+![浏览器扩展设置](docs/screenshots/extension-settings.png)
+
+![网络探测设置](docs/screenshots/network-probe-settings.png)
+
+## Docker 部署
+
+项目提供通用 Docker Compose 配置，可用于 Docker Compose、群晖 Container Manager 或其他兼容环境。镜像从 GitHub Container Registry 拉取已经构建好的多架构版本，不需要在部署主机上安装 Node.js，也不需要拉源码编译。
 
 ```yaml
 services:
@@ -52,16 +68,16 @@ services:
       TZ: Asia/Shanghai
       HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
     volumes:
-      - /volume1/docker/harbor-deck/config:/app/config
+      - ./config:/app/config
     security_opt:
       - no-new-privileges:true
 ```
 
-Container Manager 操作步骤：
+部署步骤：
 
-1. 先创建 `/volume1/docker/harbor-deck/config`，或者只修改左侧宿主机路径。
-2. 用以上 YAML 创建项目并部署。
-3. 打开 `http://群晖IP:8080`，第一次访问时创建管理员账号。
+1. 创建宿主机配置目录，例如 `./config`；群晖环境可使用 `/volume1/docker/harbor-deck/config`。
+2. 按部署环境修改左侧宿主机路径，然后用以上 YAML 创建并启动项目。
+3. 打开 `http://服务器IP:8080`，第一次访问时创建管理员账号。
 4. 进入书签管理，创建场景和分组，然后添加或导入书签。
 
 容器内的 `/app/config` 不要修改。镜像支持 `linux/amd64` 和 `linux/arm64`。只有在确实需要自动跟随最新镜像时才把版本号改成 `latest`。
@@ -73,12 +89,12 @@ docker run -d \
   --name harbor-deck \
   --restart always \
   -p 8080:80 \
-  -v /volume1/docker/harbor-deck/config:/app/config \
+  -v ./config:/app/config \
   -e TZ=Asia/Shanghai \
   ghcr.io/sagesang/harbor-deck:1.4.5
 ```
 
-HTTPS 可以支持。应用容器内部监听 HTTP，建议在群晖反向代理、Caddy 或 Nginx Proxy Manager 中终止 TLS，再把 HTTPS 域名转发到容器的 8080 端口。
+HTTPS 可以支持。应用容器内部监听 HTTP，可使用任意反向代理（包括群晖反向代理、Caddy 或 Nginx Proxy Manager）终止 TLS，再把 HTTPS 域名转发到容器端口。
 
 ## 场景、分组与导入规则
 
@@ -88,7 +104,7 @@ HTTPS 可以支持。应用容器内部监听 HTTP，建议在群晖反向代理
 
 导入浏览器书签时先选择一个目标场景。比如浏览器里的 `Bookmarks Bar / Engineering / Frontend` 会被保存成一个同名路径分组，既保留层级语义，又适配首页当前的一级分组网格；根目录书签会进入 `Imported Bookmarks` 分组。
 
-## 集成搜索接口
+## 集成搜索接口（[API 文档](docs/api.md)）
 
 完整的接口清单、参数约束、返回示例和错误码请参阅 [`docs/api.md`](docs/api.md)。
 
@@ -150,6 +166,8 @@ npm run package:extension
 密码只保存哈希值。项目只有一个管理员账号，没有匿名模式。场景密码独立于管理员密码，只对当前浏览器会话有效；关闭浏览器、修改场景密码、恢复备份或重启服务后需要重新解锁。管理员连续登录失败 5 次会触发临时锁定。
 
 不要把 `config.json`、WebDAV 凭据和集成 Token 提交到 Git。配置目录应独立备份，镜像更新不会覆盖它。
+
+隐私政策：[`PRIVACY.md`](PRIVACY.md)
 
 ## 本地开发
 

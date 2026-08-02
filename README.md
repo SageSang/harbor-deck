@@ -6,6 +6,10 @@ HarborDeck is a self-hosted start page for people who keep the same services in 
 
 The project is designed for one administrator. There is no guest mode: the page is protected by the administrator login, while a scene may optionally have its own password when its bookmarks should stay out of sight.
 
+## Acknowledgements
+
+HarborDeck grew from [Goalonez/smart-harbor](https://github.com/Goalonez/smart-harbor). Many thanks to the original author for open-sourcing a solid foundation; this repository continues the work with richer scenes, bookmark management, browser-extension integration, and deployment improvements.
+
 ## What it does
 
 - Switch between any number of user-created scenes without duplicating bookmark definitions.
@@ -22,19 +26,31 @@ The project is designed for one administrator. There is no guest mode: the page 
 
 ## Screenshots
 
-The screenshots below are from the current web UI and use the same layouts shipped in the container image.
+The screenshots below show the current HarborDeck web UI and browser extension.
 
-![HarborDeck home page](image/index.png)
+![HarborDeck home page](docs/screenshots/home.png)
 
-![HarborDeck settings](image/setting.png)
+![Scene management](docs/screenshots/scene-management.png)
 
-![HarborDeck bookmark manager](image/bookmark.png)
+![Group management](docs/screenshots/group-management.png)
 
-![HarborDeck new-tab extension](image/extension.png)
+![Create a bookmark](docs/screenshots/new-bookmark.png)
 
-## Deploy on Synology with a remote image
+![Batch add bookmarks](docs/screenshots/batch-add.png)
 
-The repository includes a Compose file for Synology Container Manager. It pulls a multi-architecture image from GitHub Container Registry; the NAS does not need Node.js or a source checkout.
+![Multi-select operations](docs/screenshots/multi-select.png)
+
+![Private scene password protection](docs/screenshots/private-scene-password.png)
+
+![Quickly add a bookmark from the browser extension](docs/screenshots/extension-add-bookmark.png)
+
+![Browser extension settings](docs/screenshots/extension-settings.png)
+
+![Network probe settings](docs/screenshots/network-probe-settings.png)
+
+## Docker deployment
+
+The repository includes a generic Docker Compose configuration for Docker Compose, Synology Container Manager, and other compatible environments. It pulls a prebuilt multi-architecture image from GitHub Container Registry; the deployment host does not need Node.js or a source checkout.
 
 ```yaml
 services:
@@ -52,16 +68,16 @@ services:
       TZ: Asia/Shanghai
       HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
     volumes:
-      - /volume1/docker/harbor-deck/config:/app/config
+      - ./config:/app/config
     security_opt:
       - no-new-privileges:true
 ```
 
-In Container Manager:
+Deployment steps:
 
-1. Create `/volume1/docker/harbor-deck/config` (or change only the host-side path).
-2. Create a project from the YAML and deploy it.
-3. Open `http://<NAS-IP>:8080` and create the administrator account on the first visit.
+1. Create a host configuration directory, for example `./config`; on Synology, `/volume1/docker/harbor-deck/config` is also suitable.
+2. Adjust the host-side path for your environment, then create and start the project from the YAML.
+3. Open `http://<server-ip>:8080` and create the administrator account on the first visit.
 4. Create scenes and groups in Bookmark Management, then add or import bookmarks.
 
 The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.5` with `latest` only when you intentionally want automatic image updates.
@@ -73,12 +89,12 @@ docker run -d \
   --name harbor-deck \
   --restart always \
   -p 8080:80 \
-  -v /volume1/docker/harbor-deck/config:/app/config \
+  -v ./config:/app/config \
   -e TZ=Asia/Shanghai \
   ghcr.io/sagesang/harbor-deck:1.4.5
 ```
 
-HTTPS is supported by putting the container behind Synology Reverse Proxy, Caddy, Nginx Proxy Manager, or another TLS terminator. The application itself listens on HTTP inside the container; TLS termination belongs at the proxy layer.
+HTTPS is supported by putting the container behind any reverse proxy, including Synology Reverse Proxy, Caddy, or Nginx Proxy Manager. The application itself listens on HTTP inside the container; TLS termination belongs at the proxy layer.
 
 ## Scenes, groups, and imports
 
@@ -88,7 +104,7 @@ Each scene owns its group list. Bookmarks are shared definitions referenced by g
 
 The import flow asks for a target scene before reading the browser export. A nested folder such as `Bookmarks Bar / Engineering / Frontend` is represented as one group with that full path, so bookmarks remain grouped without requiring a second unsupported folder level in the homepage grid. A root-level bookmark is placed in `Imported Bookmarks`.
 
-## Integration API
+## Integration API ([API reference](docs/api.md))
 
 See the complete endpoint reference, request schemas, response examples, and error codes in [`docs/api.md`](docs/api.md).
 
@@ -150,6 +166,8 @@ The mounted directory contains `config.json`. The most important sections are:
 Passwords are stored as hashes. There is one administrator account and no anonymous mode. A scene password is independent of the admin password and is valid only for a browser session; closing the browser, changing the password, restoring a backup, or restarting the server requires unlocking again. Five failed admin logins trigger a temporary lockout.
 
 Do not commit `config.json`, WebDAV credentials, or the integration token to Git. Keep the mounted config directory backed up separately from the image.
+
+Privacy policy: [`PRIVACY.md`](PRIVACY.md)
 
 ## Local development
 
