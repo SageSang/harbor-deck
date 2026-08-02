@@ -149,7 +149,8 @@ export function ServiceGrid() {
   const activeSystemConfig = systemConfig ?? defaultSystemConfig
 
   const activeConfig = useMemo(() => cloneServicesConfig(config ?? defaultServicesConfig), [config])
-  const canDrag = searchKeyword.trim().length === 0 && !saveMutation.isPending
+  const isSearchActive = searchKeyword.trim().length > 0
+  const canDrag = !isSearchActive && !saveMutation.isPending
 
   const displayGroups = useMemo(() => {
     const scene =
@@ -362,7 +363,10 @@ export function ServiceGrid() {
   }
 
   function toggleGroupCollapse(groupId: string) {
-    if (!activeSceneId) return
+    // Search results temporarily expand their matching groups. Keep the
+    // persisted preference untouched while searching so clearing the query
+    // restores exactly the state the user had before searching.
+    if (!activeSceneId || isSearchActive) return
     const key = getGroupKey(activeSceneId, groupId)
     setCollapsedGroupKeys((current) => {
       const next = new Set(current)
@@ -661,7 +665,12 @@ export function ServiceGrid() {
       ) : null}
       <div ref={gridRef} className="flex w-full flex-wrap items-stretch gap-3 md:gap-3.5">
         {displayGroups.map((group, groupIndex) => {
-          const isCollapsed = Boolean(activeSceneId && group.groupId && collapsedGroupKeys.has(getGroupKey(activeSceneId, group.groupId)))
+          const isCollapsed = Boolean(
+            !isSearchActive &&
+              activeSceneId &&
+              group.groupId &&
+              collapsedGroupKeys.has(getGroupKey(activeSceneId, group.groupId))
+          )
           const isGroupDropTarget =
             dragOver?.groupIndex === group.actualGroupIndex &&
             typeof dragOver.serviceIndex === 'undefined'

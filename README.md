@@ -55,7 +55,7 @@ The repository includes a generic Docker Compose configuration for Docker Compos
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.5
+    image: ghcr.io/sagesang/harbor-deck:1.4.6
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -80,7 +80,7 @@ Deployment steps:
 3. Open `http://<server-ip>:8080` and create the administrator account on the first visit.
 4. Create scenes and groups in Bookmark Management, then add or import bookmarks.
 
-The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.5` with `latest` only when you intentionally want automatic image updates.
+The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.6` with `latest` only when you intentionally want automatic image updates.
 
 For a direct Docker command:
 
@@ -91,7 +91,7 @@ docker run -d \
   -p 8080:80 \
   -v ./config:/app/config \
   -e TZ=Asia/Shanghai \
-  ghcr.io/sagesang/harbor-deck:1.4.5
+  ghcr.io/sagesang/harbor-deck:1.4.6
 ```
 
 HTTPS is supported by putting the container behind any reverse proxy, including Synology Reverse Proxy, Caddy, or Nginx Proxy Manager. The application itself listens on HTTP inside the container; TLS termination belongs at the proxy layer.

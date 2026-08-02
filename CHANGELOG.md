@@ -12,6 +12,11 @@ This file records user-visible changes to HarborDeck. Detailed release bodies li
 
 - No unreleased changes.
 
+## v1.4.6 — 2026-08-03
+
+- Search results temporarily expand matching bookmark groups and restore each group's previous collapsed state after the search is cleared.
+- Published the HarborDeck 1.4.6 web image and extension release workflow.
+
 ## v1.4.5 — 2026-08-03
 
 - Aligned homepage group cards that share a flex row and vertically centered short group titles.
