@@ -57,7 +57,7 @@ async function setupAdmin(server: NonNullable<typeof app>, username = 'admin-use
 
 describe('auth module', () => {
   beforeEach(async () => {
-    tempConfigDir = await mkdtemp(path.join(os.tmpdir(), 'smart-harbor-auth-'))
+    tempConfigDir = await mkdtemp(path.join(os.tmpdir(), 'harbordeck-auth-'))
   })
 
   afterEach(async () => {

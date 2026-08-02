@@ -2,24 +2,19 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent }
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, CornerDownLeft, Search } from 'lucide-react'
 import { buildSearchUrl, getDefaultSearchEngine, getSearchEngines } from '@/config/searchEngines'
-import { resolveTargetUrl } from '@/core/navigation/resolveTargetUrl'
-import { resolveDirectUrl } from '@/core/navigation/resolveDirectUrl'
-import { openWithFallback } from '@/core/navigation/openWithFallback'
 import { defaultSystemConfig } from '@/features/config/api'
 import { useSaveSystemConfig } from '@/features/config/useSaveSystemConfig'
 import { useSystemConfig } from '@/features/config/useSystemConfig'
 import { useFeedback } from '@/features/feedback/useFeedback'
-import { useServices } from '@/features/services/useServices'
 import { Input } from '@/components/ui/input'
 import { getLocalizedSearchEngineName } from '@/i18n/messages'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
+import { resolveDirectUrl } from '@/core/navigation/resolveDirectUrl'
 
 export function SearchBox() {
-  const { services, isLoading } = useServices()
   const { data: systemConfig } = useSystemConfig()
   const saveSystemMutation = useSaveSystemConfig()
-  const networkMode = useAppStore((state) => state.networkMode)
   const searchKeyword = useAppStore((state) => state.searchKeyword)
   const setSearchKeyword = useAppStore((state) => state.setSearchKeyword)
   const { language, messages } = useI18n()
@@ -45,6 +40,9 @@ export function SearchBox() {
   const selectedSearchEngine =
     availableSearchEngines.find((engine) => engine.id === selectedEngineId) ?? defaultSearchEngine
   const selectedSearchEngineName = getLocalizedSearchEngineName(language, selectedSearchEngine)
+  const isEmbedded =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('embedded') === '1'
 
   useEffect(() => {
     setSelectedEngineId(defaultSearchEngine.id)
@@ -140,23 +138,9 @@ export function SearchBox() {
 
     event.preventDefault()
 
-    const directUrl = resolveDirectUrl(trimmedKeyword)
-    if (directUrl) {
-      void openWithFallback({ primary: directUrl }, { target: activeSystemConfig.clickOpenTarget })
-      return
-    }
-
-    if (services.length === 1) {
-      const service = services[0]
-      const urls = resolveTargetUrl(service, networkMode)
-      const openTarget = service.forceNewTab ? 'blank' : activeSystemConfig.clickOpenTarget
-      void openWithFallback(urls, { target: openTarget })
-      return
-    }
-
-    if (!isLoading && services.length === 0) {
-      window.location.assign(buildSearchUrl(selectedSearchEngine, trimmedKeyword))
-    }
+    window.location.assign(
+      resolveDirectUrl(trimmedKeyword) ?? buildSearchUrl(selectedSearchEngine, trimmedKeyword)
+    )
   }
 
   function handleSearchEngineSelect(nextEngineId: string) {
@@ -210,7 +194,7 @@ export function SearchBox() {
           </button>
         </div>
         <Input
-          autoFocus
+          autoFocus={!isEmbedded}
           type="text"
           enterKeyHint="search"
           placeholder={messages.common.searchPlaceholder}

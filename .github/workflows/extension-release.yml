@@ -52,8 +52,8 @@ jobs:
             {
               printf '\n---\n\n'
               printf '%s\n\n' '**插件下载 / Extension Download**'
-              printf '%s\n' '- 本次版本不包含插件更新；如需安装浏览器插件，请前往 GitHub Releases 下载最近一个附带 `smart-harbor-*.zip` 资产的版本。'
-              printf '%s\n' '- This release does not include extension updates. To install the browser extension, download the most recent release on GitHub Releases that includes a `smart-harbor-*.zip` asset.'
+              printf '%s\n' '- 本次版本不包含插件更新；如需安装浏览器插件，请前往 GitHub Releases 下载最近一个附带 `harbor-deck-*.zip` 资产的版本。'
+              printf '%s\n' '- This release does not include extension updates. To install the browser extension, download the most recent release on GitHub Releases that includes a `harbor-deck-*.zip` asset.'
             } >> "${body_path}"
           fi
 
@@ -81,7 +81,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: ${{ steps.release_body.outputs.body_path }}
-          files: extension/smart-harbor-${{ steps.release.outputs.tag }}.zip
+          files: extension/harbor-deck-${{ steps.release.outputs.tag }}.zip
           fail_on_unmatched_files: true
 
       - name: Publish GitHub release notes

@@ -24,7 +24,7 @@ dist-ssr
 dist-server
 /config
 extension/dist
-extension/smart-harbor-v*
+extension/harbor-deck-v*
 extension/*.zip
 /scripts/release.mjs
 AGENTS.md

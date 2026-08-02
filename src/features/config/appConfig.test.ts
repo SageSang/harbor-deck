@@ -5,7 +5,7 @@ describe('appConfig helpers', () => {
   it('fills missing app config sections with defaults', () => {
     expect(parseAppConfig({})).toEqual({
       system: {
-        appName: 'Smart Harbor',
+        appName: 'HarborDeck',
         darkMode: false,
         clickOpenTarget: 'self',
         middleClickOpenTarget: 'blank',
@@ -21,7 +21,7 @@ describe('appConfig helpers', () => {
           url: '',
           username: '',
           password: '',
-          remotePath: '/smart-harbor',
+        remotePath: '/harbor-deck',
           autoBackup: false,
           intervalDays: 7,
           maxVersions: 10,

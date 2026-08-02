@@ -1,8 +1,8 @@
 services:
-  smart-harbor:
-    image: ghcr.io/sagesang/multi-scenario-smart-harbor:1.4.2
+  harbor-deck:
+    image: ghcr.io/sagesang/harbor-deck:1.4.5
     pull_policy: always
-    container_name: smart-harbor
+    container_name: harbor-deck
     restart: always
     ports:
       - "8080:80"
@@ -11,8 +11,9 @@ services:
       PORT: "80"
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
+      HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
     volumes:
-      - /volume1/docker/smart-harbor/config:/app/config
+      - /volume1/docker/harbor-deck/config:/app/config
     security_opt:
       - no-new-privileges:true
     healthcheck:

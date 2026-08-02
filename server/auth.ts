@@ -5,14 +5,14 @@ import { authUsernameSchema } from '../src/config/schema.js'
 import { readSystemConfig, writeSystemConfig } from './configStore.js'
 import { createDeterministicPasswordHash, hashPassword, verifyPassword } from './password.js'
 
-const SESSION_COOKIE_NAME = 'smart_harbor_session'
+const SESSION_COOKIE_NAME = 'harbordeck_session'
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7
 const LOGIN_ATTEMPT_WINDOW_MS = 1000 * 60 * 10
 const LOGIN_MAX_ATTEMPTS = 5
 const LOGIN_BLOCK_MS = 1000 * 60 * 30
 const DUMMY_PASSWORD_HASH = createDeterministicPasswordHash(
-  'smart-harbor-dummy-password',
-  'smart-harbor-dummy-salt'
+  'harbordeck-dummy-password',
+  'harbordeck-dummy-salt'
 )
 
 const passwordSchema = z.string().min(12).max(128)

@@ -1,53 +1,47 @@
-# Smart Harbor
+# HarborDeck
 
-[中文](README.zh-CN.md)
+[中文说明](README.zh-CN.md)
 
-Smart Harbor is an intelligent start page for personal self-hosted services.
+HarborDeck is a self-hosted start page for people who keep the same services in several places: home, office, a private network, or a public URL. It combines scenes, groups, shared bookmarks, network-aware URLs, and a browser new-tab extension in one small Docker service.
 
-It automatically detects your current network environment and switches between LAN and public URLs to always choose the most suitable access point.
+The project is designed for one administrator. There is no guest mode: the page is protected by the administrator login, while a scene may optionally have its own password when its bookmarks should stay out of sight.
 
-## Preview
+## What it does
 
-### Home Page
+- Switch between any number of user-created scenes without duplicating bookmark definitions.
+- Give each scene its own ordered groups. A shared bookmark can appear in several scenes and in a different group in each scene.
+- Store a primary URL and an optional secondary URL for every bookmark. The page probes the configured network and opens the reachable address.
+- Import browser bookmarks into a selected scene. Nested browser folders become readable path-based groups instead of losing their hierarchy.
+- Add, edit, duplicate, move, multi-select, and delete bookmarks. Removing a bookmark from one scene does not remove it from another; an orphaned definition is cleaned up automatically.
+- Add an optional multi-line note to every bookmark.
+- Search the current scene, choose Google or another configured search engine, and always send Enter to the selected search engine even when local matches exist.
+- Protect scenes with a separate password and keep the unlock only for the current browser session.
+- Use the integration API from uTools or another shortcut launcher. A token is required and protected scenes are never returned.
+- Use the optional Chrome/Chromium extension to open the navigation page on every new tab and add the current page to one or more scene groups.
+- Back up and restore the JSON configuration through WebDAV.
 
-![Smart Harbor home page](image/index.png)
+## Screenshots
 
-### Settings Panel
+The screenshots below are from the current web UI and use the same layouts shipped in the container image.
 
-![Smart Harbor settings panel](image/setting.png)
+![HarborDeck home page](image/index.png)
 
-### Bookmark Manager
+![HarborDeck settings](image/setting.png)
 
-![Smart Harbor bookmark manager](image/bookmark.png)
+![HarborDeck bookmark manager](image/bookmark.png)
 
-### Chrome New Tab Extension
+![HarborDeck new-tab extension](image/extension.png)
 
-![Smart Harbor Chrome extension](image/extension.png)
+## Deploy on Synology with a remote image
 
-## Why Use It
-
-- Automatic LAN/WAN routing for each bookmark
-- Configurable navigation scenes with independent groups and ordering
-- Shared bookmark definitions that can be placed in multiple scenes
-- Optional per-scene passwords with session-scoped unlocking
-- Drag-and-drop bookmark groups with icon support
-- Built-in and custom search engines
-- WebDAV backup, restore, and version retention
-- Password-protected admin panel with lockout protection
-- Optional Chrome new tab extension
-
-## Quick Start
-
-### Docker Compose
-
-This repository includes a Synology-friendly `docker-compose.yml` that pulls a prebuilt multi-architecture image from GitHub Container Registry. Change the host config path if needed, then create or update the project in Synology Container Manager.
+The repository includes a Compose file for Synology Container Manager. It pulls a multi-architecture image from GitHub Container Registry; the NAS does not need Node.js or a source checkout.
 
 ```yaml
 services:
-  smart-harbor:
-    image: ghcr.io/sagesang/multi-scenario-smart-harbor:1.4.2
+  harbor-deck:
+    image: ghcr.io/sagesang/harbor-deck:1.4.5
     pull_policy: always
-    container_name: smart-harbor
+    container_name: harbor-deck
     restart: always
     ports:
       - "8080:80"
@@ -56,241 +50,128 @@ services:
       PORT: "80"
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
+      HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
     volumes:
-      - /volume1/docker/smart-harbor/config:/app/config
+      - /volume1/docker/harbor-deck/config:/app/config
     security_opt:
       - no-new-privileges:true
 ```
 
-The left side of the volume is a Synology host path. Create `/volume1/docker/smart-harbor/config` first, or replace it with the shared-folder path used on your NAS. The right side (`/app/config`) must stay unchanged.
+In Container Manager:
 
-### Docker Run
+1. Create `/volume1/docker/harbor-deck/config` (or change only the host-side path).
+2. Create a project from the YAML and deploy it.
+3. Open `http://<NAS-IP>:8080` and create the administrator account on the first visit.
+4. Create scenes and groups in Bookmark Management, then add or import bookmarks.
+
+The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.5` with `latest` only when you intentionally want automatic image updates.
+
+For a direct Docker command:
 
 ```bash
 docker run -d \
-  --name smart-harbor \
+  --name harbor-deck \
+  --restart always \
   -p 8080:80 \
-  -v ./smart-harbor/config:/app/config \
-  ghcr.io/sagesang/multi-scenario-smart-harbor:1.4.2
+  -v /volume1/docker/harbor-deck/config:/app/config \
+  -e TZ=Asia/Shanghai \
+  ghcr.io/sagesang/harbor-deck:1.4.5
 ```
 
-Then:
+HTTPS is supported by putting the container behind Synology Reverse Proxy, Caddy, Nginx Proxy Manager, or another TLS terminator. The application itself listens on HTTP inside the container; TLS termination belongs at the proxy layer.
 
-1. Open `http://localhost:8080`.
-2. Create your admin account on first visit.
-3. Create scenes and groups, then add or import bookmarks from the bookmark manager.
+## Scenes, groups, and imports
 
-## Configuration
+Scenes are data, not hard-coded UI choices. In the management page you can create, rename, reorder, set a default, password-protect, or delete them. The home page also provides group context actions for creating a bookmark, editing the group name, or deleting the complete group.
 
-On first start, Smart Harbor writes a single `config.json` into your mounted config directory.
+Each scene owns its group list. Bookmarks are shared definitions referenced by group IDs, so the same URL can be placed in both “Home” and “Work” without creating two independent records. When a bookmark is deleted from one scene, only that scene reference is removed. The bookmark record is deleted only when no scene references it.
 
-- Host path example: `./smart-harbor/config/config.json`
-- Container path: `/app/config/config.json`
+The import flow asks for a target scene before reading the browser export. A nested folder such as `Bookmarks Bar / Engineering / Frontend` is represented as one group with that full path, so bookmarks remain grouped without requiring a second unsupported folder level in the homepage grid. A root-level bookmark is placed in `Imported Bookmarks`.
 
-### Common fields
+## Integration API
 
-| Path | What it controls |
-| --- | --- |
-| `system.appName` | Site title shown in the page header and browser tab |
-| `system.darkMode` | Light or dark theme |
-| `system.clickOpenTarget` | Where normal clicks open services and search results |
-| `system.middleClickOpenTarget` | Where middle-click opens services and search results |
-| `system.defaultSearchEngine` | Default engine used by the search box |
-| `system.webdavBackup` | Backup destination, schedule, and retention policy |
-| `navigation.defaultSceneId` | Scene selected when no device preference exists |
-| `navigation.scenes[]` | Configurable scenes and their independent groups |
-| `navigation.bookmarks[]` | Shared bookmark definitions referenced by scene groups |
+See the complete endpoint reference, request schemas, response examples, and error codes in [`docs/api.md`](docs/api.md).
 
-<details>
-<summary>Full config reference</summary>
+Set `HARBORDECK_SEARCH_TOKEN` in the container environment. Every request must include:
 
-#### `system`
-
-| Path | Description | Notes |
-| --- | --- | --- |
-| `system.appName` | Application name shown in the UI and browser tab | Default `Smart Harbor` |
-| `system.darkMode` | Enables dark theme | `true` or `false` |
-| `system.clickOpenTarget` | Open target for normal clicks | `self` or `blank` |
-| `system.middleClickOpenTarget` | Open target for middle-click | `self` or `blank` |
-| `system.defaultSearchEngine` | Default search engine ID | Must match a built-in or custom engine |
-| `system.customSearchEngines[]` | Custom search engine list | Optional |
-| `system.customSearchEngines[].id` | Stable custom engine identifier | Lowercase letters, numbers, and hyphens |
-| `system.customSearchEngines[].name` | Display name for the custom engine | Non-empty string |
-| `system.customSearchEngines[].urlTemplate` | Search URL template | Must include `{keyword}` |
-| `system.webdavBackup.url` | WebDAV endpoint URL | Leave empty to disable backup |
-| `system.webdavBackup.username` | WebDAV username | Required when backup is configured |
-| `system.webdavBackup.password` | WebDAV password or app password | Required when backup is configured |
-| `system.webdavBackup.remotePath` | Remote backup folder | Default `/smart-harbor` |
-| `system.webdavBackup.autoBackup` | Enables scheduled backup | `true` or `false` |
-| `system.webdavBackup.intervalDays` | Days between automatic backups | Integer from `1` to `365` |
-| `system.webdavBackup.maxVersions` | Number of remote backup versions to keep | Integer from `1` to `365` |
-| `system.auth.username` | Admin username stored after setup | Created from the setup form |
-| `system.auth.passwordHash` | Hashed admin password | Never store plaintext here |
-
-#### `navigation`
-
-| Path | Description | Notes |
-| --- | --- | --- |
-| `navigation.defaultSceneId` | Default scene identifier | Must reference an existing scene |
-| `navigation.scenes[]` | Ordered scene list | At least one scene |
-| `navigation.scenes[].id` | Stable scene identifier | Lowercase letters, numbers, and hyphens |
-| `navigation.scenes[].name` | Scene display name | Non-empty string |
-| `navigation.scenes[].protected` | Whether the scene requires an extra password | Boolean |
-| `navigation.scenes[].passwordHash` | Server-managed scene password hash | Never store plaintext here |
-| `navigation.scenes[].groups[]` | Groups owned by this scene | Ordered array |
-| `navigation.scenes[].groups[].bookmarkIds[]` | Bookmark IDs shown in the group | References `navigation.bookmarks[].slug` |
-| `navigation.bookmarks[]` | Shared bookmark definitions | A bookmark may be referenced by multiple scenes |
-| `navigation.bookmarks[].slug` | Stable bookmark identifier | Lowercase letters, numbers, and hyphens |
-| `navigation.bookmarks[].name` | Bookmark display name | Non-empty string |
-| `navigation.bookmarks[].icon` | Lucide icon name | Optional |
-| `navigation.bookmarks[].primaryUrl` | Preferred address, usually LAN | Required URL |
-| `navigation.bookmarks[].secondaryUrl` | Fallback address, usually WAN | Optional URL |
-| `navigation.bookmarks[].probes[]` | Probe URLs used to detect network reachability | Optional; one or more URLs |
-| `navigation.bookmarks[].forceNewTab` | Always open this bookmark in a new tab | Optional boolean |
-
-</details>
-
-<details>
-<summary>Example <code>config.json</code></summary>
-
-```json
-{
-  "system": {
-    "appName": "Smart Harbor",
-    "darkMode": false,
-    "clickOpenTarget": "self",
-    "middleClickOpenTarget": "blank",
-    "defaultSearchEngine": "google",
-    "customSearchEngines": [
-      {
-        "id": "my-search",
-        "name": "My Search",
-        "urlTemplate": "https://example.com/search?q={keyword}"
-      }
-    ],
-    "webdavBackup": {
-      "url": "https://dav.example.com/remote.php/dav/files/demo",
-      "username": "demo",
-      "password": "app-password",
-      "remotePath": "/smart-harbor",
-      "autoBackup": true,
-      "intervalDays": 7,
-      "maxVersions": 10
-    },
-    "auth": {
-      "username": "admin",
-      "passwordHash": "<generated-after-setup>"
-    }
-  },
-  "navigation": {
-    "defaultSceneId": "personal",
-    "bookmarks": [
-      {
-        "slug": "proxmox",
-        "name": "Proxmox",
-        "icon": "Server",
-        "primaryUrl": "http://192.168.1.10:8006",
-        "secondaryUrl": "https://proxmox.example.com",
-        "probes": ["http://192.168.1.1"],
-        "forceNewTab": true
-      }
-    ],
-    "scenes": [
-      {
-        "id": "personal",
-        "name": "Personal",
-        "protected": false,
-        "groups": [
-          {
-            "id": "infrastructure",
-            "name": "Infrastructure",
-            "bookmarkIds": ["proxmox"]
-          }
-        ]
-      }
-    ]
-  }
-}
+```http
+X-HarborDeck-Search-Token: your-secret-token
 ```
 
-</details>
+Search bookmarks for uTools or another launcher:
 
-## Account And Security
+```bash
+curl \
+  -H "X-HarborDeck-Search-Token: $HARBORDECK_SEARCH_TOKEN" \
+  "http://localhost:8080/api/integrations/bookmarks/search?q=har&sceneId=all"
+```
 
-- First visit walks you through creating an admin account.
-- There is one administrator account and no guest mode.
-- Protected scenes are unlocked separately. The browser keeps their token in session storage, while the server expires it after one hour.
-- Editing ordinary bookmarks or groups does not end an unlocked scene session. Closing the browser/tab, changing the scene password, restoring a backup, or restarting the server does.
-- Remove the `system.auth` section from `config.json` if you need to reset login credentials.
-- After 5 failed login attempts, access is locked for 30 minutes.
+`q` is matched against the bookmark name, slug, primary URL, secondary URL, and note. `sceneId` may be a specific scene ID or `all` (omitted also means all scenes). Password-protected scenes are excluded, even when the administrator has unlocked them in the browser. Each result includes the scene/group context, `name`, and `url`; the secondary URL is returned when present, otherwise the primary URL is used.
 
-## Scene And Import Behavior
+The extension popup uses two additional token-protected endpoints:
 
-- Scenes can be created, renamed, copied, reordered, set as default, or deleted from the bookmark manager.
-- Each scene owns its groups and group ordering. Bookmark definitions are shared, so one bookmark can be placed in different groups across multiple scenes.
-- Adding a bookmark supports one or more `(scene, group)` placements.
-- Browser bookmark import first selects one target scene. Nested browser folders are flattened into one-level groups using the full folder path, for example `Bookmarks Bar / Dev / Frontend`. Root bookmarks go to `Imported Bookmarks`.
+- `GET /api/integrations/bookmarks/scenes` lists only scenes that can receive a bookmark.
+- `POST /api/integrations/bookmarks` accepts `{ name, primaryUrl, secondaryUrl?, note?, placements: [{ sceneId, groupId }] }` and adds the current page to one group per selected scene.
 
-## Chrome New Tab Extension
+## Browser extension
 
-Install the Chrome extension when you want every new tab to open Smart Harbor automatically.
-
-- `primaryUrl`: primary URL, usually your LAN URL
-- `fallbackUrl`: secondary URL, usually your WAN URL
-- `openMode`: `embedded` keeps Smart Harbor inside the new tab page; `direct` redirects immediately
-- `probeTimeoutMs`: request timeout for address detection, default `200`
-- Clicking the extension toolbar icon opens the settings page
-
-### Install
-
-Install Smart Harbor from the [Chrome Web Store](https://chromewebstore.google.com/detail/smart-harbor/jbghdmdpfmnkincfamcbolbcnlogedad), then click the extension icon to set your Smart Harbor URLs.
-
-### Build Locally
-
-For development or private testing, you can still build the extension locally:
+Build the extension with:
 
 ```bash
 npm run build:extension
 npm run package:extension
 ```
 
-Generated output:
+Install the generated unpacked directory from `chrome://extensions` with Developer mode enabled, or use the ZIP attached to a GitHub release.
 
-- Folder: `extension/smart-harbor-v<version>`
-- Zip: `extension/smart-harbor-v<version>.zip`
+The options page accepts:
 
-## Known Issues
+| Setting | Meaning |
+| --- | --- |
+| `primaryUrl` | Usually the LAN address |
+| `fallbackUrl` | Usually the public/WAN address |
+| `openMode=direct` | Redirect the new-tab page to the selected address |
+| `openMode=embedded` | Render the navigation page inside the new-tab page |
+| `probeTimeoutMs` | Reachability check timeout; default is 200 ms |
+| API token | Used by the “add current page” popup |
 
-- On iOS devices, when Smart Harbor is opened over HTTPS, the browser usually cannot probe HTTP LAN addresses from that page. In that case, automatic network detection may not be able to decide correctly between LAN and WAN URLs.
-- To work around this limitation, the network status dialog in the top-left corner of the homepage provides three direct options: `Auto detect`, `LAN`, and `WAN`. If detection fails on iOS, switch to the mode you need manually.
+The extension keeps only the last reachable address and its timestamp in a short-lived local cache. It never caches bookmark definitions or the server configuration. In direct mode, a fresh cache keeps the redirect fast; on a first or expired check, the extension leaves a short input-protection window. Keyboard input, paste, page navigation, or tab hiding cancels the redirect so a URL pasted into the browser address bar is not overwritten. Embedded mode appends `embedded=1` and disables automatic focus in the navigation search box, leaving the browser address bar usable.
 
-## Development
+## Configuration and security
+
+The mounted directory contains `config.json`. The most important sections are:
+
+| Section | Purpose |
+| --- | --- |
+| `system` | Theme, app title, click behavior, search engines, and WebDAV backup |
+| `navigation.scenes[]` | Scene names, passwords, groups, and ordered bookmark references |
+| `navigation.bookmarks[]` | Shared bookmark definitions, URLs, icon, note, and opening behavior |
+
+Passwords are stored as hashes. There is one administrator account and no anonymous mode. A scene password is independent of the admin password and is valid only for a browser session; closing the browser, changing the password, restoring a backup, or restarting the server requires unlocking again. Five failed admin logins trigger a temporary lockout.
+
+Do not commit `config.json`, WebDAV credentials, or the integration token to Git. Keep the mounted config directory backed up separately from the image.
+
+## Local development
 
 ```bash
 npm install
 npm run dev
 ```
 
-- Web: `http://localhost:3000`
-- API: `http://localhost:3001`
+- Web client: `http://localhost:3000`
+- API server: `http://localhost:3001`
 
-Useful commands:
+Useful checks:
 
 ```bash
 npm run lint
 npm run test
 npm run build
-npm run preview
+npm run build:extension
 ```
 
-## Tech Stack
+## Tech stack and license
 
 React 19, TypeScript, Vite, Tailwind CSS, Zustand, TanStack Query, Fastify, and Zod.
 
-## Thanks
-
-Thanks to OpenAI Codex and Claude for supporting implementation, iteration, and documentation work on this project.
-
-## License
-
-[Apache-2.0](LICENSE)
+Licensed under [Apache-2.0](LICENSE).

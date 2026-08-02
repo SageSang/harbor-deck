@@ -1,8 +1,8 @@
 import { Buffer } from 'node:buffer'
 import { appConfigSchema, type AppConfig, type WebdavBackupConfig } from '../src/config/schema.js'
 
-const BACKUP_FILENAME_PREFIX = 'smart-harbor-config-'
-const BACKUP_FILENAME_PATTERN = /^smart-harbor-config-(\d{8}T\d{9}Z)\.json$/
+const BACKUP_FILENAME_PREFIX = 'harbor-deck-config-'
+const BACKUP_FILENAME_PATTERN = /^harbor-deck-config-(\d{8}T\d{9}Z)\.json$/
 const DIRECTORY_EXISTS_STATUS = new Set([200, 201, 204, 405])
 
 type FetchLike = typeof fetch

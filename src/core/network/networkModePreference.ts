@@ -3,8 +3,10 @@ import type { NetworkMode } from './detectNetworkMode'
 export type NetworkModeStrategy = 'auto' | 'manual'
 export type ManualNetworkMode = Exclude<NetworkMode, 'unknown'>
 
-export const NETWORK_MODE_STRATEGY_STORAGE_KEY = 'smart-harbor-network-mode-strategy'
-export const MANUAL_NETWORK_MODE_STORAGE_KEY = 'smart-harbor-manual-network-mode'
+export const NETWORK_MODE_STRATEGY_STORAGE_KEY = 'harbordeck-network-mode-strategy'
+export const MANUAL_NETWORK_MODE_STORAGE_KEY = 'harbordeck-manual-network-mode'
+const LEGACY_NETWORK_MODE_STRATEGY_STORAGE_KEY = ['smart', '-harbor-network-mode-strategy'].join('')
+const LEGACY_MANUAL_NETWORK_MODE_STORAGE_KEY = ['smart', '-harbor-manual-network-mode'].join('')
 
 const DEFAULT_NETWORK_MODE_STRATEGY: NetworkModeStrategy = 'auto'
 const DEFAULT_MANUAL_NETWORK_MODE: ManualNetworkMode = 'lan'
@@ -17,13 +19,29 @@ function normalizeManualNetworkMode(value: string | null): ManualNetworkMode {
   return value === 'wan' ? 'wan' : DEFAULT_MANUAL_NETWORK_MODE
 }
 
+function readMigratedPreference(key: string, legacyKey: string) {
+  const current = window.localStorage.getItem(key)
+  if (current !== null) {
+    return current
+  }
+
+  const legacy = window.localStorage.getItem(legacyKey)
+  if (legacy !== null) {
+    window.localStorage.setItem(key, legacy)
+  }
+  return legacy
+}
+
 export function resolveInitialNetworkModeStrategy(): NetworkModeStrategy {
   if (typeof window === 'undefined') {
     return DEFAULT_NETWORK_MODE_STRATEGY
   }
 
   return normalizeNetworkModeStrategy(
-    window.localStorage.getItem(NETWORK_MODE_STRATEGY_STORAGE_KEY)
+    readMigratedPreference(
+      NETWORK_MODE_STRATEGY_STORAGE_KEY,
+      LEGACY_NETWORK_MODE_STRATEGY_STORAGE_KEY
+    )
   )
 }
 
@@ -32,7 +50,9 @@ export function resolveInitialManualNetworkMode(): ManualNetworkMode {
     return DEFAULT_MANUAL_NETWORK_MODE
   }
 
-  return normalizeManualNetworkMode(window.localStorage.getItem(MANUAL_NETWORK_MODE_STORAGE_KEY))
+  return normalizeManualNetworkMode(
+    readMigratedPreference(MANUAL_NETWORK_MODE_STORAGE_KEY, LEGACY_MANUAL_NETWORK_MODE_STORAGE_KEY)
+  )
 }
 
 export function persistNetworkModeStrategy(strategy: NetworkModeStrategy) {

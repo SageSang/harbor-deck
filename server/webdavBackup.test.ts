@@ -178,7 +178,7 @@ function createFetchImpl() {
 function createAppConfig(baseUrl: string, webdavBackup: Partial<WebdavBackupConfig>): AppConfig {
   return appConfigSchema.parse({
     system: {
-      appName: 'Smart Harbor Test',
+      appName: 'HarborDeck Test',
       darkMode: false,
       clickOpenTarget: 'self',
       middleClickOpenTarget: 'blank',

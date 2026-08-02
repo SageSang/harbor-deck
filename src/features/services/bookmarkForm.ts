@@ -18,6 +18,7 @@ export interface BookmarkPlacementFormValue {
 export interface BookmarkFormValues {
   placements: BookmarkPlacementFormValue[]
   name: string
+  note?: string
   slug: string
   icon: string
   primaryUrl: string
@@ -33,18 +34,26 @@ function getNextBookmarkIndex(config: NavigationConfig) {
   return config.bookmarks.length + 1
 }
 
-function createPlacement(config: NavigationConfig, sceneId: string): BookmarkPlacementFormValue {
+function createPlacement(
+  config: NavigationConfig,
+  sceneId: string,
+  groupId?: string | null
+): BookmarkPlacementFormValue {
   const scene = config.scenes.find((item) => item.id === sceneId) ?? config.scenes[0]
   return {
     sceneId: scene.id,
-    groupId: scene.groups[0]?.id ?? '',
+    groupId: scene.groups.some((group) => group.id === groupId)
+      ? groupId ?? ''
+      : scene.groups[0]?.id ?? '',
     newGroupName: '',
   }
 }
 
 export function createEmptyBookmarkForm(
   config: NavigationConfig,
-  sceneId?: string | null
+  sceneId?: string | null,
+  groupId?: string | null,
+  options?: { blank?: boolean }
 ): BookmarkFormValues {
   const messages = getCurrentMessages()
   const nextIndex = getNextBookmarkIndex(config)
@@ -52,15 +61,16 @@ export function createEmptyBookmarkForm(
     config.scenes.find((scene) => scene.id === sceneId)?.id ?? config.defaultSceneId
 
   return {
-    placements: [createPlacement(config, targetSceneId)],
-    name: messages.common.newBookmarkName(nextIndex),
+    placements: [createPlacement(config, targetSceneId, groupId)],
+    name: options?.blank ? '' : messages.common.newBookmarkName(nextIndex),
+    note: '',
     slug: buildUniqueNavigationId(
       `service-${nextIndex}`,
       config.bookmarks.map((bookmark) => bookmark.slug),
       'bookmark'
     ),
     icon: '',
-    primaryUrl: 'http://127.0.0.1',
+    primaryUrl: options?.blank ? '' : 'http://127.0.0.1',
     secondaryUrl: '',
     forceNewTab: false,
   }
@@ -76,6 +86,7 @@ export function createBookmarkFormFromService(
       newGroupName: '',
     })),
     name: service.name,
+    ...(service.note ? { note: service.note } : {}),
     slug: service.slug,
     icon: service.icon ?? '',
     primaryUrl: service.primaryUrl,
@@ -122,6 +133,7 @@ export function validateBookmarkForm(
   const bookmark = cleanServiceConfig({
     slug: nextSlug,
     name: values.name.trim(),
+    note: values.note?.trim() ?? '',
     icon: values.icon.trim() || undefined,
     primaryUrl: values.primaryUrl.trim(),
     secondaryUrl: values.secondaryUrl.trim(),

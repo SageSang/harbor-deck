@@ -12,7 +12,7 @@ const packageJson = JSON.parse(await fs.readFile(path.resolve(rootDir, 'package.
 const version = process.env.EXTENSION_VERSION || packageJson.version
 const artifactTag = process.env.EXTENSION_ARTIFACT_TAG || `v${version}`
 const normalizedArtifactTag = artifactTag.startsWith('v') ? artifactTag : `v${artifactTag}`
-const packageBaseName = `smart-harbor-${normalizedArtifactTag}`
+const packageBaseName = `harbor-deck-${normalizedArtifactTag}`
 const packageDir = path.resolve(extensionDir, packageBaseName)
 const zipPath = path.resolve(extensionDir, `${packageBaseName}.zip`)
 

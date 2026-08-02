@@ -21,6 +21,16 @@ import { createAuthService } from './auth.js'
 import { createWebdavBackupManager } from './webdavBackupManager.js'
 import { createSceneAccessService } from './sceneAccess.js'
 import { hashPassword, verifyPassword } from './password.js'
+import {
+  createIntegrationBookmark,
+  getIntegrationTokenStatus,
+  integrationBookmarkLookupQuerySchema,
+  integrationBookmarkBodySchema,
+  isIntegrationTokenValid,
+  lookupIntegrationBookmark,
+  readIntegrationTokenHeader,
+  searchNavigationBookmarks,
+} from './integrationApi.js'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -197,6 +207,14 @@ const sceneUnlockBodySchema = z.object({ password: z.string().min(1).max(128) })
 const scenePasswordBodySchema = z.object({
   password: z.string().min(6).max(128).nullable(),
 })
+const integrationSearchQuerySchema = z.object({
+  q: z.string().trim().min(1).max(200),
+  sceneId: z.string().trim().min(1).optional(),
+})
+
+function isIntegrationRequestAuthorized(request: FastifyRequest) {
+  return isIntegrationTokenValid(readIntegrationTokenHeader(request.headers))
+}
 
 export async function buildServer() {
   const app = Fastify({ logger: true, trustProxy: true })
@@ -271,6 +289,87 @@ export async function buildServer() {
   })
 
   app.get('/api/health', async () => ({ ok: true }))
+
+  app.get('/api/integrations/bookmarks/search', async (request, reply) => {
+    if (!getIntegrationTokenStatus()) {
+      return reply.code(503).send('HARBORDECK_SEARCH_TOKEN is not configured')
+    }
+    if (!isIntegrationRequestAuthorized(request)) {
+      return reply.code(401).send('Invalid integration token')
+    }
+
+    const query = integrationSearchQuerySchema.parse(request.query)
+    const navigation = await readNavigationConfig()
+    const scene = query.sceneId && query.sceneId !== 'all'
+      ? navigation.scenes.find((item) => item.id === query.sceneId)
+      : undefined
+    if (query.sceneId && query.sceneId !== 'all' && !scene) {
+      return reply.code(404).send('Scene not found')
+    }
+
+    return {
+      query: query.q,
+      sceneId: query.sceneId ?? null,
+      results: searchNavigationBookmarks(navigation, query.q, query.sceneId),
+    }
+  })
+
+  app.get('/api/integrations/bookmarks/scenes', async (request, reply) => {
+    if (!getIntegrationTokenStatus()) {
+      return reply.code(503).send('HARBORDECK_SEARCH_TOKEN is not configured')
+    }
+    if (!isIntegrationRequestAuthorized(request)) {
+      return reply.code(401).send('Invalid integration token')
+    }
+    const navigation = await readNavigationConfig()
+    return {
+      defaultSceneId: navigation.defaultSceneId,
+      scenes: navigation.scenes
+        .filter((scene) => !scene.protected)
+        .map((scene) => ({
+          id: scene.id,
+          name: scene.name,
+          groups: scene.groups.map((group) => ({ id: group.id, name: group.name })),
+        })),
+    }
+  })
+
+  app.get('/api/integrations/bookmarks/lookup', async (request, reply) => {
+    if (!getIntegrationTokenStatus()) {
+      return reply.code(503).send('HARBORDECK_SEARCH_TOKEN is not configured')
+    }
+    if (!isIntegrationRequestAuthorized(request)) {
+      return reply.code(401).send('Invalid integration token')
+    }
+
+    const query = integrationBookmarkLookupQuerySchema.parse(request.query)
+    const navigation = await readNavigationConfig()
+    return lookupIntegrationBookmark(navigation, query.url)
+  })
+
+  app.post('/api/integrations/bookmarks', async (request, reply) => {
+    if (!getIntegrationTokenStatus()) {
+      return reply.code(503).send('HARBORDECK_SEARCH_TOKEN is not configured')
+    }
+    if (!isIntegrationRequestAuthorized(request)) {
+      return reply.code(401).send('Invalid integration token')
+    }
+    try {
+      const body = integrationBookmarkBodySchema.parse(request.body)
+      const navigation = await readNavigationConfig()
+      const result = createIntegrationBookmark(navigation, body)
+      const savedNavigation = await writeNavigationConfig(result.navigation)
+      return {
+        created: result.created,
+        bookmark: result.bookmark,
+        placements: result.placements,
+        navigation: sanitizeNavigationConfig(savedNavigation),
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to add bookmark'
+      return reply.code(400).send(message)
+    }
+  })
 
   app.get('/api/auth/status', (request, reply) => authService.handleAuthStatus(request, reply))
   app.post('/api/auth/setup', (request, reply) => authService.handleSetup(request, reply))

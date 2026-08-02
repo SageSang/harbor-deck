@@ -9,7 +9,7 @@ import { useSystemConfig } from '@/features/config/useSystemConfig'
 import { useAppStore } from '@/store/appStore'
 import { SceneSwitcher } from '@/features/navigation/SceneSwitcher'
 
-const REPOSITORY_URL = 'https://github.com/SageSang/multi-scenario-smart-harbor'
+const REPOSITORY_URL = 'https://github.com/SageSang/harbor-deck'
 
 function GitHubMarkIcon() {
   return (
@@ -39,7 +39,7 @@ export function TopBar() {
   }, [setTheme, systemConfig?.darkMode])
 
   useEffect(() => {
-    document.title = `${systemConfig?.appName ?? 'Smart Harbor'} - ${messages.meta.pageTitleSuffix}`
+    document.title = `${systemConfig?.appName ?? 'HarborDeck'} - ${messages.meta.pageTitleSuffix}`
   }, [messages.meta.pageTitleSuffix, systemConfig?.appName])
 
   useEffect(() => {
@@ -104,8 +104,8 @@ export function TopBar() {
             <Wifi className="h-3.5 w-3.5" />
           </div>
           <h1 className="truncate whitespace-nowrap font-display text-[15px] font-semibold tracking-tight sm:text-base">
-            <span className="sm:hidden">Smart Harbor</span>
-            <span className="hidden sm:inline">{systemConfig?.appName ?? 'Smart Harbor'}</span>
+            <span className="sm:hidden">HarborDeck</span>
+            <span className="hidden sm:inline">{systemConfig?.appName ?? 'HarborDeck'}</span>
           </h1>
           <div className="relative" ref={networkInfoRef}>
             <button

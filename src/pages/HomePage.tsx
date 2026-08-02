@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { HeroClock } from '@/components/HeroClock'
 import { SearchBox } from '@/components/SearchBox'
 import { TopBar } from '@/components/TopBar'
@@ -8,14 +8,22 @@ import { useAppStore } from '@/store/appStore'
 import { useSystemConfig } from '@/features/config/useSystemConfig'
 import { useServices } from '@/features/services/useServices'
 import { detectNetworkMode } from '@/core/network/detectNetworkMode'
+import { useNavigationConfig } from '@/features/navigation/useNavigation'
 
 export function HomePage() {
   const networkModeStrategy = useAppStore((state) => state.networkModeStrategy)
   const setDetectedNetworkMode = useAppStore((state) => state.setDetectedNetworkMode)
   const error = useAppStore((state) => state.error)
   const { allServices } = useServices()
+  const navigationQuery = useNavigationConfig()
   const { data: systemConfig } = useSystemConfig()
   const { messages } = useI18n()
+  const networkProbeServices = useMemo(
+    () =>
+      navigationQuery.data?.bookmarks.map((bookmark) => ({ ...bookmark, category: 'all' })) ??
+      allServices,
+    [allServices, navigationQuery.data]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -26,7 +34,7 @@ export function HomePage() {
       }
     }
 
-    void detectNetworkMode(allServices, systemConfig?.networkProbe).then((mode) => {
+    void detectNetworkMode(networkProbeServices, systemConfig?.networkProbe).then((mode) => {
       if (!cancelled) {
         setDetectedNetworkMode(mode)
       }
@@ -35,7 +43,7 @@ export function HomePage() {
     return () => {
       cancelled = true
     }
-  }, [allServices, networkModeStrategy, setDetectedNetworkMode, systemConfig?.networkProbe])
+  }, [networkModeStrategy, networkProbeServices, setDetectedNetworkMode, systemConfig?.networkProbe])
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-background">

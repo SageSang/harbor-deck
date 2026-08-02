@@ -17,6 +17,16 @@ interface ChromeRuntimeNamespace {
   openOptionsPage(): Promise<void>
 }
 
+interface ChromeTab {
+  id?: number
+  title?: string
+  url?: string
+}
+
+interface ChromeTabsNamespace {
+  query(queryInfo: { active?: boolean; currentWindow?: boolean }): Promise<ChromeTab[]>
+}
+
 interface ChromeActionNamespace {
   onClicked: {
     addListener(callback: () => void): void
@@ -28,6 +38,7 @@ interface ChromeLike {
   permissions: ChromePermissionsNamespace
   runtime: ChromeRuntimeNamespace
   storage: ChromeStorageNamespace
+  tabs: ChromeTabsNamespace
 }
 
 declare const chrome: ChromeLike

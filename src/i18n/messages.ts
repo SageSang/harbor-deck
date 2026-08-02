@@ -2,7 +2,8 @@ import type { SearchEngineConfig, SearchEngineOption } from '@/config/searchEngi
 
 export type Language = 'zh-CN' | 'en'
 
-export const LANGUAGE_STORAGE_KEY = 'smart-harbor-language'
+export const LANGUAGE_STORAGE_KEY = 'harbordeck-language'
+const LEGACY_LANGUAGE_STORAGE_KEY = ['smart', '-harbor-language'].join('')
 export const DEFAULT_LANGUAGE: Language = 'zh-CN'
 
 const zhCN = {
@@ -182,6 +183,10 @@ const zhCN = {
     },
   },
   bookmarkEdit: {
+    createTitle: '新建书签',
+    createDescription: '在当前分组中新建书签，可选择其他场景和分组。',
+    createSubmitButton: '创建书签',
+    created: (name: string) => `书签“${name}”已创建。`,
     title: '编辑书签',
     description: '可修改名称、图标、链接和所属分组，保存后会立即同步到首页。',
     submitButton: '保存书签',
@@ -199,6 +204,9 @@ const zhCN = {
     groupHint: '先放进合适的分组即可，后续也可以再调整。',
     name: '书签名称 *',
     nameHint: '这是首页卡片上显示的名称。',
+    note: '备注',
+    notePlaceholder: '可选：记录登录方式、用途或其他提醒',
+    noteHint: '备注仅供管理和搜索使用，不会影响书签打开地址。',
     slug: '书签标识 *',
     slugHint: '用于唯一标识书签，建议使用简短英文；仅支持小写字母、数字和连字符。',
     icon: '图标',
@@ -265,6 +273,16 @@ const zhCN = {
     editAction: '修改书签',
     duplicateAction: '复制书签',
     deleteAction: '删除书签',
+    createBookmarkAction: '新建书签',
+    batchAddActionWithCount: (count: number) => `添加 ${count} 个到分组`,
+    batchAddTitle: '批量添加书签',
+    batchAddDescription: '选择要添加的场景和分组，每个场景只能选择一个分组。',
+    batchAddConfirmTitle: '确认移动分组',
+    batchAddConfirmMessage: (details: string) => `以下书签已在目标场景的其他分组中：\n${details}\n\n继续后将它们移动到该分组？`,
+    batchAddConfirmAction: '继续移动',
+    batchAdded: (count: number) => `已处理并添加 ${count} 个书签的分组引用。`,
+    collapseGroup: '折叠分组',
+    expandGroup: '展开分组',
   },
   settings: {
     buttonAria: '设置',
@@ -378,7 +396,7 @@ const zhCN = {
       usernameLabel: '用户名',
       passwordLabel: '密码',
       remotePathLabel: '远程路径',
-      remotePathHint: '例如：/smart-harbor/backups/prod，会自动逐级创建目录。',
+      remotePathHint: '例如：/harbor-deck/backups/prod，会自动逐级创建目录。',
       strategyTitle: '备份策略',
       strategyHint: '自动备份按“天”计算间隔；手动备份始终可单独执行。',
       autoBackupLabel: '启用自动备份',
@@ -386,7 +404,7 @@ const zhCN = {
       intervalDaysLabel: '备份间隔（天）',
       maxVersionsLabel: '最大保留版本数',
       versionsTitle: '远端版本',
-      versionsHint: '仅展示当前 WebDAV 路径下由 Smart Harbor 创建的配置版本。',
+      versionsHint: '仅展示当前 WebDAV 路径下由 HarborDeck 创建的配置版本。',
       versionsEmpty: '当前还没有可恢复的远端版本。',
       saved: 'WebDAV 备份配置已保存。',
       saveFailed: 'WebDAV 备份配置保存失败，请稍后再试。',
@@ -656,6 +674,10 @@ const en: typeof zhCN = {
       'The original bookmark details are prefilled. Saving creates a separate new bookmark.',
     duplicateSubmitButton: 'Create Copy',
     duplicated: (name: string) => `A copy of bookmark “${name}” was created.`,
+    createTitle: 'New Bookmark',
+    createDescription: 'Create a bookmark in the selected group. You can add more scene placements below.',
+    createSubmitButton: 'Create Bookmark',
+    created: (name: string) => `Bookmark “${name}” created.`,
     saveFailed: 'Failed to save bookmark. Please try again later.',
   },
   bookmarkForm: {
@@ -665,6 +687,9 @@ const en: typeof zhCN = {
     groupHint: 'Just place it in a suitable group for now. You can change it later.',
     name: 'Bookmark Name *',
     nameHint: 'This is the title shown on the homepage card.',
+    note: 'Note',
+    notePlaceholder: 'Optional: login method, purpose, or other reminders',
+    noteHint: 'Notes are for management and search only; they do not affect the bookmark URL.',
     slug: 'Bookmark Slug *',
     slugHint:
       'Used as the unique identifier. Short English text is recommended; only lowercase letters, numbers, and hyphens are allowed.',
@@ -738,6 +763,16 @@ const en: typeof zhCN = {
     editAction: 'Edit Bookmark',
     duplicateAction: 'Duplicate Bookmark',
     deleteAction: 'Delete Bookmark',
+    createBookmarkAction: 'New Bookmark',
+    batchAddActionWithCount: (count: number) => `Add ${count} to groups`,
+    batchAddTitle: 'Batch Add Bookmarks',
+    batchAddDescription: 'Choose a scene and group for each target scene. Only one group can be selected per scene.',
+    batchAddConfirmTitle: 'Confirm group move',
+    batchAddConfirmMessage: (details: string) => `These bookmarks already belong to another group in the target scene:\n${details}\n\nContinue and move them to the selected group?`,
+    batchAddConfirmAction: 'Move and continue',
+    batchAdded: (count: number) => `Added group references for ${count} bookmark(s).`,
+    collapseGroup: 'Collapse group',
+    expandGroup: 'Expand group',
   },
   settings: {
     buttonAria: 'Settings',
@@ -862,7 +897,7 @@ const en: typeof zhCN = {
       passwordLabel: 'Password',
       remotePathLabel: 'Remote Path',
       remotePathHint:
-        'Example: /smart-harbor/backups/prod. Missing folders are created automatically.',
+        'Example: /harbor-deck/backups/prod. Missing folders are created automatically.',
       strategyTitle: 'Backup Policy',
       strategyHint:
         'Automatic backup uses a day-based interval. Manual backup can always run separately.',
@@ -873,7 +908,7 @@ const en: typeof zhCN = {
       maxVersionsLabel: 'Max Versions to Keep',
       versionsTitle: 'Remote Versions',
       versionsHint:
-        'Only versions created by Smart Harbor under the current WebDAV path are shown.',
+        'Only versions created by HarborDeck under the current WebDAV path are shown.',
       versionsEmpty: 'No remote versions are available yet.',
       saved: 'WebDAV backup settings saved.',
       saveFailed: 'Failed to save WebDAV backup settings. Please try again later.',
@@ -978,7 +1013,16 @@ export function resolveInitialLanguage(): Language {
     return DEFAULT_LANGUAGE
   }
 
-  return normalizeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY))
+  const current = window.localStorage.getItem(LANGUAGE_STORAGE_KEY)
+  if (current !== null) {
+    return normalizeLanguage(current)
+  }
+
+  const legacy = window.localStorage.getItem(LEGACY_LANGUAGE_STORAGE_KEY)
+  if (legacy !== null) {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, legacy)
+  }
+  return normalizeLanguage(legacy)
 }
 
 export function persistLanguage(language: Language) {

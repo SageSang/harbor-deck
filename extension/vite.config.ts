@@ -13,6 +13,7 @@ export default defineConfig({
       input: {
         newtab: path.resolve(__dirname, 'newtab.html'),
         options: path.resolve(__dirname, 'options.html'),
+        popup: path.resolve(__dirname, 'popup.html'),
         background: path.resolve(__dirname, 'src/background.ts'),
       },
       output: {

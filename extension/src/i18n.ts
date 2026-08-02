@@ -38,6 +38,9 @@ const messages = {
       unconfiguredTitle: '先配置导航页地址',
       unconfiguredDescription: '先到设置页填写主地址和切换地址，再选择打开方式。',
       openSettingsButton: '打开配置页',
+      redirectCancelledTitle: '已暂停自动跳转',
+      redirectCancelledDescription: '检测到你正在输入或打开其他页面，导航页不会打断当前操作。',
+      openNavigationButton: '打开导航页',
       noticeOpeningTitle: '正在打开导航页',
       noticeFallbackTitle: '已切换地址',
       statusByReason: {
@@ -67,7 +70,7 @@ const messages = {
       openModeDirect: 'Direct',
       openModeEmbedded: 'Embedded',
       openModeHint:
-        'Direct is recommended. In embedded mode, some pages may not display correctly. For those bookmarks, turn on "Force open in new tab" in Smart Harbor.',
+        'Direct is recommended. In embedded mode, some pages may not display correctly. For those bookmarks, turn on "Force open in new tab" in HarborDeck.',
       probeTimeoutLabel: 'Check timeout (ms)',
       probeTimeoutHint: (defaultTimeoutMs: number, cacheSeconds: number) =>
         `Default ${defaultTimeoutMs}ms. Lower is faster, higher is safer. The last successful address is cached for ${cacheSeconds} seconds.`,
@@ -81,16 +84,20 @@ const messages = {
       statusSaveFailed: 'Save failed. Please try again.',
     },
     newtab: {
-      loadingTitle: 'Opening Smart Harbor',
+      loadingTitle: 'Opening HarborDeck',
       loadingHint: 'Please wait...',
       unconfiguredTitle: 'Set the navigation page first',
       unconfiguredDescription:
         'Open settings, fill in the primary and secondary URLs, then choose how the page should open.',
       openSettingsButton: 'Open Settings',
-      noticeOpeningTitle: 'Opening Smart Harbor',
+      redirectCancelledTitle: 'Auto-redirect paused',
+      redirectCancelledDescription:
+        'Your input or navigation was detected, so the navigation page will not interrupt it.',
+      openNavigationButton: 'Open navigation page',
+      noticeOpeningTitle: 'Opening HarborDeck',
       noticeFallbackTitle: 'Switched to secondary URL',
       statusByReason: {
-        primary: 'Primary address is available. Opening Smart Harbor.',
+        primary: 'Primary address is available. Opening HarborDeck.',
         fallback: 'Primary address is unavailable. Switched to the secondary URL.',
         'primary-unverified': 'The primary address could not be verified, so it is being opened directly.',
         'fallback-unverified':

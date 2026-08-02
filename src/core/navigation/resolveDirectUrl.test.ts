@@ -18,7 +18,7 @@ describe('resolveDirectUrl', () => {
   })
 
   it('returns null for normal search keywords', () => {
-    expect(resolveDirectUrl('smart harbor')).toBeNull()
+    expect(resolveDirectUrl('harbordeck')).toBeNull()
     expect(resolveDirectUrl('just-a-keyword')).toBeNull()
   })
 

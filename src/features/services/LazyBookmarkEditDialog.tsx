@@ -5,7 +5,9 @@ interface BookmarkEditDialogProps {
   open: boolean
   config?: NavigationConfig
   serviceSlug: string | null
-  mode?: 'edit' | 'duplicate'
+  mode?: 'edit' | 'duplicate' | 'create'
+  initialSceneId?: string | null
+  initialGroupId?: string | null
   onClose: () => void
 }
 

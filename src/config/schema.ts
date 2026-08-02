@@ -39,6 +39,7 @@ export const networkProbeProtocolSchema = z.enum(networkProbeProtocols)
 const canonicalServiceConfigSchema = z.object({
   slug: slugSchema,
   name: trimmedString,
+  note: z.string().max(5000).optional(),
   icon: z.string().trim().min(1).optional(),
   primaryUrl: z.string().trim().url(),
   secondaryUrl: optionalUrl,
@@ -49,6 +50,7 @@ const canonicalServiceConfigSchema = z.object({
 const legacyServiceConfigSchema = z.object({
   slug: slugSchema,
   name: trimmedString,
+  note: z.string().max(5000).optional(),
   icon: z.string().trim().min(1).optional(),
   lanUrl: z.string().trim().url(),
   wanUrl: optionalUrl,
@@ -66,6 +68,7 @@ export const serviceConfigSchema = z
     return {
       slug: service.slug,
       name: service.name,
+      note: service.note,
       icon: service.icon,
       primaryUrl: service.lanUrl,
       secondaryUrl: service.wanUrl,
@@ -247,7 +250,7 @@ export const webdavBackupConfigSchema = z
     url: z.string().trim().default(''),
     username: z.string().trim().default(''),
     password: z.string().default(''),
-    remotePath: z.string().trim().default('/smart-harbor'),
+    remotePath: z.string().trim().default('/harbor-deck'),
     autoBackup: z.boolean().default(false),
     intervalDays: positiveInteger.max(365).default(7),
     maxVersions: positiveInteger.max(365).default(10),
@@ -325,7 +328,7 @@ export const networkProbeConfigSchema = z
 
 export const systemConfigSchema = z
   .object({
-    appName: trimmedString.default('Smart Harbor'),
+    appName: trimmedString.default('HarborDeck'),
     darkMode: z.boolean().default(false),
     clickOpenTarget: openTargetSchema.default('self'),
     middleClickOpenTarget: openTargetSchema.default('blank'),

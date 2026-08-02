@@ -16,10 +16,10 @@ const extensionIcons = {
 
 const manifest = {
   manifest_version: 3,
-  name: 'Smart Harbor',
+  name: 'HarborDeck',
   version,
-  description: 'Use Smart Harbor as the Chrome new tab page with automatic primary/secondary URL switching.',
-  permissions: ['storage', 'permissions'],
+  description: 'Use HarborDeck as the Chrome new tab page with automatic primary/secondary URL switching.',
+  permissions: ['storage', 'permissions', 'activeTab'],
   optional_host_permissions: ['http://*/*', 'https://*/*'],
   icons: extensionIcons,
   background: {
@@ -27,8 +27,9 @@ const manifest = {
     type: 'module',
   },
   action: {
-    default_title: 'Smart Harbor Settings',
+    default_title: 'HarborDeck Settings',
     default_icon: extensionIcons,
+    default_popup: 'popup.html',
   },
   options_ui: {
     page: 'options.html',

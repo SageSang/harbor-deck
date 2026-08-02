@@ -1,7 +1,8 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, Copy, Pencil, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Copy, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { BookmarkBatchPlacementDialog } from '@/features/services/BookmarkBatchPlacementDialog'
 import { GroupRenameDialog } from '@/features/services/GroupRenameDialog'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
@@ -12,6 +13,8 @@ import { LazyBookmarkEditDialog } from '@/features/services/LazyBookmarkEditDial
 import { cloneServicesConfig, defaultServicesConfig } from '@/features/services/servicesConfig'
 import {
   findScene,
+  addBookmarksToSceneGroups,
+  getBookmarkPlacementConflicts,
   moveBookmarksInScene,
   renameGroupInScene,
   removeBookmarksFromScene,
@@ -20,6 +23,7 @@ import {
 } from '@/features/navigation/navigationConfig'
 import { useNavigationConfig, useSaveNavigationConfig } from '@/features/navigation/useNavigation'
 import { ServiceCard } from './ServiceCard'
+import { getGroupKey, persistCollapsedGroupKeys, readCollapsedGroupKeys } from '@/features/navigation/groupPreference'
 import { preloadServiceIcons } from './iconRegistry'
 import { useServices } from './useServices'
 
@@ -51,8 +55,10 @@ interface SelectionContextMenuState {
 }
 
 interface BookmarkDialogState {
-  mode: 'edit' | 'duplicate'
-  slug: string
+  mode: 'edit' | 'duplicate' | 'create'
+  slug: string | null
+  initialSceneId?: string | null
+  initialGroupId?: string | null
 }
 
 interface GroupRenameState {
@@ -63,7 +69,10 @@ interface GroupRenameState {
 type ContextMenuState = BookmarkContextMenuState | GroupContextMenuState | SelectionContextMenuState
 
 const DESKTOP_SECTION_HORIZONTAL_PADDING_PX = 24
-const DESKTOP_LABEL_WIDTH_PX = 84
+// Keep the group label wide enough for normal folder paths while leaving a
+// predictable amount of room for the desktop card columns. The label may wrap
+// up to three lines; flex-row stretching keeps adjacent groups aligned.
+const DESKTOP_LABEL_WIDTH_PX = 144
 const DESKTOP_SECTION_GAP_PX = 12
 const DESKTOP_GRID_HORIZONTAL_PADDING_PX = 12
 const DESKTOP_CARD_GAP_PX = 10
@@ -101,6 +110,7 @@ export function ServiceGrid() {
   const { data: systemConfig } = useSystemConfig()
   const navigationQuery = useNavigationConfig()
   const activeSceneId = useAppStore((state) => state.activeSceneId)
+  const sceneTokens = useAppStore((state) => state.sceneTokens)
   const saveMutation = useSaveNavigationConfig()
   const { showToast, confirm } = useFeedback()
   const { messages } = useI18n()
@@ -110,6 +120,10 @@ export function ServiceGrid() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
   const [bookmarkDialog, setBookmarkDialog] = useState<BookmarkDialogState | null>(null)
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false)
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(
+    () => new Set(readCollapsedGroupKeys())
+  )
   const [renamingGroup, setRenamingGroup] = useState<GroupRenameState | null>(null)
   const [gridWidth, setGridWidth] = useState(0)
   const [desktopColumnCount, setDesktopColumnCount] = useState(() => {
@@ -206,6 +220,10 @@ export function ServiceGrid() {
     setSelectionMode(false)
     setSelectedSlugs(new Set())
   }, [activeSceneId, searchKeyword])
+
+  useEffect(() => {
+    persistCollapsedGroupKeys(collapsedGroupKeys)
+  }, [collapsedGroupKeys])
 
   useEffect(() => {
     if (selectionMode && selectedSlugs.size === 0) {
@@ -343,6 +361,20 @@ export function ServiceGrid() {
     setContextMenu(null)
   }
 
+  function toggleGroupCollapse(groupId: string) {
+    if (!activeSceneId) return
+    const key = getGroupKey(activeSceneId, groupId)
+    setCollapsedGroupKeys((current) => {
+      const next = new Set(current)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
   function commitDrop(targetGroupIndex: number, targetServiceIndex?: number) {
     if (draggingSlugs.length === 0) {
       return
@@ -451,6 +483,50 @@ export function ServiceGrid() {
         showToast({ type: 'error', message })
       },
     })
+  }
+
+  async function handleBatchAdd(placements: { sceneId: string; groupId: string }[]) {
+    const navigation = navigationQuery.data
+    const slugs = Array.from(new Set(selectedSlugs))
+    if (!navigation || slugs.length === 0 || placements.length === 0) return
+
+    const conflicts = getBookmarkPlacementConflicts(navigation, slugs, placements)
+    if (conflicts.length > 0) {
+      const details = Array.from(
+        new Set(
+          conflicts.map((conflict) => {
+            const bookmark = navigation.bookmarks.find((item) => item.slug === conflict.bookmarkId)
+            const scene = navigation.scenes.find((item) => item.id === conflict.sceneId)
+            return `${bookmark?.name ?? conflict.bookmarkId} — ${scene?.name ?? conflict.sceneId} / ${conflict.groupName}`
+          })
+        )
+      ).join('\n')
+      const confirmed = await confirm({
+        title: messages.serviceGrid.batchAddConfirmTitle,
+        message: messages.serviceGrid.batchAddConfirmMessage(details),
+        confirmLabel: messages.serviceGrid.batchAddConfirmAction,
+        cancelLabel: messages.common.cancel,
+      })
+      if (!confirmed) return
+    }
+
+    try {
+      const nextConfig = addBookmarksToSceneGroups(navigation, slugs, placements, conflicts.length > 0)
+      saveMutation.mutate(nextConfig, {
+        onSuccess: () => {
+          setBatchDialogOpen(false)
+          leaveSelectionMode()
+          showToast({ type: 'success', message: messages.serviceGrid.batchAdded(slugs.length) })
+        },
+        onError: (error) => {
+          const message = error instanceof Error ? error.message : messages.serviceGrid.deleteFailed
+          showToast({ type: 'error', message })
+        },
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : messages.serviceGrid.deleteFailed
+      showToast({ type: 'error', message })
+    }
   }
 
   async function handleDeleteGroup(groupId: string, groupName: string) {
@@ -583,14 +659,15 @@ export function ServiceGrid() {
           </div>
         </div>
       ) : null}
-      <div ref={gridRef} className="flex w-full flex-wrap items-start gap-3 md:gap-3.5">
+      <div ref={gridRef} className="flex w-full flex-wrap items-stretch gap-3 md:gap-3.5">
         {displayGroups.map((group, groupIndex) => {
+          const isCollapsed = Boolean(activeSceneId && group.groupId && collapsedGroupKeys.has(getGroupKey(activeSceneId, group.groupId)))
           const isGroupDropTarget =
             dragOver?.groupIndex === group.actualGroupIndex &&
             typeof dragOver.serviceIndex === 'undefined'
-          const compactGroupWidth = getCompactGroupWidth(group.services.length, desktopCardWidth)
+          const compactGroupWidth = getCompactGroupWidth(isCollapsed ? 0 : group.services.length, desktopCardWidth)
           const canKeepSingleRow =
-            desktopColumnCount > 0 && group.services.length > 0 && compactGroupWidth <= gridWidth
+            isCollapsed || (desktopColumnCount > 0 && group.services.length > 0 && compactGroupWidth <= gridWidth)
           const compactGridStyle = canKeepSingleRow
             ? ({
                 '--desktop-card-width': `${desktopCardWidth}px`,
@@ -600,11 +677,15 @@ export function ServiceGrid() {
           return (
             <section
               key={group.category}
-              className={`w-full rounded-[1.55rem] border border-border/75 bg-card/62 p-2.5 shadow-[0_16px_34px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition duration-300 md:p-3 dark:bg-card/60 dark:shadow-[0_18px_44px_rgba(0,0,0,0.28)] ${canKeepSingleRow ? 'lg:w-fit lg:flex-none' : 'lg:flex-1 lg:basis-full'} ${isGroupDropTarget ? 'border-primary/40 ring-2 ring-primary/10' : ''}`}
+              className={`flex w-full flex-col rounded-[1.55rem] border border-border/75 bg-card/62 p-2.5 shadow-[0_16px_34px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition duration-300 md:p-3 dark:bg-card/60 dark:shadow-[0_18px_44px_rgba(0,0,0,0.28)] ${canKeepSingleRow ? 'lg:w-fit lg:flex-none' : 'lg:flex-1 lg:basis-full'} ${isGroupDropTarget ? 'border-primary/40 ring-2 ring-primary/10' : ''}`}
             >
-              <div className="flex flex-col gap-2.5 md:flex-row md:items-start md:gap-3">
+              <div className="flex flex-1 flex-col gap-2.5 md:h-full md:flex-row md:items-stretch md:gap-3">
                 <div
-                  className="flex w-full shrink-0 cursor-context-menu items-center justify-center rounded-[1.15rem] border border-border/70 bg-[linear-gradient(180deg,hsl(var(--background)/0.96),hsl(var(--background)/0.84))] px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:w-[5.25rem] md:flex-col md:justify-center md:self-stretch"
+                  className="relative flex w-full shrink-0 cursor-pointer items-center justify-center rounded-[1.15rem] border border-border/70 bg-[linear-gradient(180deg,hsl(var(--background)/0.96),hsl(var(--background)/0.84))] px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:min-h-[76px] md:w-[9rem] md:flex-col md:justify-center md:self-stretch"
+                  title={isCollapsed ? messages.serviceGrid.expandGroup : messages.serviceGrid.collapseGroup}
+                  onClick={() => {
+                    if (group.groupId) toggleGroupCollapse(group.groupId)
+                  }}
                   onContextMenu={(event) => {
                     event.preventDefault()
                     if (selectionMode || !group.groupId) {
@@ -619,15 +700,32 @@ export function ServiceGrid() {
                     })
                   }}
                 >
-                  <h3 className="break-words text-[14px] font-semibold leading-5 tracking-tight text-foreground md:text-[15px]">
-                    {group.category}
-                  </h3>
-                  <span className="mt-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  <div className="w-full min-w-0 px-1 md:px-2">
+                    <h3
+                      className="w-full min-w-0 overflow-hidden break-words text-center text-[14px] font-semibold leading-5 tracking-tight text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] md:text-[15px]"
+                      title={group.category}
+                    >
+                      {group.category}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={isCollapsed ? messages.serviceGrid.expandGroup : messages.serviceGrid.collapseGroup}
+                    title={isCollapsed ? messages.serviceGrid.expandGroup : messages.serviceGrid.collapseGroup}
+                    className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-primary/70 transition hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      if (group.groupId) toggleGroupCollapse(group.groupId)
+                    }}
+                  >
+                    {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </button>
+                  <div className="mt-1 max-w-full rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
                     {messages.common.itemCount(group.services.length)}
-                  </span>
+                  </div>
                 </div>
 
-                <div
+                {!isCollapsed ? <div
                   className={`grid min-h-[76px] w-full flex-1 grid-cols-2 gap-2 rounded-[1.15rem] bg-background/34 p-1 transition sm:grid-cols-3 md:grid-cols-4 md:gap-2.5 md:p-1.5 ${canKeepSingleRow ? 'lg:w-fit lg:flex-none lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[var(--desktop-card-width)]' : 'lg:grid-cols-6 xl:grid-cols-8'} ${isGroupDropTarget ? 'bg-primary/6 ring-1 ring-primary/10' : ''}`}
                   style={compactGridStyle}
                   onDragOver={(event) => {
@@ -773,7 +871,7 @@ export function ServiceGrid() {
                       {messages.serviceGrid.dropHint}
                     </div>
                   )}
-                </div>
+                </div> : null}
               </div>
             </section>
           )
@@ -785,7 +883,20 @@ export function ServiceGrid() {
         config={navigationQuery.data}
         serviceSlug={bookmarkDialog?.slug ?? null}
         mode={bookmarkDialog?.mode}
+        initialSceneId={bookmarkDialog?.initialSceneId}
+        initialGroupId={bookmarkDialog?.initialGroupId}
         onClose={() => setBookmarkDialog(null)}
+      />
+
+      <BookmarkBatchPlacementDialog
+        open={batchDialogOpen}
+        navigation={navigationQuery.data}
+        selectedSlugs={Array.from(selectedSlugs)}
+        activeSceneId={activeSceneId}
+        sceneTokens={sceneTokens}
+        saving={saveMutation.isPending}
+        onClose={() => setBatchDialogOpen(false)}
+        onConfirm={(placements) => void handleBatchAdd(placements)}
       />
 
       <GroupRenameDialog
@@ -847,6 +958,22 @@ export function ServiceGrid() {
                   <button
                     type="button"
                     onClick={() => {
+                      setBookmarkDialog({
+                        mode: 'create',
+                        slug: null,
+                        initialSceneId: activeSceneId,
+                        initialGroupId: contextMenu.groupId,
+                      })
+                      setContextMenu(null)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                  >
+                    <Plus className="h-4 w-4" />
+                    {messages.serviceGrid.createBookmarkAction}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
                       setRenamingGroup({
                         groupId: contextMenu.groupId,
                         groupName: contextMenu.groupName,
@@ -871,14 +998,27 @@ export function ServiceGrid() {
                 </>
               ) : null}
               {contextMenu.kind === 'selection' ? (
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteSelected(contextMenu.slugs)}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {messages.serviceGrid.deleteSelectedActionWithCount(contextMenu.slugs.length)}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchDialogOpen(true)
+                      setContextMenu(null)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                  >
+                    <Plus className="h-4 w-4" />
+                    {messages.serviceGrid.batchAddActionWithCount(contextMenu.slugs.length)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteSelected(contextMenu.slugs)}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {messages.serviceGrid.deleteSelectedActionWithCount(contextMenu.slugs.length)}
+                  </button>
+                </>
               ) : null}
             </div>
           </div>,

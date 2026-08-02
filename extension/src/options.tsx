@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { Eye, EyeOff } from 'lucide-react'
 import { getMessages } from '@extension/i18n'
 import { requestOriginPermissions } from '@extension/network'
 import {
@@ -17,7 +18,7 @@ import {
 import type { ExtensionLanguage, ExtensionSettings, OpenMode } from '@extension/types'
 import './styles.css'
 
-const REPOSITORY_URL = 'https://github.com/Goalonez/smart-harbor'
+const REPOSITORY_URL = 'https://github.com/SageSang/harbor-deck'
 
 function GitHubMarkIcon() {
   return (
@@ -58,6 +59,7 @@ export function OptionsApp() {
   const [language, setLanguage] = useState<ExtensionLanguage>(defaultLanguage)
   const [status, setStatus] = useState<SaveStatus>({ tone: 'idle', kind: 'idle' })
   const [saving, setSaving] = useState(false)
+  const [showApiToken, setShowApiToken] = useState(false)
 
   const messages = getMessages(language)
   const cacheSeconds = Math.round(RESOLUTION_CACHE_TTL_MS / 1000)
@@ -91,6 +93,7 @@ export function OptionsApp() {
       const nextSettings: ExtensionSettings = {
         primaryUrl: normalizeUrl(form.primaryUrl),
         fallbackUrl: normalizeUrl(form.fallbackUrl),
+        apiToken: form.apiToken.trim(),
         openMode: form.openMode,
         probeTimeoutMs: normalizeProbeTimeoutMs(form.probeTimeoutMs),
       }
@@ -140,7 +143,7 @@ export function OptionsApp() {
         <div className="settings-head">
           <div className="settings-head-top">
             <div>
-              <div className="eyebrow">Smart Harbor Extension</div>
+              <div className="eyebrow">HarborDeck Extension</div>
               <h1>{messages.options.title}</h1>
             </div>
             <div className="settings-head-actions">
@@ -202,6 +205,35 @@ export function OptionsApp() {
               onChange={(event) => updateField('fallbackUrl', event.target.value)}
             />
             <p className="field-help">{messages.options.fallbackUrlHint}</p>
+          </div>
+
+          <div className="field">
+            <label htmlFor="api-token">{language === 'zh-CN' ? '接口 Token' : 'API token'}</label>
+            <div className="password-field">
+              <input
+                id="api-token"
+                className="input"
+                type={showApiToken ? 'text' : 'password'}
+                autoComplete="off"
+                placeholder={language === 'zh-CN' ? 'HARBORDECK_SEARCH_TOKEN' : 'HARBORDECK_SEARCH_TOKEN'}
+                value={form.apiToken}
+                onChange={(event) => updateField('apiToken', event.target.value)}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showApiToken ? 'Hide token' : 'Show token'}
+                title={showApiToken ? 'Hide token' : 'Show token'}
+                onClick={() => setShowApiToken((visible) => !visible)}
+              >
+                {showApiToken ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+              </button>
+            </div>
+            <p className="field-help">
+              {language === 'zh-CN'
+                ? '用于插件添加书签和快捷搜索；需与服务端环境变量一致。'
+                : 'Used by the extension bookmark action and quick search; must match the server environment variable.'}
+            </p>
           </div>
 
           <div className="field">

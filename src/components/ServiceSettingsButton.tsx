@@ -322,7 +322,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
     const anchor = document.createElement('a')
 
     anchor.href = downloadUrl
-    anchor.download = `smart-harbor-config-${new Date().toISOString().slice(0, 10)}.json`
+    anchor.download = `harbor-deck-config-${new Date().toISOString().slice(0, 10)}.json`
     anchor.click()
     URL.revokeObjectURL(downloadUrl)
 
@@ -1675,7 +1675,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
                           onChange={(event) =>
                             handleBackupFieldChange('remotePath', event.target.value)
                           }
-                          placeholder="/smart-harbor/backups/prod"
+                          placeholder="/harbor-deck/backups/prod"
                           disabled={saveSystemMutation.isPending}
                         />
                         <p className="text-xs leading-5 text-muted-foreground">

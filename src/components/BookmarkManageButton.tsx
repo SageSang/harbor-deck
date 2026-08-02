@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import {
   ArrowDown,
   ArrowUp,
   Copy,
   FolderTree,
+  GripVertical,
   KeyRound,
   Layers3,
   Plus,
@@ -34,6 +35,7 @@ import {
   createScene,
   createSceneGroup,
   renameGroupInScene,
+  moveSceneGroup,
   removeGroupFromScene,
   upsertBookmark,
 } from '@/features/navigation/navigationConfig'
@@ -78,6 +80,10 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   const [bookmarkDraft, setBookmarkDraft] = useState<BookmarkFormValues | null>(null)
   const [bookmarkSlugTouched, setBookmarkSlugTouched] = useState(false)
   const [feedback, setFeedback] = useState<FeedbackState | null>(null)
+  const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null)
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
+  const dragScrollFrameRef = useRef<number | null>(null)
+  const dragScrollStateRef = useRef<{ container: HTMLElement; clientY: number } | null>(null)
 
   const navigation = navigationQuery.data
   const manageableNavigation = useMemo(() => {
@@ -313,6 +319,100 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     groups.splice(target, 0, group)
     saveNavigation(next, '分组顺序已更新。')
   }
+
+  function moveGroupTo(groupId: string, targetIndex: number) {
+    if (saveMutation.isPending || !navigation || !selectedScene || groupId === dragOverGroupId) return
+    const sourceIndex = selectedScene.groups.findIndex((group) => group.id === groupId)
+    if (sourceIndex < 0 || sourceIndex === targetIndex) return
+    const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
+    saveNavigation(
+      moveSceneGroup(navigation, selectedScene.id, groupId, adjustedTargetIndex),
+      messages.bookmarkManage.groupSection.orderUpdated
+    )
+  }
+
+  function stopDragAutoScroll() {
+    if (dragScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragScrollFrameRef.current)
+      dragScrollFrameRef.current = null
+    }
+    dragScrollStateRef.current = null
+  }
+
+  function runDragAutoScroll() {
+    const state = dragScrollStateRef.current
+    if (!state) {
+      dragScrollFrameRef.current = null
+      return
+    }
+
+    const rect = state.container.getBoundingClientRect()
+    const edge = 72
+    const maxStep = 8
+    const distanceFromTop = state.clientY - rect.top
+    const distanceFromBottom = rect.bottom - state.clientY
+    const step =
+      distanceFromTop < edge
+        ? -Math.ceil(((edge - distanceFromTop) / edge) * maxStep)
+        : distanceFromBottom < edge
+          ? Math.ceil(((edge - distanceFromBottom) / edge) * maxStep)
+          : 0
+
+    if (step !== 0) {
+      state.container.scrollBy({ top: step })
+    }
+
+    dragScrollFrameRef.current = window.requestAnimationFrame(runDragAutoScroll)
+  }
+
+  function autoScrollWhileDragging(event: DragEvent<HTMLElement>) {
+    const scrollContainer = event.currentTarget.closest<HTMLElement>('.config-scroll')
+    if (!scrollContainer) {
+      return
+    }
+
+    dragScrollStateRef.current = { container: scrollContainer, clientY: event.clientY }
+    if (dragScrollFrameRef.current === null) {
+      dragScrollFrameRef.current = window.requestAnimationFrame(runDragAutoScroll)
+    }
+  }
+
+  useEffect(() => {
+    if (!draggingGroupId) {
+      return
+    }
+
+    // Some Chromium builds swallow wheel events while a native drag is active.
+    // Keep the list usable by forwarding the wheel delta to the modal's scroll
+    // container, while the edge-triggered scrolling above covers pointer-only
+    // dragging.
+    const handleWheel = (event: WheelEvent) => {
+      const target = document.elementFromPoint(event.clientX, event.clientY)
+      const scrollContainer =
+        target?.closest<HTMLElement>('.config-scroll') ??
+        document.querySelector<HTMLElement>('.config-scroll')
+      if (!scrollContainer || event.deltaY === 0) {
+        return
+      }
+
+      event.preventDefault()
+      scrollContainer.scrollBy({ top: event.deltaY })
+    }
+
+    window.addEventListener('wheel', handleWheel, { passive: false })
+    return () => window.removeEventListener('wheel', handleWheel)
+  }, [draggingGroupId])
+
+  useEffect(
+    () => () => {
+      if (dragScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragScrollFrameRef.current)
+      }
+      dragScrollFrameRef.current = null
+      dragScrollStateRef.current = null
+    },
+    []
+  )
 
   function handleBookmarkFieldChange<K extends keyof BookmarkFormValues>(
     field: K,
@@ -569,9 +669,39 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                 {selectedScene.groups.map((group, index) => (
                   <div
                     key={group.id}
-                    className="config-panel-card grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+                    draggable
+                    onDragStart={(event) => {
+                      stopDragAutoScroll()
+                      setDraggingGroupId(group.id)
+                      event.dataTransfer.effectAllowed = 'move'
+                      event.dataTransfer.setData('text/plain', group.id)
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault()
+                      autoScrollWhileDragging(event)
+                      event.dataTransfer.dropEffect = 'move'
+                      setDragOverGroupId((current) => (current === group.id ? current : group.id))
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      const draggedId = event.dataTransfer.getData('text/plain') || draggingGroupId
+                      if (draggedId) {
+                        moveGroupTo(draggedId, index)
+                      }
+                      stopDragAutoScroll()
+                      setDraggingGroupId(null)
+                      setDragOverGroupId(null)
+                    }}
+                    onDragEnd={() => {
+                      stopDragAutoScroll()
+                      setDraggingGroupId(null)
+                      setDragOverGroupId(null)
+                    }}
+                    className={`config-panel-card grid gap-2 p-3 ${draggingGroupId ? 'transition-none' : 'transition'} sm:grid-cols-[minmax(0,1fr)_auto] ${draggingGroupId === group.id ? 'opacity-50' : ''} ${dragOverGroupId === group.id && draggingGroupId !== group.id ? 'border-primary/50 ring-2 ring-primary/10' : ''}`}
                   >
-                    <div>
+                    <div className="flex min-w-0 items-start gap-2">
+                      <GripVertical className="mt-2 h-4 w-4 shrink-0 cursor-grab text-muted-foreground/65" aria-hidden="true" />
+                      <div className="min-w-0 flex-1">
                       <Input
                         value={groupDrafts[group.id] ?? ''}
                         onChange={(event) =>
@@ -584,6 +714,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                       <p className="mt-1 text-xs text-muted-foreground">
                         {group.bookmarkIds.length} 个书签
                       </p>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-start gap-1.5">
                       <Button

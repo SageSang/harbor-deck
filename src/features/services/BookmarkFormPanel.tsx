@@ -178,7 +178,7 @@ export function BookmarkForm({
             </p>
           </div>
 
-          <label className={fieldCardClass}>
+          <label className={`${fieldCardClass} md:col-span-2`}>
             <span className={`block ${fieldLabelClass}`}>{messages.bookmarkForm.name}</span>
             <Input
               value={values.name}
@@ -188,6 +188,20 @@ export function BookmarkForm({
             />
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               {messages.bookmarkForm.nameHint}
+            </p>
+          </label>
+
+          <label className={`${fieldCardClass} md:col-span-2`}>
+            <span className={`block ${fieldLabelClass}`}>{messages.bookmarkForm.note}</span>
+            <textarea
+              value={values.note ?? ''}
+              onChange={(event) => onFieldChange('note', event.target.value)}
+              placeholder={messages.bookmarkForm.notePlaceholder}
+              rows={4}
+              className="config-panel-textarea"
+            />
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {messages.bookmarkForm.noteHint}
             </p>
           </label>
 

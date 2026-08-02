@@ -37,7 +37,7 @@ describe('search engine helpers', () => {
 describe('systemConfigSchema', () => {
   it('fills search engine defaults for legacy configs', () => {
     const config = systemConfigSchema.parse({
-      appName: 'Smart Harbor',
+      appName: 'HarborDeck',
     })
 
     expect(config.defaultSearchEngine).toBe('google')
@@ -54,7 +54,7 @@ describe('systemConfigSchema', () => {
   it('rejects invalid network probe hosts', () => {
     expect(() =>
       systemConfigSchema.parse({
-        appName: 'Smart Harbor',
+        appName: 'HarborDeck',
         networkProbe: {
           lanProtocol: 'http',
           lanHost: 'https://192.168.1.10/api/health',
@@ -68,7 +68,7 @@ describe('systemConfigSchema', () => {
   it('rejects invalid custom search templates', () => {
     expect(() =>
       systemConfigSchema.parse({
-        appName: 'Smart Harbor',
+        appName: 'HarborDeck',
         defaultSearchEngine: 'google',
         customSearchEngines: [
           {
@@ -84,7 +84,7 @@ describe('systemConfigSchema', () => {
   it('rejects missing default search engine ids', () => {
     expect(() =>
       systemConfigSchema.parse({
-        appName: 'Smart Harbor',
+        appName: 'HarborDeck',
         defaultSearchEngine: 'custom-engine',
       })
     ).toThrow('默认搜索引擎不存在')

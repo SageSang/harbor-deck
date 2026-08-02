@@ -16,7 +16,7 @@ async function loadConfigStore() {
 
 describe('configStore', () => {
   beforeEach(async () => {
-    tempConfigDir = await mkdtemp(path.join(os.tmpdir(), 'smart-harbor-config-'))
+    tempConfigDir = await mkdtemp(path.join(os.tmpdir(), 'harbordeck-config-'))
   })
 
   afterEach(async () => {

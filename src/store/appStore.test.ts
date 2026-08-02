@@ -11,8 +11,8 @@ describe('useAppStore network mode preferences', () => {
   })
 
   it('hydrates manual network settings from localStorage', async () => {
-    window.localStorage.setItem('smart-harbor-network-mode-strategy', 'manual')
-    window.localStorage.setItem('smart-harbor-manual-network-mode', 'wan')
+    window.localStorage.setItem('harbordeck-network-mode-strategy', 'manual')
+    window.localStorage.setItem('harbordeck-manual-network-mode', 'wan')
 
     const { useAppStore } = await loadAppStore()
     const state = useAppStore.getState()
@@ -51,6 +51,6 @@ describe('useAppStore network mode preferences', () => {
 
     expect(state.networkModeStrategy).toBe('auto')
     expect(state.networkMode).toBe('wan')
-    expect(window.localStorage.getItem('smart-harbor-network-mode-strategy')).toBe('auto')
+    expect(window.localStorage.getItem('harbordeck-network-mode-strategy')).toBe('auto')
   })
 })

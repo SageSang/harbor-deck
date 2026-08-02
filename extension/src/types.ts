@@ -5,8 +5,18 @@ export type OpenMode = 'embedded' | 'direct'
 export interface ExtensionSettings {
   primaryUrl: string
   fallbackUrl: string
+  apiToken: string
   openMode: OpenMode
   probeTimeoutMs: number
+}
+
+export interface PopupDraft {
+  sourceTabUrl: string
+  tabUrl: string
+  tabTitle: string
+  secondaryUrl: string
+  note: string
+  selectedGroups: Record<string, string>
 }
 
 export type ResolutionReason =

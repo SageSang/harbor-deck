@@ -1,51 +1,47 @@
-# Smart Harbor
+# HarborDeck
 
 [English](README.md)
 
-Smart Harbor 是一个面向个人自托管服务的智能导航主页。
+HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家里、公司、隐私”几套书签放在同一个系统里管理。它把场景、分组、共享书签、内外网地址判断和浏览器新标签页扩展整合在一个 Docker 服务中。
 
-它能够自动检测当前的网络环境，并在局域网地址和公网地址之间智能切换，始终选择最合适的访问入口。
+项目按单管理员设计，不提供游客模式。管理员登录后可以创建任意数量的场景；如果某个场景不希望被别人看到，还可以给它单独设置场景密码。
+
+## 主要能力
+
+- 场景完全由后台创建、重命名、排序、设为默认、加密和删除，不写死为三个场景。
+- 每个场景拥有独立的分组和顺序；同一个书签可以被多个场景引用，并在不同场景归属于不同分组。
+- 每个书签支持主地址和可选备用地址，系统按照网络可达性选择实际打开的地址。
+- 浏览器导入时先选择目标场景；多层文件夹会按完整路径折叠成可读的一级分组，不会把所有书签无序铺平。
+- 支持新增、编辑、复制、拖动、多选、批量移动和删除书签。删除某个场景中的引用不会影响其他场景；只有完全没有场景引用的孤立书签才会被清理。
+- 每个书签有可选的多行备注栏。
+- 搜索框支持 Google 和自定义搜索引擎。无论本地是否匹配到书签，按 Enter 都会执行搜索；也可以直接点击匹配到的书签。
+- 场景可以单独设置密码，解锁状态只保留在当前浏览器会话中。
+- 提供带 Token 的搜索接口，方便接入 uTools 等快捷工具；有密码的场景永远不会被接口返回。
+- 可选的 Chrome/Chromium 扩展：新标签页打开导航首页，并把当前网页添加到一个或多个场景分组。
+- 支持通过 WebDAV 备份、恢复和保留多个配置版本。
 
 ## 界面预览
 
-### 首页
+以下截图来自当前 Web 界面，和容器镜像中的布局一致。
 
-![Smart Harbor 首页](image/index.png)
+![HarborDeck 首页](image/index.png)
 
-### 设置面板
+![HarborDeck 设置](image/setting.png)
 
-![Smart Harbor 设置面板](image/setting.png)
+![HarborDeck 书签管理](image/bookmark.png)
 
-### 书签管理
+![HarborDeck 新标签页扩展](image/extension.png)
 
-![Smart Harbor 书签管理](image/bookmark.png)
+## 群晖远程镜像部署
 
-### Chrome 新标签页插件
-
-![Smart Harbor Chrome 插件](image/extension.png)
-
-## 适合用来做什么
-
-- 按网络环境自动切换书签的局域网和公网地址
-- 支持动态创建导航场景，每个场景拥有独立分组和排序
-- 同一个书签可放入多个场景，并在各场景使用不同分组
-- 场景可单独设置密码，解锁状态仅在当前浏览器会话内保留
-- 拖拽整理分组书签，并支持图标展示
-- 内置搜索框，支持自定义搜索引擎
-- WebDAV 备份、恢复和版本保留
-- 受密码保护的管理面板和登录锁定保护
-- 可选的 Chrome 新标签页插件
-
-## 快速部署
-
-### Docker Compose
+项目自带适配群晖 Container Manager 的 Compose 文件。群晖会从 GitHub Container Registry 拉取已经构建好的多架构镜像，不需要在 NAS 上安装 Node.js，也不需要拉源码编译。
 
 ```yaml
 services:
-  smart-harbor:
-    image: ghcr.io/sagesang/multi-scenario-smart-harbor:1.4.2
+  harbor-deck:
+    image: ghcr.io/sagesang/harbor-deck:1.4.5
     pull_policy: always
-    container_name: smart-harbor
+    container_name: harbor-deck
     restart: always
     ports:
       - "8080:80"
@@ -54,213 +50,106 @@ services:
       PORT: "80"
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
+      HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
     volumes:
-      - /volume1/docker/smart-harbor/config:/app/config
+      - /volume1/docker/harbor-deck/config:/app/config
     security_opt:
       - no-new-privileges:true
 ```
 
-仓库根目录已经包含适用于群晖 Container Manager 的 `docker-compose.yml`，会直接从 GitHub Container Registry 拉取预构建的多架构镜像，不需要在群晖上编译源码。按实际情况修改左侧的群晖配置目录，然后创建或更新项目即可。宿主机目录可以改成你自己的共享文件夹路径；容器内路径 `/app/config` 不要修改。
+Container Manager 操作步骤：
 
-### Docker Run
+1. 先创建 `/volume1/docker/harbor-deck/config`，或者只修改左侧宿主机路径。
+2. 用以上 YAML 创建项目并部署。
+3. 打开 `http://群晖IP:8080`，第一次访问时创建管理员账号。
+4. 进入书签管理，创建场景和分组，然后添加或导入书签。
+
+容器内的 `/app/config` 不要修改。镜像支持 `linux/amd64` 和 `linux/arm64`。只有在确实需要自动跟随最新镜像时才把版本号改成 `latest`。
+
+如果使用命令行部署：
 
 ```bash
 docker run -d \
-  --name smart-harbor \
+  --name harbor-deck \
+  --restart always \
   -p 8080:80 \
-  -v ./smart-harbor/config:/app/config \
-  ghcr.io/sagesang/multi-scenario-smart-harbor:1.4.2
+  -v /volume1/docker/harbor-deck/config:/app/config \
+  -e TZ=Asia/Shanghai \
+  ghcr.io/sagesang/harbor-deck:1.4.5
 ```
 
-启动后：
+HTTPS 可以支持。应用容器内部监听 HTTP，建议在群晖反向代理、Caddy 或 Nginx Proxy Manager 中终止 TLS，再把 HTTPS 域名转发到容器的 8080 端口。
 
-1. 打开 `http://localhost:8080`。
-2. 首次访问时创建管理员账号。
-3. 在书签管理中创建场景和分组，然后添加或导入书签。
+## 场景、分组与导入规则
 
-## 配置文件说明
+场景是后台数据，不是前端写死的选项。可以在书签管理中新增、改名、排序、设为默认、设置密码或删除；首页分组标题右键还可以新建书签、编辑分组名称或删除整个分组。
 
-首次启动后，Smart Harbor 会在挂载的配置目录中生成一个统一的 `config.json`。
+每个场景维护自己的分组列表。书签定义是共享的，分组只保存引用关系，因此同一个 URL 可以同时出现在“个人”和“工作”两个场景中，而不需要创建两份书签。删除某个场景里的书签只会取消该场景引用；当任何场景都不再引用它时，系统才会删除孤立定义。
 
-- 宿主机示例路径：`./smart-harbor/config/config.json`
-- 容器内路径：`/app/config/config.json`
+导入浏览器书签时先选择一个目标场景。比如浏览器里的 `Bookmarks Bar / Engineering / Frontend` 会被保存成一个同名路径分组，既保留层级语义，又适配首页当前的一级分组网格；根目录书签会进入 `Imported Bookmarks` 分组。
 
-### 常用字段
+## 集成搜索接口
 
-| 路径 | 作用 |
-| --- | --- |
-| `system.appName` | 页面标题和浏览器标签名称 |
-| `system.darkMode` | 明暗主题切换 |
-| `system.clickOpenTarget` | 单击打开书签和搜索结果的方式 |
-| `system.middleClickOpenTarget` | 中键打开书签和搜索结果的方式 |
-| `system.defaultSearchEngine` | 搜索框默认搜索引擎 |
-| `system.webdavBackup` | WebDAV 备份地址、周期和保留策略 |
-| `navigation.defaultSceneId` | 没有设备偏好时使用的默认场景 |
-| `navigation.scenes[]` | 可动态维护的场景及其独立分组 |
-| `navigation.bookmarks[]` | 由各场景分组引用的共享书签定义 |
+完整的接口清单、参数约束、返回示例和错误码请参阅 [`docs/api.md`](docs/api.md)。
 
-<details>
-<summary>完整配置字段</summary>
+在容器环境变量中设置 `HARBORDECK_SEARCH_TOKEN`，请求必须带上：
 
-#### `system`
-
-| 路径 | 说明 | 备注 |
-| --- | --- | --- |
-| `system.appName` | 应用名称，显示在页面和浏览器标签中 | 默认 `Smart Harbor` |
-| `system.darkMode` | 是否启用深色模式 | `true` 或 `false` |
-| `system.clickOpenTarget` | 单击打开方式 | `self` 或 `blank` |
-| `system.middleClickOpenTarget` | 中键打开方式 | `self` 或 `blank` |
-| `system.defaultSearchEngine` | 默认搜索引擎标识 | 必须指向内置或自定义引擎 |
-| `system.customSearchEngines[]` | 自定义搜索引擎列表 | 可选 |
-| `system.customSearchEngines[].id` | 自定义搜索引擎唯一标识 | 仅允许小写字母、数字和短横线 |
-| `system.customSearchEngines[].name` | 自定义搜索引擎显示名称 | 非空字符串 |
-| `system.customSearchEngines[].urlTemplate` | 搜索地址模板 | 必须包含 `{keyword}` |
-| `system.webdavBackup.url` | WebDAV 服务地址 | 留空表示不启用 |
-| `system.webdavBackup.username` | WebDAV 用户名 | 配置备份时必填 |
-| `system.webdavBackup.password` | WebDAV 密码或应用专用密码 | 配置备份时必填 |
-| `system.webdavBackup.remotePath` | 远端备份目录 | 默认 `/smart-harbor` |
-| `system.webdavBackup.autoBackup` | 是否开启自动备份 | `true` 或 `false` |
-| `system.webdavBackup.intervalDays` | 自动备份间隔天数 | `1` 到 `365` 的整数 |
-| `system.webdavBackup.maxVersions` | 保留的远端备份版本数 | `1` 到 `365` 的整数 |
-| `system.auth.username` | 管理员用户名 | 首次设置后写入 |
-| `system.auth.passwordHash` | 管理员密码哈希 | 不要保存明文密码 |
-
-#### `navigation`
-
-| 路径 | 说明 | 备注 |
-| --- | --- | --- |
-| `navigation.defaultSceneId` | 默认场景标识 | 必须引用一个已有场景 |
-| `navigation.scenes[]` | 有序场景列表 | 至少保留一个场景 |
-| `navigation.scenes[].id` | 场景唯一标识 | 仅允许小写字母、数字和短横线 |
-| `navigation.scenes[].name` | 场景显示名称 | 非空字符串 |
-| `navigation.scenes[].protected` | 是否需要额外的场景密码 | 布尔值 |
-| `navigation.scenes[].passwordHash` | 服务端维护的场景密码哈希 | 不要写入明文密码 |
-| `navigation.scenes[].groups[]` | 当前场景拥有的分组 | 有序数组 |
-| `navigation.scenes[].groups[].bookmarkIds[]` | 分组中展示的书签标识 | 引用 `navigation.bookmarks[].slug` |
-| `navigation.bookmarks[]` | 全局共享的书签定义 | 同一书签可被多个场景引用 |
-| `navigation.bookmarks[].slug` | 书签唯一标识 | 仅允许小写字母、数字和短横线 |
-| `navigation.bookmarks[].name` | 书签显示名称 | 非空字符串 |
-| `navigation.bookmarks[].icon` | Lucide 图标名称 | 可选 |
-| `navigation.bookmarks[].primaryUrl` | 主地址，通常填局域网地址 | 必填 URL |
-| `navigation.bookmarks[].secondaryUrl` | 切换地址，通常填外网地址 | 可选 URL |
-| `navigation.bookmarks[].probes[]` | 用于探测当前网络可达性的地址列表 | 可选，至少一个 URL |
-| `navigation.bookmarks[].forceNewTab` | 是否强制在新标签页打开该书签 | 可选布尔值 |
-
-</details>
-
-<details>
-<summary><code>config.json</code> 示例</summary>
-
-```json
-{
-  "system": {
-    "appName": "Smart Harbor",
-    "darkMode": false,
-    "clickOpenTarget": "self",
-    "middleClickOpenTarget": "blank",
-    "defaultSearchEngine": "google",
-    "customSearchEngines": [
-      {
-        "id": "my-search",
-        "name": "自定义搜索",
-        "urlTemplate": "https://example.com/search?q={keyword}"
-      }
-    ],
-    "webdavBackup": {
-      "url": "https://dav.example.com/remote.php/dav/files/demo",
-      "username": "demo",
-      "password": "app-password",
-      "remotePath": "/smart-harbor",
-      "autoBackup": true,
-      "intervalDays": 7,
-      "maxVersions": 10
-    },
-    "auth": {
-      "username": "admin",
-      "passwordHash": "<generated-after-setup>"
-    }
-  },
-  "navigation": {
-    "defaultSceneId": "personal",
-    "bookmarks": [
-      {
-        "slug": "proxmox",
-        "name": "Proxmox",
-        "icon": "Server",
-        "primaryUrl": "http://192.168.1.10:8006",
-        "secondaryUrl": "https://proxmox.example.com",
-        "probes": ["http://192.168.1.1"],
-        "forceNewTab": true
-      }
-    ],
-    "scenes": [
-      {
-        "id": "personal",
-        "name": "个人",
-        "protected": false,
-        "groups": [
-          {
-            "id": "infrastructure",
-            "name": "基础设施",
-            "bookmarkIds": ["proxmox"]
-          }
-        ]
-      }
-    ]
-  }
-}
+```http
+X-HarborDeck-Search-Token: 你的秘密 Token
 ```
 
-</details>
+搜索接口示例：
 
-## 账号与安全
+```bash
+curl \
+  -H "X-HarborDeck-Search-Token: $HARBORDECK_SEARCH_TOKEN" \
+  "http://localhost:8080/api/integrations/bookmarks/search?q=har&sceneId=all"
+```
 
-- 首次访问会引导你创建管理员账号。
-- 项目只保留一个管理员账号，不提供游客模式。
-- 受保护场景需要单独解锁：浏览器使用会话存储保存令牌，服务端令牌最长有效一小时。
-- 普通书签或分组编辑不会结束场景解锁；关闭浏览器/标签页、修改场景密码、恢复备份或重启服务后需要重新输入。
-- 如果需要重置登录信息，删除 `config.json` 中的 `system.auth` 段后刷新页面即可。
-- 连续登录失败 5 次后，会锁定 30 分钟。
+`q` 会匹配书签名称、slug、主地址、备用地址和备注。`sceneId` 可以填具体场景 ID，也可以填 `all`；省略时同样搜索所有场景。有密码的场景不会返回，即使管理员已经在页面中解锁也一样。结果包含场景/分组信息、`name` 和 `url`；有备用地址时优先返回备用地址，否则返回主地址。
 
-## 场景与导入规则
+扩展添加当前网页还会使用两个接口：
 
-- 后台支持新增、重命名、复制、排序、设为默认和删除场景。
-- 每个场景独立维护分组及顺序；书签定义全局共享，因此同一书签可以加入多个场景，并分别选择不同分组。
-- 新增书签时可一次选择多个“场景 + 分组”发布位置。
-- 浏览器书签导入时先选择一个目标场景。多层文件夹会按完整路径扁平化为一级分组，例如 `书签栏 / 开发 / 前端`；根目录书签进入“导入书签”分组。
+- `GET /api/integrations/bookmarks/scenes`：只列出可以接收书签的场景及分组。
+- `POST /api/integrations/bookmarks`：请求体为 `{ name, primaryUrl, secondaryUrl?, note?, placements: [{ sceneId, groupId }] }`，可一次添加到多个场景，每个场景选择一个分组。
 
-## Chrome 新标签页插件
+## 浏览器扩展
 
-如果你希望每次打开 Chrome 新标签页都直接进入 Smart Harbor，可以直接安装 Chrome 插件。
-
-- `primaryUrl`：主地址，通常填写局域网地址
-- `fallbackUrl`：切换地址，通常填写外网地址
-- `openMode`：`embedded` 表示在新标签页中以内嵌方式打开，`direct` 表示直接跳转
-- `probeTimeoutMs`：地址探测超时时间，默认 `200`
-- 点击浏览器工具栏中的插件图标即可打开设置页
-
-### 安装方式
-
-从 [Chrome 网上应用店](https://chromewebstore.google.com/detail/smart-harbor/jbghdmdpfmnkincfamcbolbcnlogedad) 安装 Smart Harbor，然后点击浏览器工具栏中的插件图标，填写你的 Smart Harbor 访问地址。
-
-### 本地构建
-
-如果需要开发调试或私有测试，也可以在本地构建插件：
+本地构建扩展：
 
 ```bash
 npm run build:extension
 npm run package:extension
 ```
 
-生成结果：
+可以在 `chrome://extensions` 打开开发者模式后加载生成的目录，也可以安装 GitHub Release 中的 ZIP。
 
-- 目录：`extension/smart-harbor-v<version>`
-- 压缩包：`extension/smart-harbor-v<version>.zip`
+扩展设置项：
 
-## 已知问题
+| 设置 | 说明 |
+| --- | --- |
+| `primaryUrl` | 通常填写内网地址 |
+| `fallbackUrl` | 通常填写公网/外网地址 |
+| `openMode=direct` | 新标签页直接跳转到选中的地址 |
+| `openMode=embedded` | 在新标签页内部嵌入导航页 |
+| `probeTimeoutMs` | 地址检测超时时间，默认 200 毫秒 |
+| API Token | 扩展弹窗添加当前网页时使用 |
 
-- 在 iOS 设备上，如果 Smart Harbor 是通过 HTTPS 打开的，浏览器通常无法从该页面直接探测 HTTP 局域网地址。这会导致自动网络探测无法准确判断当前应使用内网还是外网地址。
-- 为了兼容这种限制，首页左上角的网络状态弹窗提供了 `自动检测`、`局域网`、`外网` 三个直选项。遇到 iOS 无法探测的情况时，可以手动切换到当前需要的网络模式。
+扩展只在本地缓存最近一次地址判断结果及时间戳，缓存不包含书签定义，也不包含服务器配置。直达模式有新鲜缓存时可以快速跳转；第一次打开或缓存过期时会留下很短的输入保护窗口。检测到键盘输入、粘贴、页面离开或标签页隐藏，就会取消自动跳转，不抢走用户正在粘贴的网址。内嵌模式会加上 `embedded=1`，并关闭导航页搜索框的自动聚焦，浏览器地址栏输入不会被抢走。
+
+## 配置与安全
+
+挂载目录中保存一个 `config.json`，核心字段如下：
+
+| 字段 | 用途 |
+| --- | --- |
+| `system` | 主题、应用名称、点击行为、搜索引擎和 WebDAV 备份 |
+| `navigation.scenes[]` | 场景名称、密码、分组及有序书签引用 |
+| `navigation.bookmarks[]` | 共享书签定义、URL、图标、备注和打开方式 |
+
+密码只保存哈希值。项目只有一个管理员账号，没有匿名模式。场景密码独立于管理员密码，只对当前浏览器会话有效；关闭浏览器、修改场景密码、恢复备份或重启服务后需要重新解锁。管理员连续登录失败 5 次会触发临时锁定。
+
+不要把 `config.json`、WebDAV 凭据和集成 Token 提交到 Git。配置目录应独立备份，镜像更新不会覆盖它。
 
 ## 本地开发
 
@@ -269,26 +158,20 @@ npm install
 npm run dev
 ```
 
-- 前端：`http://localhost:3000`
-- 后端 API：`http://localhost:3001`
+- Web：`http://localhost:3000`
+- API：`http://localhost:3001`
 
-常用命令：
+常用检查：
 
 ```bash
 npm run lint
 npm run test
 npm run build
-npm run preview
+npm run build:extension
 ```
 
-## 技术栈
+## 技术栈与许可
 
-React 19、TypeScript、Vite、Tailwind CSS、Zustand、TanStack Query、Fastify、Zod。
+React 19、TypeScript、Vite、Tailwind CSS、Zustand、TanStack Query、Fastify 和 Zod。
 
-## 感谢支持
-
-感谢 OpenAI Codex 和 Claude 在实现、迭代与文档整理过程中提供的支持。
-
-## 许可证
-
-[Apache-2.0](LICENSE)
+许可证：[Apache-2.0](LICENSE)

@@ -267,6 +267,137 @@ a {
   min-height: calc(100dvh - 24px);
 }
 
+.popup-shell {
+  width: 390px;
+  min-height: 100dvh;
+  padding: 12px;
+}
+
+.popup-card {
+  display: grid;
+  gap: 10px;
+  border-radius: 24px;
+  padding: 18px;
+}
+
+.popup-card h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.popup-form,
+.popup-scenes {
+  display: grid;
+  gap: 10px;
+}
+
+.popup-form .field {
+  padding: 10px;
+  border-radius: 16px;
+}
+
+.popup-form .field span,
+.popup-scene strong {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(84, 62, 43, 0.88);
+}
+
+.popup-textarea {
+  height: auto;
+  min-height: 72px;
+  padding-top: 10px;
+  resize: vertical;
+}
+
+.popup-scene {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(182, 141, 106, 0.16);
+  border-radius: 16px;
+  background: rgba(255, 252, 248, 0.72);
+}
+
+.popup-scene-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.popup-scene-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-scene-heading svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: rgba(201, 106, 72, 0.82);
+}
+
+.password-field {
+  position: relative;
+}
+
+.password-field .input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  color: rgba(98, 75, 55, 0.66);
+  background: transparent;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+  color: #c96a48;
+  background: rgba(201, 106, 72, 0.1);
+  outline: none;
+}
+
+.password-toggle svg {
+  width: 17px;
+  height: 17px;
+}
+
+.popup-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.popup-groups .toggle-option {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(182, 141, 106, 0.16);
+  border-radius: 12px;
+  background: rgba(250, 245, 238, 0.8);
+}
+
 .settings-card {
   width: min(980px, 100%);
   display: flex;

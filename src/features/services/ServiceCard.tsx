@@ -63,6 +63,7 @@ export function ServiceCard({
         isDropTarget && 'border-primary/50 ring-2 ring-primary/15',
         className
       )}
+      title={service.name}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
       {...props}

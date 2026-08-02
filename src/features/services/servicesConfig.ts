@@ -85,12 +85,14 @@ export function cleanServicesConfig(config: ServicesConfig): ServicesConfig {
 
 export function cleanServiceConfig(service: ServiceConfig): ServiceConfig {
   const icon = service.icon?.trim()
+  const note = service.note?.trim()
   const probes = service.probes?.map((probe) => probe.trim()).filter(Boolean)
   const secondaryUrl = service.secondaryUrl?.trim()
 
   return serviceConfigSchema.parse({
     slug: service.slug,
     name: service.name,
+    ...(note ? { note } : {}),
     primaryUrl: service.primaryUrl,
     ...(secondaryUrl ? { secondaryUrl } : {}),
     ...(icon ? { icon } : {}),

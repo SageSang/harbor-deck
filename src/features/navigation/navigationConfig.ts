@@ -12,6 +12,18 @@ export interface BookmarkPlacement {
   groupId: string
 }
 
+export interface BookmarkPlacementConflict {
+  bookmarkId: string
+  sceneId: string
+  groupId: string
+  groupName: string
+}
+
+export interface UpsertBookmarkOptions {
+  preserveExistingPlacement?: boolean
+  insertAfterBookmarkId?: string
+}
+
 export function cloneNavigationConfig(config: NavigationConfig): NavigationConfig {
   return {
     defaultSceneId: config.defaultSceneId,
@@ -126,11 +138,24 @@ export function upsertBookmark(
   config: NavigationConfig,
   bookmark: ServiceConfig,
   placements: BookmarkPlacement[],
-  previousBookmarkId?: string
+  previousBookmarkId?: string,
+  options: UpsertBookmarkOptions = {}
 ) {
   const next = cloneNavigationConfig(config)
   const currentId = previousBookmarkId ?? bookmark.slug
   const existingIndex = next.bookmarks.findIndex((item) => item.slug === currentId)
+  const originalPlacementIndexes = new Map<string, number>()
+
+  if (options.preserveExistingPlacement && previousBookmarkId) {
+    config.scenes.forEach((scene) => {
+      scene.groups.forEach((group) => {
+        const index = group.bookmarkIds.indexOf(previousBookmarkId)
+        if (index >= 0) {
+          originalPlacementIndexes.set(`${scene.id}:${group.id}`, index)
+        }
+      })
+    })
+  }
 
   if (existingIndex >= 0) {
     next.bookmarks[existingIndex] = bookmark
@@ -150,9 +175,117 @@ export function upsertBookmark(
     if (!group) {
       throw new Error('所选场景分组不存在')
     }
-    group.bookmarkIds.push(bookmark.slug)
+    let insertIndex = group.bookmarkIds.length
+    if (options.insertAfterBookmarkId) {
+      const sourceIndex = group.bookmarkIds.indexOf(options.insertAfterBookmarkId)
+      if (sourceIndex >= 0) {
+        insertIndex = sourceIndex + 1
+      }
+    } else if (options.preserveExistingPlacement && previousBookmarkId) {
+      const originalIndex = originalPlacementIndexes.get(`${placement.sceneId}:${placement.groupId}`)
+      if (typeof originalIndex === 'number') {
+        insertIndex = Math.min(originalIndex, group.bookmarkIds.length)
+      }
+    }
+    group.bookmarkIds.splice(insertIndex, 0, bookmark.slug)
   })
 
+  return parseNavigationConfig(next)
+}
+
+export function getBookmarkPlacementConflicts(
+  config: NavigationConfig,
+  bookmarkIds: string[],
+  placements: BookmarkPlacement[]
+) {
+  const conflicts: BookmarkPlacementConflict[] = []
+  const requestedIds = new Set(bookmarkIds)
+
+  placements.forEach((placement) => {
+    const scene = findScene(config, placement.sceneId)
+    const targetGroup = scene?.groups.find((group) => group.id === placement.groupId)
+    if (!scene || !targetGroup) {
+      return
+    }
+
+    scene.groups.forEach((group) => {
+      if (group.id === targetGroup.id) {
+        return
+      }
+      group.bookmarkIds.forEach((bookmarkId) => {
+        if (requestedIds.has(bookmarkId)) {
+          conflicts.push({
+            bookmarkId,
+            sceneId: scene.id,
+            groupId: group.id,
+            groupName: group.name,
+          })
+        }
+      })
+    })
+  })
+
+  return conflicts
+}
+
+export function addBookmarksToSceneGroups(
+  config: NavigationConfig,
+  bookmarkIds: string[],
+  placements: BookmarkPlacement[],
+  moveConflicts = false
+) {
+  const next = cloneNavigationConfig(config)
+  const requestedIds = new Set(bookmarkIds)
+  const placementsByScene = new Map<string, BookmarkPlacement>()
+
+  placements.forEach((placement) => {
+    placementsByScene.set(placement.sceneId, placement)
+  })
+
+  placementsByScene.forEach((placement) => {
+    const scene = findScene(next, placement.sceneId)
+    const targetGroup = scene?.groups.find((group) => group.id === placement.groupId)
+    if (!scene || !targetGroup) {
+      throw new Error('鎵€閫夊満鏅垎缁勪笉瀛樺湪')
+    }
+
+    requestedIds.forEach((bookmarkId) => {
+      const currentGroup = scene.groups.find((group) => group.bookmarkIds.includes(bookmarkId))
+      if (currentGroup?.id === targetGroup.id) {
+        return
+      }
+      if (currentGroup && !moveConflicts) {
+        return
+      }
+      if (currentGroup) {
+        currentGroup.bookmarkIds = currentGroup.bookmarkIds.filter((id) => id !== bookmarkId)
+      }
+      if (!targetGroup.bookmarkIds.includes(bookmarkId)) {
+        targetGroup.bookmarkIds.push(bookmarkId)
+      }
+    })
+  })
+
+  return parseNavigationConfig(next)
+}
+
+export function moveSceneGroup(
+  config: NavigationConfig,
+  sceneId: string,
+  groupId: string,
+  targetIndex: number
+) {
+  const next = cloneNavigationConfig(config)
+  const scene = findScene(next, sceneId)
+  if (!scene) {
+    return next
+  }
+  const sourceIndex = scene.groups.findIndex((group) => group.id === groupId)
+  if (sourceIndex < 0) {
+    return next
+  }
+  const [group] = scene.groups.splice(sourceIndex, 1)
+  scene.groups.splice(Math.max(0, Math.min(targetIndex, scene.groups.length)), 0, group)
   return parseNavigationConfig(next)
 }
 

@@ -77,4 +77,31 @@ describe('browserBookmarkImport', () => {
     expect(result.scenes[0].groups[1].bookmarkIds).toEqual(['existing-imported', 'openai'])
     expect(result.scenes[0].groups[2].bookmarkIds).toEqual(['mdn', 'nodejs'])
   })
+
+  it('keeps an existing bookmark title when an imported URL has a different title', () => {
+    const config: NavigationConfig = {
+      defaultSceneId: 'default',
+      bookmarks: [
+        { slug: 'existing', name: 'Original title', primaryUrl: 'https://same.example.com/' },
+      ],
+      scenes: [
+        {
+          id: 'default',
+          name: 'Default',
+          protected: false,
+          groups: [{ id: 'main', name: 'Main', bookmarkIds: ['existing'] }],
+        },
+      ],
+    }
+
+    const result = importBrowserBookmarks(
+      config,
+      [{ name: 'Imported title', url: 'https://same.example.com/' }],
+      'default'
+    )
+
+    expect(result.bookmarks.find((bookmark) => bookmark.slug === 'existing')?.name).toBe(
+      'Original title'
+    )
+  })
 })
