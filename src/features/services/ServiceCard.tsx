@@ -1,4 +1,4 @@
-import type { HTMLAttributes } from 'react'
+import { forwardRef, type HTMLAttributes } from 'react'
 import { Card } from '@/components/ui/card'
 import { resolveTargetUrl } from '@/core/navigation/resolveTargetUrl'
 import { openWithFallback } from '@/core/navigation/openWithFallback'
@@ -16,18 +16,21 @@ interface ServiceCardProps extends HTMLAttributes<HTMLDivElement> {
   isDropTarget?: boolean
 }
 
-export function ServiceCard({
-  service,
-  networkMode,
-  clickOpenTarget,
-  middleClickOpenTarget,
-  className,
-  isDragging,
-  isDropTarget,
-  onClick,
-  onMouseDown,
-  ...props
-}: ServiceCardProps) {
+export const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function ServiceCard(
+  {
+    service,
+    networkMode,
+    clickOpenTarget,
+    middleClickOpenTarget,
+    className,
+    isDragging,
+    isDropTarget,
+    onClick,
+    onMouseDown,
+    ...props
+  },
+  ref
+) {
   async function openService(target: OpenTarget) {
     const urls = resolveTargetUrl(service, networkMode)
     const openTarget = service.forceNewTab ? 'blank' : target
@@ -57,8 +60,9 @@ export function ServiceCard({
 
   return (
     <Card
+      ref={ref}
       className={cn(
-        'group relative h-full cursor-pointer overflow-hidden rounded-[1.08rem] border border-border/80 bg-card/90 px-3 py-1.5 shadow-[0_12px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card hover:shadow-[0_16px_32px_rgba(15,23,42,0.12)] dark:bg-card/80 dark:shadow-[0_16px_34px_rgba(0,0,0,0.3)] dark:hover:shadow-[0_20px_40px_rgba(0,0,0,0.34)]',
+        'group relative h-full cursor-pointer overflow-hidden rounded-[1.08rem] border border-border/80 bg-card/90 px-3 py-1.5 shadow-[0_8px_18px_rgba(15,23,42,0.07)] backdrop-blur-none transition-[transform,border-color,background-color,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card hover:shadow-[0_12px_24px_rgba(15,23,42,0.1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-2 dark:bg-card/80 dark:shadow-[0_12px_26px_rgba(0,0,0,0.25)] dark:hover:shadow-[0_16px_32px_rgba(0,0,0,0.3)]',
         isDragging && 'cursor-grabbing opacity-45 shadow-none',
         isDropTarget && 'border-primary/50 ring-2 ring-primary/15',
         className
@@ -81,4 +85,6 @@ export function ServiceCard({
       </div>
     </Card>
   )
-}
+})
+
+ServiceCard.displayName = 'ServiceCard'

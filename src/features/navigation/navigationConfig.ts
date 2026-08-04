@@ -5,6 +5,7 @@ import {
   type SceneGroupConfig,
   type ServiceConfig,
   type ServicesConfig,
+  type QuickRecord,
 } from '@/config/schema'
 
 export interface BookmarkPlacement {
@@ -37,6 +38,7 @@ export function cloneNavigationConfig(config: NavigationConfig): NavigationConfi
         ...group,
         bookmarkIds: [...group.bookmarkIds],
       })),
+      quickRecords: (scene.quickRecords ?? []).map((record) => ({ ...record })),
     })),
   }
 }
@@ -119,7 +121,46 @@ export function createScene(config: NavigationConfig, name: string): NavigationS
     name: name.trim(),
     protected: false,
     groups: [],
+    quickRecords: [],
   }
+}
+
+export function getSceneQuickRecords(config: NavigationConfig, sceneId: string): QuickRecord[] {
+  return findScene(config, sceneId)?.quickRecords ?? []
+}
+
+export function upsertQuickRecord(
+  config: NavigationConfig,
+  sceneId: string,
+  record: QuickRecord,
+  previousRecordId?: string
+) {
+  const next = cloneNavigationConfig(config)
+  const scene = findScene(next, sceneId)
+  if (!scene) {
+    throw new Error('鎵€閫夊満鏅笉瀛樺湪')
+  }
+  const currentId = previousRecordId ?? record.id
+  const quickRecords = scene.quickRecords ?? (scene.quickRecords = [])
+  const index = quickRecords.findIndex((item) => item.id === currentId)
+  if (index >= 0) {
+    quickRecords[index] = { ...record }
+  } else {
+    quickRecords.push({ ...record })
+  }
+  return parseNavigationConfig(next)
+}
+
+export function removeQuickRecordFromScene(
+  config: NavigationConfig,
+  sceneId: string,
+  recordId: string
+) {
+  const next = cloneNavigationConfig(config)
+  const scene = findScene(next, sceneId)
+  if (!scene) return next
+  scene.quickRecords = (scene.quickRecords ?? []).filter((record) => record.id !== recordId)
+  return parseNavigationConfig(next)
 }
 
 export function createSceneGroup(scene: NavigationSceneConfig, name: string): SceneGroupConfig {

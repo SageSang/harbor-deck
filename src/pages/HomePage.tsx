@@ -1,28 +1,32 @@
-import { useEffect, useMemo } from 'react'
+import { lazy, Suspense, useEffect, useMemo } from 'react'
 import { HeroClock } from '@/components/HeroClock'
 import { SearchBox } from '@/components/SearchBox'
 import { TopBar } from '@/components/TopBar'
-import { ServiceGrid } from '@/features/services/ServiceGrid'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 import { useSystemConfig } from '@/features/config/useSystemConfig'
-import { useServices } from '@/features/services/useServices'
 import { detectNetworkMode } from '@/core/network/detectNetworkMode'
+import { hasCompleteNetworkProbeConfig } from '@/config/networkProbe'
 import { useNavigationConfig } from '@/features/navigation/useNavigation'
+
+const ServiceGrid = lazy(() =>
+  import('@/features/services/ServiceGrid').then(({ ServiceGrid: Grid }) => ({ default: Grid }))
+)
 
 export function HomePage() {
   const networkModeStrategy = useAppStore((state) => state.networkModeStrategy)
   const setDetectedNetworkMode = useAppStore((state) => state.setDetectedNetworkMode)
   const error = useAppStore((state) => state.error)
-  const { allServices } = useServices()
-  const navigationQuery = useNavigationConfig()
   const { data: systemConfig } = useSystemConfig()
   const { messages } = useI18n()
+  const navigationQuery = useNavigationConfig({
+    enabled: systemConfig !== undefined && !hasCompleteNetworkProbeConfig(systemConfig.networkProbe),
+  })
   const networkProbeServices = useMemo(
     () =>
       navigationQuery.data?.bookmarks.map((bookmark) => ({ ...bookmark, category: 'all' })) ??
-      allServices,
-    [allServices, navigationQuery.data]
+      [],
+    [navigationQuery.data]
   )
 
   useEffect(() => {
@@ -64,7 +68,16 @@ export function HomePage() {
         )}
 
         <div className="mt-1.5 md:mt-2">
-          <ServiceGrid />
+          <Suspense
+            fallback={
+              <div
+                aria-label={messages.common.loading}
+                className="min-h-[16rem] rounded-[1.6rem] border border-border/60 bg-card/45 shadow-[0_14px_36px_rgba(52,45,39,0.04)]"
+              />
+            }
+          >
+            <ServiceGrid />
+          </Suspense>
         </div>
       </main>
     </div>

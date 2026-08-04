@@ -1,6 +1,6 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
-import type { NavigationConfig, ServiceConfig } from '../src/config/schema.js'
+import type { NavigationConfig, QuickRecord, ServiceConfig } from '../src/config/schema.js'
 
 export const integrationTokenHeader = 'x-harbordeck-search-token'
 const legacyIntegrationTokenHeader = 'x-smart-harbor-search-token'
@@ -17,8 +17,9 @@ export const integrationBookmarkBodySchema = z.object({
         groupId: z.string().trim().min(1),
       })
     )
-    .min(1)
-    .max(100),
+    .max(100)
+    .default([]),
+  recordSceneId: z.string().trim().min(1).optional(),
 })
 
 export const integrationBookmarkLookupQuerySchema = z.object({
@@ -35,6 +36,7 @@ export interface IntegrationSearchResult {
   slug: string
   name: string
   url: string
+  recordId?: string
 }
 
 export interface IntegrationBookmarkInfo {
@@ -134,6 +136,35 @@ function toIntegrationBookmarkInfo(bookmark: ServiceConfig): IntegrationBookmark
 export function lookupIntegrationBookmark(navigation: NavigationConfig, url: string) {
   const bookmark = navigation.bookmarks.find((item) => bookmarkMatchesAnyUrl(item, [url]))
   if (!bookmark) {
+    for (const scene of navigation.scenes) {
+      if (scene.protected) continue
+      const record = (scene.quickRecords ?? []).find((item) =>
+        bookmarkMatchesAnyUrl(
+          {
+            slug: item.id,
+            name: item.name,
+            primaryUrl: item.primaryUrl,
+            secondaryUrl: item.secondaryUrl,
+            note: item.note,
+          },
+          [url]
+        )
+      )
+      if (record) {
+        return {
+          bookmark: null,
+          quickRecord: {
+            id: record.id,
+            sceneId: scene.id,
+            name: record.name,
+            primaryUrl: record.primaryUrl,
+            ...(record.secondaryUrl ? { secondaryUrl: record.secondaryUrl } : {}),
+            ...(record.note ? { note: record.note } : {}),
+          },
+          placements: [] as IntegrationBookmarkPlacement[],
+        }
+      }
+    }
     return { bookmark: null, placements: [] as IntegrationBookmarkPlacement[] }
   }
 
@@ -186,6 +217,27 @@ export function searchNavigationBookmarks(
         })
       })
     })
+    ;(scene.quickRecords ?? []).forEach((record) => {
+      if (!matchesBookmark({
+        slug: record.id,
+        name: record.name,
+        primaryUrl: record.primaryUrl,
+        secondaryUrl: record.secondaryUrl,
+        note: record.note,
+      }, normalizedQuery)) {
+        return
+      }
+      results.push({
+        sceneId: scene.id,
+        sceneName: scene.name,
+        groupId: '',
+        groupName: '',
+        slug: `quick-${record.id}`,
+        recordId: record.id,
+        name: record.name,
+        url: record.secondaryUrl || record.primaryUrl,
+      })
+    })
   })
 
   return results
@@ -221,7 +273,69 @@ export function createIntegrationBookmark(
     scenes: navigation.scenes.map((scene) => ({
       ...scene,
       groups: scene.groups.map((group) => ({ ...group, bookmarkIds: [...group.bookmarkIds] })),
+      quickRecords: (scene.quickRecords ?? []).map((record) => ({ ...record })),
     })),
+  }
+
+  const submittedUrls = [body.primaryUrl, body.secondaryUrl].filter(
+    (value): value is string => Boolean(value)
+  )
+
+  // Empty placements deliberately mean “quick record”.  It stays searchable
+  // in the selected scene without adding a normal group reference.
+  if (body.placements.length === 0) {
+    const targetScene =
+      next.scenes.find((scene) => scene.id === body.recordSceneId) ??
+      next.scenes.find((scene) => scene.id === next.defaultSceneId && !scene.protected) ??
+      next.scenes.find((scene) => !scene.protected)
+    if (!targetScene || targetScene.protected) {
+      throw new Error('No unlocked record scene is available')
+    }
+
+    const existingNormal = next.bookmarks.find((item) => bookmarkMatchesAnyUrl(item, submittedUrls))
+    const existing = (targetScene.quickRecords ?? []).find((record) =>
+      bookmarkMatchesAnyUrl(
+        {
+          slug: record.id,
+          name: record.name,
+          primaryUrl: record.primaryUrl,
+          secondaryUrl: record.secondaryUrl,
+          note: record.note,
+        },
+        submittedUrls
+      )
+    )
+    const baseName = existingNormal?.name ?? existing?.name ?? body.name
+    const basePrimaryUrl = existingNormal?.primaryUrl ?? existing?.primaryUrl ?? body.primaryUrl
+    const baseSecondaryUrl =
+      existingNormal?.secondaryUrl ?? existing?.secondaryUrl ?? body.secondaryUrl
+    const baseNote = existingNormal?.note ?? existing?.note ?? body.note?.trim()
+    const now = Date.now()
+    const record: QuickRecord = {
+      id: existing?.id ?? `quick-${now.toString(36)}-${randomInt(1000, 9999)}`,
+      name: baseName,
+      primaryUrl: basePrimaryUrl,
+      ...(baseSecondaryUrl ? { secondaryUrl: baseSecondaryUrl } : {}),
+      ...(baseNote ? { note: baseNote } : {}),
+      icon: existing?.icon ?? iconPool[randomInt(iconPool.length)],
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    }
+    if (existing) {
+      const quickRecords = targetScene.quickRecords ?? (targetScene.quickRecords = [])
+      const index = quickRecords.findIndex((item) => item.id === existing.id)
+      quickRecords[index] = record
+    } else {
+      ;(targetScene.quickRecords ?? (targetScene.quickRecords = [])).push(record)
+    }
+    return {
+      navigation: next,
+      bookmark: null,
+      quickRecord: record,
+      placements: [],
+      recordSceneId: targetScene.id,
+      created: !existing,
+    }
   }
   const targets = new Map<string, { sceneId: string; groupId: string }>()
 
@@ -236,20 +350,46 @@ export function createIntegrationBookmark(
     throw new Error('No unlocked target scenes are available')
   }
 
-  const submittedUrls = [body.primaryUrl, body.secondaryUrl].filter(
-    (value): value is string => Boolean(value)
-  )
   let bookmark = next.bookmarks.find((item) => bookmarkMatchesAnyUrl(item, submittedUrls))
   let created = false
+  const existingQuickRecord =
+    !bookmark
+      ? Array.from(targets.values())
+          .map(({ sceneId }) => next.scenes.find((scene) => scene.id === sceneId))
+          .flatMap((scene) => scene?.quickRecords ?? [])
+          .find((record) =>
+            bookmarkMatchesAnyUrl(
+              {
+                slug: record.id,
+                name: record.name,
+                primaryUrl: record.primaryUrl,
+                secondaryUrl: record.secondaryUrl,
+                note: record.note,
+              },
+              submittedUrls
+            )
+          )
+      : undefined
   if (!bookmark) {
-    bookmark = {
-      slug: buildUniqueSlug(body.name, next.bookmarks.map((item) => item.slug)),
-      name: body.name,
-      icon: iconPool[randomInt(iconPool.length)],
-      primaryUrl: body.primaryUrl,
-      ...(body.secondaryUrl ? { secondaryUrl: body.secondaryUrl } : {}),
-      ...(body.note?.trim() ? { note: body.note.trim() } : {}),
-    }
+    bookmark = existingQuickRecord
+      ? {
+          slug: buildUniqueSlug(existingQuickRecord.name, next.bookmarks.map((item) => item.slug)),
+          name: existingQuickRecord.name,
+          icon: existingQuickRecord.icon,
+          primaryUrl: existingQuickRecord.primaryUrl,
+          ...(existingQuickRecord.secondaryUrl
+            ? { secondaryUrl: existingQuickRecord.secondaryUrl }
+            : {}),
+          ...(existingQuickRecord.note ? { note: existingQuickRecord.note } : {}),
+        }
+      : {
+          slug: buildUniqueSlug(body.name, next.bookmarks.map((item) => item.slug)),
+          name: body.name,
+          icon: iconPool[randomInt(iconPool.length)],
+          primaryUrl: body.primaryUrl,
+          ...(body.secondaryUrl ? { secondaryUrl: body.secondaryUrl } : {}),
+          ...(body.note?.trim() ? { note: body.note.trim() } : {}),
+        }
     next.bookmarks.push(bookmark)
     created = true
   } else {
@@ -278,6 +418,19 @@ export function createIntegrationBookmark(
   targets.forEach(({ sceneId, groupId }) => {
     const scene = next.scenes.find((item) => item.id === sceneId)!
     const targetGroup = scene.groups.find((group) => group.id === groupId)!
+    const quickRecord = (scene.quickRecords ?? []).find((record) =>
+      bookmarkMatchesAnyUrl(
+        {
+          slug: record.id,
+          name: record.name,
+          primaryUrl: record.primaryUrl,
+          secondaryUrl: record.secondaryUrl,
+          note: record.note,
+        },
+        submittedUrls
+      )
+    )
+    scene.quickRecords = (scene.quickRecords ?? []).filter((record) => record.id !== quickRecord?.id)
     scene.groups.forEach((group) => {
       if (group.id !== targetGroup.id) {
         group.bookmarkIds = group.bookmarkIds.filter((id) => id !== bookmark!.slug)

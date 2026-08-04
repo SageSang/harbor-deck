@@ -1,6 +1,7 @@
 interface ChromeStorageArea {
   get(key: string): Promise<Record<string, unknown>>
   set(items: Record<string, unknown>): Promise<void>
+  remove(keys: string | string[]): Promise<void>
 }
 
 interface ChromeStorageNamespace {
@@ -15,6 +16,16 @@ interface ChromePermissionsNamespace {
 
 interface ChromeRuntimeNamespace {
   openOptionsPage(): Promise<void>
+  sendMessage(message: unknown): Promise<unknown>
+  onMessage: {
+    addListener(
+      callback: (
+        message: unknown,
+        sender: unknown,
+        sendResponse: (response?: unknown) => void
+      ) => boolean | void
+    ): void
+  }
 }
 
 interface ChromeTab {

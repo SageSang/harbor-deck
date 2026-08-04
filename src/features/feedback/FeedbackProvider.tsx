@@ -30,6 +30,10 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     }, 3200)
   }, [])
 
+  const clearToasts = useCallback(() => {
+    setToasts([])
+  }, [])
+
   const confirm = useCallback((options: ConfirmOptions) => {
     if (resolverRef.current) {
       resolverRef.current(false)
@@ -85,9 +89,10 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       showToast,
+      clearToasts,
       confirm,
     }),
-    [confirm, showToast]
+    [clearToasts, confirm, showToast]
   )
   const toastMeta = useMemo(() => getToastMeta(messages), [messages])
 

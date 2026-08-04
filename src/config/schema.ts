@@ -91,6 +91,22 @@ export const serviceSchema = canonicalServiceConfigSchema.extend({
 
 export const servicesSchema = z.array(serviceSchema)
 
+/**
+ * A quick record is intentionally kept separate from scene groups.  It is
+ * searchable in its scene, but does not participate in the normal one-group
+ * placement invariant until the user chooses a group while editing it.
+ */
+export const quickRecordSchema = z.object({
+  id: z.string().trim().min(1).max(160),
+  name: trimmedString.max(200),
+  note: z.string().max(5000).optional(),
+  icon: z.string().trim().min(1).optional(),
+  primaryUrl: z.string().trim().url(),
+  secondaryUrl: optionalUrl,
+  createdAt: positiveInteger,
+  updatedAt: positiveInteger,
+})
+
 export const sceneGroupConfigSchema = z.object({
   id: slugSchema,
   name: trimmedString,
@@ -103,6 +119,7 @@ export const navigationSceneConfigSchema = z.object({
   protected: z.boolean().default(false),
   passwordHash: authPasswordHashSchema.optional(),
   groups: z.array(sceneGroupConfigSchema).default([]),
+  quickRecords: z.array(quickRecordSchema).default([]),
 })
 
 const defaultNavigationConfigValue = {
@@ -114,6 +131,7 @@ const defaultNavigationConfigValue = {
       name: '默认',
       protected: false,
       groups: [],
+      quickRecords: [],
     },
   ],
 }
@@ -388,6 +406,7 @@ export type ServiceGroupConfig = z.infer<typeof serviceGroupConfigSchema>
 export type ServicesConfig = z.infer<typeof servicesConfigSchema>
 export type Service = z.infer<typeof serviceSchema>
 export type Services = z.infer<typeof servicesSchema>
+export type QuickRecord = z.infer<typeof quickRecordSchema>
 export type SceneGroupConfig = z.infer<typeof sceneGroupConfigSchema>
 export type NavigationSceneConfig = z.infer<typeof navigationSceneConfigSchema>
 export type NavigationConfig = z.infer<typeof navigationConfigSchema>

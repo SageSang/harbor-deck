@@ -53,6 +53,7 @@ describe('configStore', () => {
           name: '默认',
           protected: false,
           groups: [{ id: 'tools', name: '工具', bookmarkIds: ['toolbox'] }],
+          quickRecords: [],
         },
       ],
     }

@@ -15,10 +15,18 @@ export default defineConfig({
         options: path.resolve(__dirname, 'options.html'),
         popup: path.resolve(__dirname, 'popup.html'),
         background: path.resolve(__dirname, 'src/background.ts'),
+        newtabApp: path.resolve(__dirname, 'src/newtab.tsx'),
       },
       output: {
         entryFileNames(chunkInfo) {
-          return chunkInfo.name === 'background' ? 'background.js' : 'assets/[name].js'
+          if (chunkInfo.name === 'background') return 'background.js'
+          if (chunkInfo.facadeModuleId?.endsWith('src/newtab-loader.ts')) {
+            return 'assets/newtab-loader.js'
+          }
+          if (chunkInfo.facadeModuleId?.endsWith('src/newtab.tsx')) {
+            return 'assets/newtab-app.js'
+          }
+          return 'assets/[name].js'
         },
         chunkFileNames: 'assets/[name].js',
         assetFileNames: 'assets/[name].[ext]',

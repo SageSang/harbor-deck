@@ -322,10 +322,13 @@ export async function buildServer() {
       return reply.code(401).send('Invalid integration token')
     }
     const navigation = await readNavigationConfig()
+    const publicScenes = navigation.scenes.filter((scene) => !scene.protected)
     return {
-      defaultSceneId: navigation.defaultSceneId,
-      scenes: navigation.scenes
-        .filter((scene) => !scene.protected)
+      defaultSceneId:
+        publicScenes.find((scene) => scene.id === navigation.defaultSceneId)?.id ??
+        publicScenes[0]?.id ??
+        '',
+      scenes: publicScenes
         .map((scene) => ({
           id: scene.id,
           name: scene.name,
@@ -362,6 +365,8 @@ export async function buildServer() {
       return {
         created: result.created,
         bookmark: result.bookmark,
+        ...(result.quickRecord ? { quickRecord: result.quickRecord } : {}),
+        ...(result.recordSceneId ? { recordSceneId: result.recordSceneId } : {}),
         placements: result.placements,
         navigation: sanitizeNavigationConfig(savedNavigation),
       }

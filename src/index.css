@@ -80,6 +80,15 @@
 }
 
 @layer components {
+  .harbor-group-section {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 260px;
+  }
+
+  .harbor-bookmark-grid {
+    contain: layout;
+  }
+
   .config-panel-shell {
     background:
       radial-gradient(circle at top right, hsl(var(--primary) / 0.14), transparent 28%),

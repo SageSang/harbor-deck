@@ -7,6 +7,7 @@ import {
   renameGroupInScene,
   removeBookmarksFromScene,
   removeGroupFromScene,
+  upsertQuickRecord,
   upsertBookmark,
 } from '@/features/navigation/navigationConfig'
 
@@ -151,6 +152,34 @@ describe('renameGroupInScene', () => {
 
     expect(result.scenes.find((scene) => scene.id === 'personal')?.groups[0].name).toBe('Favorites')
     expect(result.scenes.find((scene) => scene.id === 'work')?.groups[0].name).toBe('Main')
+  })
+})
+
+describe('quick records', () => {
+  it('adds a record to only the selected scene and updates it by id', () => {
+    const config = createNavigationConfig()
+    const record = {
+      id: 'quick-one',
+      name: 'Quick one',
+      icon: 'bookmark',
+      primaryUrl: 'https://quick.example.com',
+      createdAt: 1,
+      updatedAt: 1,
+    }
+
+    const added = upsertQuickRecord(config, 'personal', record)
+    expect(added.scenes.find((scene) => scene.id === 'personal')?.quickRecords).toEqual([record])
+    expect(added.scenes.find((scene) => scene.id === 'work')?.quickRecords).toEqual([])
+
+    const updated = upsertQuickRecord(
+      added,
+      'personal',
+      { ...record, name: 'Quick one updated', updatedAt: 2 },
+      record.id
+    )
+    expect(updated.scenes.find((scene) => scene.id === 'personal')?.quickRecords).toEqual([
+      { ...record, name: 'Quick one updated', updatedAt: 2 },
+    ])
   })
 })
 

@@ -35,6 +35,14 @@ interface ExistingBookmarkResponse {
     secondaryUrl?: string
     note?: string
   } | null
+  quickRecord?: {
+    id: string
+    sceneId: string
+    name: string
+    primaryUrl: string
+    secondaryUrl?: string
+    note?: string
+  } | null
   placements: Array<{ sceneId: string; groupId: string }>
 }
 
@@ -72,6 +80,7 @@ export function PopupApp() {
   const [secondaryUrl, setSecondaryUrl] = useState('')
   const [note, setNote] = useState('')
   const [selectedGroups, setSelectedGroups] = useState<Record<string, string>>({})
+  const [recordSceneId, setRecordSceneId] = useState('')
   const [saving, setSaving] = useState(false)
   const [collapsedSceneIds, setCollapsedSceneIds] = useState<Set<string>>(new Set())
 
@@ -94,9 +103,10 @@ export function PopupApp() {
       secondaryUrl,
       note,
       selectedGroups,
+      recordSceneId,
     }
     void writePopupDraft(draft)
-  }, [note, secondaryUrl, selectedGroups, state.settings, state.sourceTabUrl, state.tabTitle, state.tabUrl])
+  }, [note, recordSceneId, secondaryUrl, selectedGroups, state.settings, state.sourceTabUrl, state.tabTitle, state.tabUrl])
 
   useEffect(() => {
     let cancelled = false
@@ -122,6 +132,7 @@ export function PopupApp() {
       setSecondaryUrl(reusableDraft?.secondaryUrl ?? '')
       setNote(reusableDraft?.note ?? '')
       setSelectedGroups(reusableDraft?.selectedGroups ?? {})
+      setRecordSceneId(reusableDraft?.recordSceneId ?? '')
       if (!settings.apiToken || (!settings.primaryUrl && !settings.fallbackUrl)) {
         await chrome.runtime.openOptionsPage()
         window.close()
@@ -149,6 +160,7 @@ export function PopupApp() {
           scenes: sortedScenes,
         })
         setCollapsedSceneIds(new Set(sortedScenes.map((scene) => scene.id)))
+        setRecordSceneId((current) => current || reusableDraft?.recordSceneId || result.defaultSceneId)
 
         if (!reusableDraft && /^https?:\/\//i.test(sourceTabUrl)) {
           try {
@@ -176,6 +188,17 @@ export function PopupApp() {
                     existing.placements.map((placement) => [placement.sceneId, placement.groupId])
                   )
                 )
+                setRecordSceneId(existing.placements[0]?.sceneId ?? result.defaultSceneId)
+              } else if (!cancelled && existing.quickRecord) {
+                setState((current) => ({
+                  ...current,
+                  tabTitle: existing.quickRecord!.name,
+                  tabUrl: existing.quickRecord!.primaryUrl,
+                }))
+                setSecondaryUrl(existing.quickRecord.secondaryUrl ?? '')
+                setNote(existing.quickRecord.note ?? '')
+                setSelectedGroups({})
+                setRecordSceneId(existing.quickRecord.sceneId)
               }
             }
           } catch {
@@ -198,6 +221,7 @@ export function PopupApp() {
   }, [isZh])
 
   function toggleGroup(sceneId: string, groupId: string) {
+    setRecordSceneId(sceneId)
     setSelectedGroups((current) => {
       if (current[sceneId] === groupId) {
         const next = { ...current }
@@ -209,6 +233,7 @@ export function PopupApp() {
   }
 
   function toggleSceneCollapse(sceneId: string) {
+    setRecordSceneId(sceneId)
     setCollapsedSceneIds((current) => {
       const next = new Set(current)
       if (next.has(sceneId)) {
@@ -222,7 +247,7 @@ export function PopupApp() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!state.settings || selectedTargets.length === 0 || !state.tabTitle.trim() || !state.tabUrl.trim()) return
+    if (!state.settings || !recordSceneId || !state.tabTitle.trim() || !state.tabUrl.trim()) return
     setSaving(true)
     setState((current) => ({ ...current, error: '', status: '' }))
     try {
@@ -244,13 +269,26 @@ export function PopupApp() {
           secondaryUrl: secondaryUrl.trim() || undefined,
           note: note.trim() || undefined,
           placements: selectedTargets,
+          ...(selectedTargets.length === 0 ? { recordSceneId } : {}),
         }),
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const saved = (await response.json()) as { created?: boolean }
       await clearPopupDraft()
       setState((current) => ({
         ...current,
-        status: isZh ? '书签已添加。' : 'Bookmark added.',
+        status:
+          selectedTargets.length === 0
+            ? isZh
+              ? saved.created === false
+                ? '该记录已存在，已更新。'
+                : '快速记录已保存。'
+              : saved.created === false
+                ? 'Record already existed and was updated.'
+                : 'Quick record saved.'
+            : isZh
+              ? '书签已添加。'
+              : 'Bookmark added.',
       }))
       window.setTimeout(() => window.close(), 450)
     } catch {
@@ -287,7 +325,7 @@ export function PopupApp() {
                   aria-expanded={!collapsedSceneIds.has(scene.id)}
                   onClick={() => toggleSceneCollapse(scene.id)}
                 >
-                  <strong>{scene.name}</strong>
+                  <strong>{scene.name}{recordSceneId === scene.id && selectedCount === 0 ? ' · 快速记录' : ''}</strong>
                   {collapsedSceneIds.has(scene.id) ? (
                     <ChevronRight aria-hidden="true" />
                   ) : (
@@ -306,7 +344,7 @@ export function PopupApp() {
           </div>
           {state.error ? <p className="status-note error">{state.error}</p> : null}
           {state.status ? <p className="status-note success">{state.status}</p> : null}
-          <button className="btn btn-primary" type="submit" disabled={saving || selectedCount === 0 || !state.settings.apiToken}>{saving ? (isZh ? '添加中…' : 'Adding…') : (isZh ? '确认添加' : 'Add Bookmark')}</button>
+          <button className="btn btn-primary" type="submit" disabled={saving || !recordSceneId || !state.settings.apiToken}>{saving ? (isZh ? '保存中…' : 'Saving…') : selectedCount === 0 ? (isZh ? '保存记录' : 'Save record') : (isZh ? '确认添加' : 'Add Bookmark')}</button>
         </form>
       </section>
     </main>

@@ -1,14 +1,11 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Layers3, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ModalShell } from '@/components/ModalShell'
+import { focusSearchInputSoon } from '@/components/searchFocus'
 import { ApiError } from '@/features/config/api'
-import {
-  useActiveScene,
-  useLockScene,
-  useUnlockScene,
-} from '@/features/navigation/useNavigation'
+import { useActiveScene, useLockScene, useUnlockScene } from '@/features/navigation/useNavigation'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 
@@ -28,35 +25,77 @@ export function SceneSwitcher() {
   const [feedback, setFeedback] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
-  const scenes = useMemo(
-    () => sceneListQuery.data?.scenes ?? [],
-    [sceneListQuery.data?.scenes]
-  )
+  const scenes = useMemo(() => sceneListQuery.data?.scenes ?? [], [sceneListQuery.data?.scenes])
   const filteredScenes = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    return keyword
-      ? scenes.filter((scene) => scene.name.toLowerCase().includes(keyword))
-      : scenes
+    return keyword ? scenes.filter((scene) => scene.name.toLowerCase().includes(keyword)) : scenes
   }, [query, scenes])
   const pendingScene = scenes.find((scene) => scene.id === pendingSceneId)
 
-  function chooseScene(sceneId: string) {
-    const scene = scenes.find((item) => item.id === sceneId)
-    if (!scene) {
-      return
-    }
-    const token = sceneTokens[scene.id]
-    if (scene.protected && !token) {
-      setPendingSceneId(scene.id)
-      setPassword('')
-      setFeedback(null)
+  const chooseScene = useCallback(
+    (sceneId: string) => {
+      const scene = scenes.find((item) => item.id === sceneId)
+      if (!scene) {
+        return
+      }
+      const token = sceneTokens[scene.id]
+      if (scene.protected && !token) {
+        setPendingSceneId(scene.id)
+        setPassword('')
+        setFeedback(null)
+        setOpen(false)
+        return
+      }
+      setActiveScene(scene.id, { protected: scene.protected, token })
+      focusSearchInputSoon()
       setOpen(false)
-      return
+      setQuery('')
+    },
+    [scenes, sceneTokens, setActiveScene]
+  )
+
+  useEffect(() => {
+    function handleShortcut(event: globalThis.KeyboardEvent) {
+      if (
+        !event.altKey ||
+        !event.shiftKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        pendingSceneId ||
+        scenes.length < 1
+      ) {
+        return
+      }
+
+      let nextSceneId: string | null = null
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        if (scenes.length < 2) {
+          return
+        }
+        const currentIndex = Math.max(
+          0,
+          scenes.findIndex((scene) => scene.id === activeSceneId)
+        )
+        const offset = event.key === 'ArrowLeft' ? -1 : 1
+        nextSceneId = scenes[(currentIndex + offset + scenes.length) % scenes.length]?.id ?? null
+      } else {
+        const digitMatch = event.code.match(/^(?:Digit|Numpad)([1-9])$/)
+        const sceneIndex = digitMatch ? Number(digitMatch[1]) - 1 : -1
+        nextSceneId = sceneIndex >= 0 ? (scenes[sceneIndex]?.id ?? null) : null
+      }
+
+      if (!nextSceneId || nextSceneId === activeSceneId) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      chooseScene(nextSceneId)
     }
-    setActiveScene(scene.id, { protected: scene.protected, token })
-    setOpen(false)
-    setQuery('')
-  }
+
+    window.addEventListener('keydown', handleShortcut)
+    return () => window.removeEventListener('keydown', handleShortcut)
+  }, [activeSceneId, chooseScene, pendingSceneId, scenes])
 
   function submitPassword(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -72,6 +111,7 @@ export function SceneSwitcher() {
             protected: true,
             token: result.token ?? undefined,
           })
+          focusSearchInputSoon()
           setPendingSceneId(null)
           setPassword('')
         },
@@ -95,10 +135,13 @@ export function SceneSwitcher() {
     clearSceneToken(activeSceneId)
     const fallback =
       scenes.find((scene) => scene.id === lastRegularSceneId && !scene.protected) ??
-      scenes.find((scene) => scene.id === sceneListQuery.data?.defaultSceneId && !scene.protected) ??
+      scenes.find(
+        (scene) => scene.id === sceneListQuery.data?.defaultSceneId && !scene.protected
+      ) ??
       scenes.find((scene) => !scene.protected)
     if (fallback) {
       setActiveScene(fallback.id, { protected: false })
+      focusSearchInputSoon()
     }
     setOpen(false)
   }

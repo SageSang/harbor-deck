@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, CornerDownLeft, Search } from 'lucide-react'
 import { buildSearchUrl, getDefaultSearchEngine, getSearchEngines } from '@/config/searchEngines'
@@ -11,6 +17,11 @@ import { getLocalizedSearchEngineName } from '@/i18n/messages'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 import { resolveDirectUrl } from '@/core/navigation/resolveDirectUrl'
+import {
+  EMBEDDED_FOCUS_MESSAGE_TYPE,
+  focusSearchInputIfSafe,
+  SEARCH_INPUT_ID,
+} from './searchFocus'
 
 export function SearchBox() {
   const { data: systemConfig } = useSystemConfig()
@@ -44,6 +55,40 @@ export function SearchBox() {
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('embedded') === '1'
 
+  useLayoutEffect(() => {
+    if (isEmbedded) {
+      focusSearchInputIfSafe()
+    }
+  }, [isEmbedded])
+
+  useEffect(() => {
+    if (!isEmbedded) {
+      return
+    }
+
+    const focusIfSafe = () => {
+      focusSearchInputIfSafe()
+    }
+
+    const animationFrameId = window.requestAnimationFrame(focusIfSafe)
+    const timeoutId = window.setTimeout(focusIfSafe, 0)
+    const handleFocusRequest = (event: MessageEvent) => {
+      if (event.source !== window.parent || event.data?.type !== EMBEDDED_FOCUS_MESSAGE_TYPE) {
+        return
+      }
+
+      focusIfSafe()
+    }
+
+    window.addEventListener('message', handleFocusRequest)
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId)
+      window.clearTimeout(timeoutId)
+      window.removeEventListener('message', handleFocusRequest)
+    }
+  }, [isEmbedded])
+
   useEffect(() => {
     setSelectedEngineId(defaultSearchEngine.id)
   }, [defaultSearchEngine.id])
@@ -56,7 +101,9 @@ export function SearchBox() {
 
     const updateTriggerWidth = () => {
       const nextWidth = Math.ceil(trigger.getBoundingClientRect().width)
-      setEngineTriggerWidth((currentWidth) => (currentWidth === nextWidth ? currentWidth : nextWidth))
+      setEngineTriggerWidth((currentWidth) =>
+        currentWidth === nextWidth ? currentWidth : nextWidth
+      )
     }
 
     updateTriggerWidth()
@@ -194,6 +241,7 @@ export function SearchBox() {
           </button>
         </div>
         <Input
+          id={SEARCH_INPUT_ID}
           autoFocus={!isEmbedded}
           type="text"
           enterKeyHint="search"

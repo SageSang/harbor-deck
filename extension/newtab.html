@@ -5,9 +5,124 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HarborDeck</title>
-    <script type="module" src="./src/newtab.tsx"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        background: #f7f3ee;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: #f7f3ee;
+      }
+
+      #harbordeck-instant-shell {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        box-sizing: border-box;
+        background: #f7f3ee;
+        color: #342d27;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      #harbordeck-instant-shell[hidden] {
+        display: none;
+      }
+
+      .harbordeck-instant-card {
+        width: min(100%, 680px);
+        box-sizing: border-box;
+        padding: 28px;
+        border: 1px solid rgba(182, 141, 106, 0.2);
+        border-radius: 24px;
+        background: rgba(255, 252, 248, 0.92);
+        box-shadow: 0 24px 60px rgba(104, 74, 50, 0.1);
+      }
+
+      .harbordeck-instant-eyebrow {
+        margin-bottom: 14px;
+        color: #a88569;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .harbordeck-instant-input {
+        width: 100%;
+        min-height: 48px;
+        box-sizing: border-box;
+        padding: 0 16px;
+        border: 1px solid rgba(182, 141, 106, 0.28);
+        border-radius: 16px;
+        outline: none;
+        background: rgba(255, 255, 255, 0.92);
+        color: #342d27;
+        font: inherit;
+        font-size: 16px;
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .harbordeck-instant-input:focus {
+        border-color: rgba(227, 119, 57, 0.72);
+        box-shadow: 0 0 0 4px rgba(227, 119, 57, 0.12);
+      }
+
+      .harbordeck-instant-status {
+        min-height: 20px;
+        margin: 12px 0 0;
+        color: #8d7765;
+        font-size: 13px;
+      }
+
+      .harbordeck-instant-action {
+        display: none;
+        margin-top: 16px;
+        min-height: 38px;
+        padding: 0 16px;
+        border: 0;
+        border-radius: 12px;
+        background: #e37739;
+        color: #fffaf5;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+      }
+
+      .harbordeck-instant-shell-paused .harbordeck-instant-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+    </style>
+    <script type="module" src="./src/newtab-loader.ts"></script>
   </head>
   <body>
+    <section id="harbordeck-instant-shell" aria-label="HarborDeck">
+      <form class="harbordeck-instant-card" id="harbordeck-instant-form" autocomplete="off">
+        <div class="harbordeck-instant-eyebrow">HarborDeck</div>
+        <input
+          id="harbordeck-instant-input"
+          class="harbordeck-instant-input"
+          type="text"
+          autofocus
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="正在打开导航页…"
+          aria-label="HarborDeck 搜索"
+        />
+        <p class="harbordeck-instant-status" id="harbordeck-instant-status" aria-live="polite"></p>
+        <button class="harbordeck-instant-action" id="harbordeck-instant-action" type="submit">
+          打开导航页
+        </button>
+      </form>
+    </section>
     <div id="root"></div>
   </body>
-  </html>
+</html>

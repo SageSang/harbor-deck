@@ -21,8 +21,8 @@ const messages = {
       openModeHint:
         '建议选“直接跳转”。“内嵌显示”下，部分页面可能无法正常显示；遇到这类书签，可在导航页里开启“强制新标签页打开”。',
       probeTimeoutLabel: '检测超时（毫秒）',
-      probeTimeoutHint: (defaultTimeoutMs: number, cacheSeconds: number) =>
-        `默认 ${defaultTimeoutMs}ms。越小越快，越大越稳。最近成功地址会缓存 ${cacheSeconds} 秒。`,
+      probeTimeoutHint: (defaultTimeoutMs: number, cacheDuration: string) =>
+        `默认 ${defaultTimeoutMs}ms。越小越快，越大越稳。最近成功地址会缓存 ${cacheDuration}。`,
       saveButton: '保存配置',
       savingButton: '保存中...',
       statusIdle: '填好地址后保存即可。',
@@ -39,7 +39,7 @@ const messages = {
       unconfiguredDescription: '先到设置页填写主地址和切换地址，再选择打开方式。',
       openSettingsButton: '打开配置页',
       redirectCancelledTitle: '已暂停自动跳转',
-      redirectCancelledDescription: '检测到你正在输入或打开其他页面，导航页不会打断当前操作。',
+      redirectCancelledDescription: '检测到页面离开，自动跳转已暂停。你可以手动打开导航页继续。',
       openNavigationButton: '打开导航页',
       noticeOpeningTitle: '正在打开导航页',
       noticeFallbackTitle: '已切换地址',
@@ -72,8 +72,8 @@ const messages = {
       openModeHint:
         'Direct is recommended. In embedded mode, some pages may not display correctly. For those bookmarks, turn on "Force open in new tab" in HarborDeck.',
       probeTimeoutLabel: 'Check timeout (ms)',
-      probeTimeoutHint: (defaultTimeoutMs: number, cacheSeconds: number) =>
-        `Default ${defaultTimeoutMs}ms. Lower is faster, higher is safer. The last successful address is cached for ${cacheSeconds} seconds.`,
+      probeTimeoutHint: (defaultTimeoutMs: number, cacheDuration: string) =>
+        `Default ${defaultTimeoutMs}ms. Lower is faster, higher is safer. The last successful address is cached for ${cacheDuration}.`,
       saveButton: 'Save',
       savingButton: 'Saving...',
       statusIdle: 'Fill in the addresses and save.',
@@ -92,7 +92,7 @@ const messages = {
       openSettingsButton: 'Open Settings',
       redirectCancelledTitle: 'Auto-redirect paused',
       redirectCancelledDescription:
-        'Your input or navigation was detected, so the navigation page will not interrupt it.',
+        'The page started to leave, so auto-redirect was paused. You can open HarborDeck manually.',
       openNavigationButton: 'Open navigation page',
       noticeOpeningTitle: 'Opening HarborDeck',
       noticeFallbackTitle: 'Switched to secondary URL',

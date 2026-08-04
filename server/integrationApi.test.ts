@@ -155,4 +155,30 @@ describe('integrationApi', () => {
       })
     ).toThrow()
   })
+
+  it('saves an empty-placement request as a searchable quick record and converts it', () => {
+    const saved = createIntegrationBookmark(navigation, {
+      name: 'Scratch note',
+      primaryUrl: 'https://scratch.example.com',
+      recordSceneId: 'default',
+      placements: [],
+    })
+    expect(saved.created).toBe(true)
+    expect(saved.quickRecord?.name).toBe('Scratch note')
+    expect(searchNavigationBookmarks(saved.navigation, 'scratch')).toMatchObject([
+      { recordId: saved.quickRecord?.id, name: 'Scratch note' },
+    ])
+    expect(lookupIntegrationBookmark(saved.navigation, 'https://scratch.example.com')).toMatchObject({
+      quickRecord: { name: 'Scratch note', sceneId: 'default' },
+    })
+
+    const converted = createIntegrationBookmark(saved.navigation, {
+      name: 'Scratch note',
+      primaryUrl: 'https://scratch.example.com',
+      placements: [{ sceneId: 'default', groupId: 'tools' }],
+    })
+    expect(converted.bookmark?.name).toBe('Scratch note')
+    expect(converted.navigation.scenes[0].quickRecords).toHaveLength(0)
+    expect(converted.navigation.scenes[0].groups[0].bookmarkIds).toContain(converted.bookmark?.slug)
+  })
 })

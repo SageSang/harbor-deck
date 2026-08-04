@@ -9,7 +9,9 @@ import { useAppStore } from '@/store/appStore'
 import { useSystemConfig } from '@/features/config/useSystemConfig'
 import { defaultSystemConfig } from '@/features/config/api'
 import { useFeedback } from '@/features/feedback/useFeedback'
+import { focusSearchInput, SEARCH_INPUT_ID } from '@/components/searchFocus'
 import { LazyBookmarkEditDialog } from '@/features/services/LazyBookmarkEditDialog'
+import { QuickRecordEditDialog } from '@/features/services/QuickRecordEditDialog'
 import { cloneServicesConfig, defaultServicesConfig } from '@/features/services/servicesConfig'
 import {
   findScene,
@@ -20,10 +22,15 @@ import {
   removeBookmarksFromScene,
   removeGroupFromScene,
   removeBookmarkFromScene,
+  removeQuickRecordFromScene,
 } from '@/features/navigation/navigationConfig'
 import { useNavigationConfig, useSaveNavigationConfig } from '@/features/navigation/useNavigation'
 import { ServiceCard } from './ServiceCard'
-import { getGroupKey, persistCollapsedGroupKeys, readCollapsedGroupKeys } from '@/features/navigation/groupPreference'
+import {
+  getGroupKey,
+  persistCollapsedGroupKeys,
+  readCollapsedGroupKeys,
+} from '@/features/navigation/groupPreference'
 import { preloadServiceIcons } from './iconRegistry'
 import { useServices } from './useServices'
 
@@ -35,6 +42,14 @@ interface DragOverState {
 interface BookmarkContextMenuState {
   kind: 'bookmark'
   slug: string
+  x: number
+  y: number
+}
+
+interface QuickRecordContextMenuState {
+  kind: 'quick-record'
+  recordId: string
+  sceneId: string
   x: number
   y: number
 }
@@ -61,12 +76,28 @@ interface BookmarkDialogState {
   initialGroupId?: string | null
 }
 
+interface QuickRecordDialogState {
+  recordId: string
+  sceneId: string
+}
+
 interface GroupRenameState {
   groupId: string
   groupName: string
 }
 
-type ContextMenuState = BookmarkContextMenuState | GroupContextMenuState | SelectionContextMenuState
+type ContextMenuState =
+  | BookmarkContextMenuState
+  | QuickRecordContextMenuState
+  | GroupContextMenuState
+  | SelectionContextMenuState
+type BookmarkNavigationDirection = 'left' | 'right' | 'up' | 'down'
+
+interface BookmarkNavigationEntry {
+  slug: string
+  groupIndex: number
+  serviceIndex: number
+}
 
 const DESKTOP_SECTION_HORIZONTAL_PADDING_PX = 24
 // Keep the group label wide enough for normal folder paths while leaving a
@@ -103,6 +134,108 @@ function getCompactGroupWidth(cardCount: number, desktopCardWidth: number) {
   )
 }
 
+function isGroupCollapsedForView(
+  activeSceneId: string | null,
+  groupId: string,
+  collapsedGroupKeys: ReadonlySet<string>,
+  isSearchActive: boolean
+) {
+  return Boolean(
+    !isSearchActive &&
+    activeSceneId &&
+    groupId &&
+    collapsedGroupKeys.has(getGroupKey(activeSceneId, groupId))
+  )
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    target.matches('input, textarea, select, [contenteditable="true"]')
+  )
+}
+
+function findAdjacentBookmarkSlug(
+  currentSlug: string,
+  direction: BookmarkNavigationDirection,
+  entries: readonly BookmarkNavigationEntry[],
+  bookmarkRefs: ReadonlyMap<string, HTMLDivElement>
+) {
+  const currentIndex = entries.findIndex((entry) => entry.slug === currentSlug)
+  const currentElement = bookmarkRefs.get(currentSlug)
+  if (currentIndex < 0 || !currentElement) {
+    return null
+  }
+
+  const currentRect = currentElement.getBoundingClientRect()
+  const currentCenterX = currentRect.left + currentRect.width / 2
+  const currentCenterY = currentRect.top + currentRect.height / 2
+  const candidates = entries.flatMap((entry) => {
+    if (entry.slug === currentSlug) {
+      return []
+    }
+    const element = bookmarkRefs.get(entry.slug)
+    if (!element) {
+      return []
+    }
+    const rect = element.getBoundingClientRect()
+    return [
+      {
+        entry,
+        centerX: rect.left + rect.width / 2,
+        centerY: rect.top + rect.height / 2,
+      },
+    ]
+  })
+
+  const directional = candidates.filter(({ centerX, centerY }) => {
+    switch (direction) {
+      case 'left':
+        return centerX < currentCenterX - 2
+      case 'right':
+        return centerX > currentCenterX + 2
+      case 'up':
+        return centerY < currentCenterY - 2
+      case 'down':
+        return centerY > currentCenterY + 2
+    }
+  })
+
+  const sameRowThreshold = Math.max(currentRect.height * 1.35, 32)
+  const sameColumnThreshold = Math.max(currentRect.width * 1.35, 72)
+  const aligned = directional.filter(({ centerX, centerY }) => {
+    if (direction === 'left' || direction === 'right') {
+      return Math.abs(centerY - currentCenterY) <= sameRowThreshold
+    }
+    return Math.abs(centerX - currentCenterX) <= sameColumnThreshold
+  })
+  const pool = aligned.length > 0 ? aligned : directional
+
+  pool.sort((left, right) => {
+    if (direction === 'left' || direction === 'right') {
+      const primary =
+        Math.abs(left.centerX - currentCenterX) - Math.abs(right.centerX - currentCenterX)
+      return (
+        primary ||
+        Math.abs(left.centerY - currentCenterY) - Math.abs(right.centerY - currentCenterY)
+      )
+    }
+    const primary =
+      Math.abs(left.centerY - currentCenterY) - Math.abs(right.centerY - currentCenterY)
+    return (
+      primary || Math.abs(left.centerX - currentCenterX) - Math.abs(right.centerX - currentCenterX)
+    )
+  })
+
+  if (pool[0]) {
+    return pool[0].entry.slug
+  }
+
+  const fallbackIndex =
+    direction === 'left' || direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  return entries[fallbackIndex]?.slug ?? null
+}
+
 export function ServiceGrid() {
   const { groupedServices, isLoading, config } = useServices()
   const searchKeyword = useAppStore((state) => state.searchKeyword)
@@ -120,6 +253,7 @@ export function ServiceGrid() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
   const [bookmarkDialog, setBookmarkDialog] = useState<BookmarkDialogState | null>(null)
+  const [quickRecordDialog, setQuickRecordDialog] = useState<QuickRecordDialogState | null>(null)
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(
     () => new Set(readCollapsedGroupKeys())
@@ -143,14 +277,39 @@ export function ServiceGrid() {
   })
   const [, setIconRenderVersion] = useState(0)
   const gridRef = useRef<HTMLDivElement | null>(null)
+  const bookmarkRefs = useRef(new Map<string, HTMLDivElement>())
   const longPressTimerRef = useRef<number | null>(null)
   const longPressPointerRef = useRef<{ slug: string; x: number; y: number } | null>(null)
   const justLongPressedRef = useRef(false)
+  const [focusedBookmarkSlug, setFocusedBookmarkSlug] = useState<string | null>(null)
   const activeSystemConfig = systemConfig ?? defaultSystemConfig
 
   const activeConfig = useMemo(() => cloneServicesConfig(config ?? defaultServicesConfig), [config])
   const isSearchActive = searchKeyword.trim().length > 0
   const canDrag = !isSearchActive && !saveMutation.isPending
+
+  const quickRecordServices = useMemo(() => {
+    if (!isSearchActive || !activeSceneId || !navigationQuery.data) return []
+    const scene = findScene(navigationQuery.data, activeSceneId)
+    const keyword = searchKeyword.trim().toLocaleLowerCase()
+    return (scene?.quickRecords ?? [])
+      .filter((record) =>
+        [record.name, record.id, record.primaryUrl, record.secondaryUrl ?? '', record.note ?? '']
+          .join('\n')
+          .toLocaleLowerCase()
+          .includes(keyword)
+      )
+      .map((record) => ({
+        slug: `quick-${record.id}`,
+        name: record.name,
+        icon: record.icon,
+        primaryUrl: record.primaryUrl,
+        ...(record.secondaryUrl ? { secondaryUrl: record.secondaryUrl } : {}),
+        ...(record.note ? { note: record.note } : {}),
+        forceNewTab: false,
+        category: '快速记录',
+      }))
+  }, [activeSceneId, isSearchActive, navigationQuery.data, searchKeyword])
 
   const displayGroups = useMemo(() => {
     const scene =
@@ -169,12 +328,62 @@ export function ServiceGrid() {
       })
       .filter((group) => group.actualGroupIndex >= 0)
   }, [activeConfig, activeSceneId, groupedServices, navigationQuery.data])
+  const renderGroups = useMemo(
+    () =>
+      quickRecordServices.length > 0
+        ? [
+            {
+              category: '快速记录',
+              services: quickRecordServices,
+              actualGroupIndex: -1,
+              groupId: '',
+              isQuickRecordGroup: true,
+            },
+            ...displayGroups.map((group) => ({ ...group, isQuickRecordGroup: false })),
+          ]
+        : displayGroups.map((group) => ({ ...group, isQuickRecordGroup: false })),
+    [displayGroups, quickRecordServices]
+  )
+  const visibleBookmarkEntries = useMemo<BookmarkNavigationEntry[]>(
+    () =>
+      renderGroups.flatMap((group, groupIndex) => {
+        if (
+          isGroupCollapsedForView(activeSceneId, group.groupId, collapsedGroupKeys, isSearchActive)
+        ) {
+          return []
+        }
+
+        return group.services.map((service, serviceIndex) => ({
+          slug: service.slug,
+          groupIndex,
+          serviceIndex,
+        }))
+      }),
+    [activeSceneId, collapsedGroupKeys, isSearchActive, renderGroups]
+  )
+  const firstVisibleBookmarkSlug = visibleBookmarkEntries[0]?.slug ?? null
+  const lastVisibleBookmarkSlug =
+    visibleBookmarkEntries[visibleBookmarkEntries.length - 1]?.slug ?? null
   const visibleServiceIcons = useMemo(
     () =>
       Array.from(
-        new Set(displayGroups.flatMap((group) => group.services.map((service) => service.icon)))
+        new Set(
+          renderGroups.flatMap((group) => {
+            if (
+              isGroupCollapsedForView(
+                activeSceneId,
+                group.groupId,
+                collapsedGroupKeys,
+                isSearchActive
+              )
+            ) {
+              return []
+            }
+            return group.services.map((service) => service.icon)
+          })
+        )
       ),
-    [displayGroups]
+    [activeSceneId, collapsedGroupKeys, isSearchActive, renderGroups]
   )
 
   useEffect(() => {
@@ -220,7 +429,56 @@ export function ServiceGrid() {
   useEffect(() => {
     setSelectionMode(false)
     setSelectedSlugs(new Set())
+    setFocusedBookmarkSlug(null)
   }, [activeSceneId, searchKeyword])
+
+  useEffect(() => {
+    function focusSearchBox() {
+      setFocusedBookmarkSlug(null)
+      focusSearchInput()
+    }
+
+    function focusBookmark(slug: string) {
+      const element = bookmarkRefs.current.get(slug)
+      if (!element) {
+        return
+      }
+      setFocusedBookmarkSlug(slug)
+      element.focus({ preventScroll: true })
+      element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === '/' && !isEditableTarget(event.target)) {
+        event.preventDefault()
+        setContextMenu(null)
+        focusSearchBox()
+        return
+      }
+
+      if (
+        !(event.target instanceof HTMLElement) ||
+        event.target.id !== SEARCH_INPUT_ID ||
+        event.altKey ||
+        event.shiftKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        (event.key !== 'ArrowDown' && event.key !== 'ArrowUp')
+      ) {
+        return
+      }
+
+      const slug = event.key === 'ArrowDown' ? firstVisibleBookmarkSlug : lastVisibleBookmarkSlug
+      if (!slug) {
+        return
+      }
+      event.preventDefault()
+      focusBookmark(slug)
+    }
+
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+  }, [firstVisibleBookmarkSlug, lastVisibleBookmarkSlug])
 
   useEffect(() => {
     persistCollapsedGroupKeys(collapsedGroupKeys)
@@ -289,7 +547,7 @@ export function ServiceGrid() {
     observer.observe(element)
 
     return () => observer.disconnect()
-  }, [displayGroups.length, isLoading])
+  }, [isLoading, renderGroups.length])
 
   function clearDragState() {
     setDraggingSlugs([])
@@ -302,6 +560,21 @@ export function ServiceGrid() {
       longPressTimerRef.current = null
     }
     longPressPointerRef.current = null
+  }
+
+  function focusSearchBox() {
+    setFocusedBookmarkSlug(null)
+    focusSearchInput()
+  }
+
+  function focusBookmark(slug: string) {
+    const element = bookmarkRefs.current.get(slug)
+    if (!element) {
+      return
+    }
+    setFocusedBookmarkSlug(slug)
+    element.focus({ preventScroll: true })
+    element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
   }
 
   function beginBookmarkLongPress(slug: string, event: MouseEvent<HTMLDivElement>) {
@@ -445,6 +718,32 @@ export function ServiceGrid() {
     })
   }
 
+  async function handleDeleteQuickRecord(recordId: string, recordSceneId: string) {
+    const navigation = navigationQuery.data
+    const record = navigation
+      ? findScene(navigation, recordSceneId)?.quickRecords?.find((item) => item.id === recordId)
+      : undefined
+    if (!navigation || !record) return
+    setContextMenu(null)
+    const confirmed = await confirm({
+      title: '删除快速记录',
+      message: `确定删除“${record.name}”吗？删除后无法恢复。`,
+      confirmLabel: messages.serviceGrid.deleteAction,
+      cancelLabel: messages.common.cancel,
+      variant: 'destructive',
+    })
+    if (!confirmed) return
+    const nextConfig = removeQuickRecordFromScene(navigation, recordSceneId, recordId)
+    saveMutation.mutate(nextConfig, {
+      onSuccess: () => showToast({ type: 'success', message: `记录“${record.name}”已删除。` }),
+      onError: (error) =>
+        showToast({
+          type: 'error',
+          message: error instanceof Error ? error.message : messages.serviceGrid.deleteFailed,
+        }),
+    })
+  }
+
   async function handleDeleteSelected(slugs: string[]) {
     const navigation = navigationQuery.data
     if (!navigation || !activeSceneId || slugs.length === 0) {
@@ -515,7 +814,12 @@ export function ServiceGrid() {
     }
 
     try {
-      const nextConfig = addBookmarksToSceneGroups(navigation, slugs, placements, conflicts.length > 0)
+      const nextConfig = addBookmarksToSceneGroups(
+        navigation,
+        slugs,
+        placements,
+        conflicts.length > 0
+      )
       saveMutation.mutate(nextConfig, {
         onSuccess: () => {
           setBatchDialogOpen(false)
@@ -621,7 +925,7 @@ export function ServiceGrid() {
     )
   }
 
-  if (groupedServices.length === 0) {
+  if (renderGroups.length === 0) {
     const hasAnyBookmarks = activeConfig.some((group) => group.items.length > 0)
 
     return (
@@ -664,19 +968,24 @@ export function ServiceGrid() {
         </div>
       ) : null}
       <div ref={gridRef} className="flex w-full flex-wrap items-stretch gap-3 md:gap-3.5">
-        {displayGroups.map((group, groupIndex) => {
-          const isCollapsed = Boolean(
-            !isSearchActive &&
-              activeSceneId &&
-              group.groupId &&
-              collapsedGroupKeys.has(getGroupKey(activeSceneId, group.groupId))
+        {renderGroups.map((group) => {
+          const isCollapsed = isGroupCollapsedForView(
+            activeSceneId,
+            group.groupId,
+            collapsedGroupKeys,
+            isSearchActive
           )
           const isGroupDropTarget =
+            Boolean(group.groupId) &&
             dragOver?.groupIndex === group.actualGroupIndex &&
             typeof dragOver.serviceIndex === 'undefined'
-          const compactGroupWidth = getCompactGroupWidth(isCollapsed ? 0 : group.services.length, desktopCardWidth)
+          const compactGroupWidth = getCompactGroupWidth(
+            isCollapsed ? 0 : group.services.length,
+            desktopCardWidth
+          )
           const canKeepSingleRow =
-            isCollapsed || (desktopColumnCount > 0 && group.services.length > 0 && compactGroupWidth <= gridWidth)
+            isCollapsed ||
+            (desktopColumnCount > 0 && group.services.length > 0 && compactGroupWidth <= gridWidth)
           const compactGridStyle = canKeepSingleRow
             ? ({
                 '--desktop-card-width': `${desktopCardWidth}px`,
@@ -685,13 +994,17 @@ export function ServiceGrid() {
 
           return (
             <section
-              key={group.category}
-              className={`flex w-full flex-col rounded-[1.55rem] border border-border/75 bg-card/62 p-2.5 shadow-[0_16px_34px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition duration-300 md:p-3 dark:bg-card/60 dark:shadow-[0_18px_44px_rgba(0,0,0,0.28)] ${canKeepSingleRow ? 'lg:w-fit lg:flex-none' : 'lg:flex-1 lg:basis-full'} ${isGroupDropTarget ? 'border-primary/40 ring-2 ring-primary/10' : ''}`}
+              key={group.isQuickRecordGroup ? '__quick-records__' : group.groupId || group.category}
+              className={`harbor-group-section flex w-full flex-col rounded-[1.55rem] border border-border/75 bg-card/62 p-2.5 shadow-[0_16px_34px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition duration-300 md:p-3 dark:bg-card/60 dark:shadow-[0_18px_44px_rgba(0,0,0,0.28)] ${canKeepSingleRow ? 'lg:w-fit lg:flex-none' : 'lg:flex-1 lg:basis-full'} ${isGroupDropTarget ? 'border-primary/40 ring-2 ring-primary/10' : ''}`}
             >
               <div className="flex flex-1 flex-col gap-2.5 md:h-full md:flex-row md:items-stretch md:gap-3">
                 <div
                   className="relative flex w-full shrink-0 cursor-pointer items-center justify-center rounded-[1.15rem] border border-border/70 bg-[linear-gradient(180deg,hsl(var(--background)/0.96),hsl(var(--background)/0.84))] px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:min-h-[76px] md:w-[9rem] md:flex-col md:justify-center md:self-stretch"
-                  title={isCollapsed ? messages.serviceGrid.expandGroup : messages.serviceGrid.collapseGroup}
+                  title={
+                    isCollapsed
+                      ? messages.serviceGrid.expandGroup
+                      : messages.serviceGrid.collapseGroup
+                  }
                   onClick={() => {
                     if (group.groupId) toggleGroupCollapse(group.groupId)
                   }}
@@ -719,24 +1032,38 @@ export function ServiceGrid() {
                   </div>
                   <button
                     type="button"
-                    aria-label={isCollapsed ? messages.serviceGrid.expandGroup : messages.serviceGrid.collapseGroup}
-                    title={isCollapsed ? messages.serviceGrid.expandGroup : messages.serviceGrid.collapseGroup}
+                    aria-label={
+                      isCollapsed
+                        ? messages.serviceGrid.expandGroup
+                        : messages.serviceGrid.collapseGroup
+                    }
+                    title={
+                      isCollapsed
+                        ? messages.serviceGrid.expandGroup
+                        : messages.serviceGrid.collapseGroup
+                    }
                     className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-primary/70 transition hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
                     onClick={(event) => {
                       event.stopPropagation()
                       if (group.groupId) toggleGroupCollapse(group.groupId)
                     }}
                   >
-                    {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    {isCollapsed ? (
+                      <ChevronRight className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
                   </button>
                   <div className="mt-1 max-w-full rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
                     {messages.common.itemCount(group.services.length)}
                   </div>
                 </div>
 
-                {!isCollapsed ? <div
-                  className={`grid min-h-[76px] w-full flex-1 grid-cols-2 gap-2 rounded-[1.15rem] bg-background/34 p-1 transition sm:grid-cols-3 md:grid-cols-4 md:gap-2.5 md:p-1.5 ${canKeepSingleRow ? 'lg:w-fit lg:flex-none lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[var(--desktop-card-width)]' : 'lg:grid-cols-6 xl:grid-cols-8'} ${isGroupDropTarget ? 'bg-primary/6 ring-1 ring-primary/10' : ''}`}
-                  style={compactGridStyle}
+                <div
+                  hidden={isCollapsed}
+                  aria-hidden={isCollapsed}
+                  className={`${isCollapsed ? '!hidden' : ''} harbor-bookmark-grid grid min-h-[76px] w-full flex-1 grid-cols-2 gap-2 rounded-[1.15rem] bg-background/34 p-1 transition sm:grid-cols-3 md:grid-cols-4 md:gap-2.5 md:p-1.5 ${canKeepSingleRow ? 'lg:w-fit lg:flex-none lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[var(--desktop-card-width)]' : 'lg:grid-cols-6 xl:grid-cols-8'} ${isGroupDropTarget ? 'bg-primary/6 ring-1 ring-primary/10' : ''}`}
+                  style={{ ...compactGridStyle, display: isCollapsed ? 'none' : undefined }}
                   onDragOver={(event) => {
                     if (!canDrag || draggingSlugs.length === 0) {
                       return
@@ -760,12 +1087,15 @@ export function ServiceGrid() {
                         dragOver?.serviceIndex === index
 
                       return (
-                        <div
-                          key={service.slug}
-                          className="relative transform-gpu animate-slide-up motion-reduce:animate-none"
-                          style={{ animationDelay: `${(groupIndex * 3 + index) * 45}ms` }}
-                        >
+                        <div key={service.slug} className="relative">
                           <ServiceCard
+                            ref={(element) => {
+                              if (element) {
+                                bookmarkRefs.current.set(service.slug, element)
+                              } else {
+                                bookmarkRefs.current.delete(service.slug)
+                              }
+                            }}
                             service={service}
                             networkMode={networkMode}
                             clickOpenTarget={activeSystemConfig.clickOpenTarget}
@@ -778,8 +1108,59 @@ export function ServiceGrid() {
                             className={
                               selectedSlugs.has(service.slug)
                                 ? 'border-primary/60 ring-2 ring-primary/20'
-                                : undefined
+                                : focusedBookmarkSlug === service.slug
+                                  ? 'border-primary/45 ring-2 ring-primary/25'
+                                  : undefined
                             }
+                            role="link"
+                            aria-label={service.name}
+                            tabIndex={focusedBookmarkSlug === service.slug ? 0 : -1}
+                            onFocus={() => setFocusedBookmarkSlug(service.slug)}
+                            onKeyDown={(event) => {
+                              if (selectionMode) {
+                                return
+                              }
+                              if (event.key === 'Enter') {
+                                event.preventDefault()
+                                event.currentTarget.click()
+                                return
+                              }
+                              if (
+                                event.key === 'ArrowLeft' ||
+                                event.key === 'ArrowRight' ||
+                                event.key === 'ArrowUp' ||
+                                event.key === 'ArrowDown'
+                              ) {
+                                if (
+                                  event.altKey ||
+                                  event.shiftKey ||
+                                  event.ctrlKey ||
+                                  event.metaKey
+                                ) {
+                                  return
+                                }
+                                event.preventDefault()
+                                const nextSlug = findAdjacentBookmarkSlug(
+                                  service.slug,
+                                  event.key.slice(5).toLowerCase() as BookmarkNavigationDirection,
+                                  visibleBookmarkEntries,
+                                  bookmarkRefs.current
+                                )
+                                if (nextSlug) {
+                                  focusBookmark(nextSlug)
+                                } else if (
+                                  event.key === 'ArrowUp' &&
+                                  visibleBookmarkEntries[0]?.slug === service.slug
+                                ) {
+                                  focusSearchBox()
+                                }
+                                return
+                              }
+                              if (event.key === 'Escape') {
+                                event.preventDefault()
+                                focusSearchBox()
+                              }
+                            }}
                             onClick={(event) => {
                               if (justLongPressedRef.current) {
                                 event.preventDefault()
@@ -789,7 +1170,9 @@ export function ServiceGrid() {
                               if (selectionMode) {
                                 event.preventDefault()
                                 toggleBookmarkSelection(service.slug)
+                                return
                               }
+                              setFocusedBookmarkSlug(service.slug)
                             }}
                             onMouseDown={(event) => beginBookmarkLongPress(service.slug, event)}
                             onMouseMove={trackBookmarkLongPress}
@@ -833,6 +1216,16 @@ export function ServiceGrid() {
                             onContextMenu={(event) => {
                               event.preventDefault()
                               clearLongPress()
+                              if (group.isQuickRecordGroup && activeSceneId) {
+                                setContextMenu({
+                                  kind: 'quick-record',
+                                  recordId: service.slug.replace(/^quick-/, ''),
+                                  sceneId: activeSceneId,
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                })
+                                return
+                              }
                               if (selectionMode) {
                                 const slugs = selectedSlugs.has(service.slug)
                                   ? Array.from(selectedSlugs)
@@ -880,7 +1273,7 @@ export function ServiceGrid() {
                       {messages.serviceGrid.dropHint}
                     </div>
                   )}
-                </div> : null}
+                </div>
               </div>
             </section>
           )
@@ -895,6 +1288,14 @@ export function ServiceGrid() {
         initialSceneId={bookmarkDialog?.initialSceneId}
         initialGroupId={bookmarkDialog?.initialGroupId}
         onClose={() => setBookmarkDialog(null)}
+      />
+
+      <QuickRecordEditDialog
+        open={quickRecordDialog !== null}
+        config={navigationQuery.data}
+        recordId={quickRecordDialog?.recordId ?? null}
+        sceneId={quickRecordDialog?.sceneId ?? null}
+        onClose={() => setQuickRecordDialog(null)}
       />
 
       <BookmarkBatchPlacementDialog
@@ -959,6 +1360,32 @@ export function ServiceGrid() {
                   >
                     <Trash2 className="h-4 w-4" />
                     {messages.serviceGrid.deleteAction}
+                  </button>
+                </>
+              ) : null}
+              {contextMenu.kind === 'quick-record' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickRecordDialog({
+                        recordId: contextMenu.recordId,
+                        sceneId: contextMenu.sceneId,
+                      })
+                      setContextMenu(null)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    编辑记录
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteQuickRecord(contextMenu.recordId, contextMenu.sceneId)}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    删除记录
                   </button>
                 </>
               ) : null}

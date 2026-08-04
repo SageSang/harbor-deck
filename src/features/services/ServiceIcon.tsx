@@ -19,12 +19,22 @@ type IconComponent = ComponentType<{
   className?: string
 }>
 
-export function ServiceIcon({ name, className, autoLoad = true }: ServiceIconProps) {
-  const loaderKey = resolveIconLoaderKey(name)
+type CachedServiceIconProps = {
+  loaderKey: ReturnType<typeof resolveIconLoaderKey>
+  className?: string
+}
+
+function CachedServiceIcon({ loaderKey, className }: CachedServiceIconProps) {
+  const Icon: IconComponent = getCachedIconComponent(loaderKey) ?? Box
+
+  return <Icon className={className} />
+}
+
+function AutoLoadingServiceIcon({ loaderKey, className }: CachedServiceIconProps) {
   useSyncExternalStore(subscribeIconCache, getIconCacheSnapshot, getIconCacheSnapshot)
 
   useEffect(() => {
-    if (!autoLoad || loaderKey === 'box' || getCachedIconComponent(loaderKey)) {
+    if (loaderKey === 'box' || getCachedIconComponent(loaderKey)) {
       return
     }
 
@@ -39,9 +49,17 @@ export function ServiceIcon({ name, className, autoLoad = true }: ServiceIconPro
     return () => {
       cancelled = true
     }
-  }, [autoLoad, loaderKey])
+  }, [loaderKey])
 
-  const Icon: IconComponent = getCachedIconComponent(loaderKey) ?? Box
+  return <CachedServiceIcon loaderKey={loaderKey} className={className} />
+}
 
-  return <Icon className={className} />
+export function ServiceIcon({ name, className, autoLoad = true }: ServiceIconProps) {
+  const loaderKey = resolveIconLoaderKey(name)
+
+  return autoLoad ? (
+    <AutoLoadingServiceIcon loaderKey={loaderKey} className={className} />
+  ) : (
+    <CachedServiceIcon loaderKey={loaderKey} className={className} />
+  )
 }

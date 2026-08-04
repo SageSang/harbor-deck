@@ -26,6 +26,7 @@ import {
   buildSuggestedSlug,
   createEmptyBookmarkForm,
   formatBookmarkError,
+  validateQuickRecordForm,
   validateBookmarkForm,
   type BookmarkFormValues,
 } from '@/features/services/bookmarkForm'
@@ -37,6 +38,7 @@ import {
   renameGroupInScene,
   moveSceneGroup,
   removeGroupFromScene,
+  upsertQuickRecord,
   upsertBookmark,
 } from '@/features/navigation/navigationConfig'
 import {
@@ -66,7 +68,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   const passwordMutation = useSetScenePassword()
   const activeSceneId = useAppStore((state) => state.activeSceneId)
   const sceneTokens = useAppStore((state) => state.sceneTokens)
-  const { showToast, confirm } = useFeedback()
+  const { showToast, clearToasts, confirm } = useFeedback()
   const { messages } = useI18n()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [isOpen, setIsOpen] = useState(initialOpen)
@@ -84,6 +86,9 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
   const dragScrollFrameRef = useRef<number | null>(null)
   const dragScrollStateRef = useRef<{ container: HTMLElement; clientY: number } | null>(null)
+  // A save can finish after the modal has been closed/reopened.  Ignore callbacks
+  // from an older operation so its success toast cannot be shown for a later form.
+  const saveOperationRef = useRef(0)
 
   const navigation = navigationQuery.data
   const manageableNavigation = useMemo(() => {
@@ -113,7 +118,9 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     setSceneNameDraft(scene.name)
     setGroupDrafts(Object.fromEntries(scene.groups.map((group) => [group.id, group.name])))
     setBookmarkDraft(
-      (current) => current ?? createEmptyBookmarkForm(manageableNavigation, nextSceneId)
+      (current) =>
+        current ??
+        createEmptyBookmarkForm(manageableNavigation, nextSceneId, null, { withoutPlacement: true })
     )
   }, [activeSceneId, manageableNavigation, selectedSceneId])
 
@@ -123,6 +130,14 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       setSelectedSceneId(activeSceneId)
     }
   }, [activeSceneId, isOpen, manageableNavigation])
+
+  useEffect(() => {
+    saveOperationRef.current += 1
+    if (isOpen) {
+      setFeedback(null)
+      clearToasts()
+    }
+  }, [clearToasts, isOpen])
 
   useEffect(() => {
     if (!selectedScene) return
@@ -140,13 +155,17 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     successMessage: string,
     afterSave?: () => void
   ) {
+    const operationId = ++saveOperationRef.current
     saveMutation.mutate(nextNavigation, {
       onSuccess: () => {
+        if (operationId !== saveOperationRef.current) return
         notify('success', successMessage)
         afterSave?.()
       },
-      onError: (error) =>
-        notify('error', error instanceof Error ? error.message : messages.common.saveFailedRetry),
+      onError: (error) => {
+        if (operationId !== saveOperationRef.current) return
+        notify('error', error instanceof Error ? error.message : messages.common.saveFailedRetry)
+      },
     })
   }
 
@@ -154,8 +173,13 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     setSelectedSceneId(sceneId)
     setFeedback(null)
     if (manageableNavigation) {
-      setBookmarkDraft(createEmptyBookmarkForm(manageableNavigation, sceneId))
-      setBookmarkSlugTouched(false)
+      setBookmarkDraft(
+        (current) =>
+          current ??
+          createEmptyBookmarkForm(manageableNavigation, sceneId, null, {
+            withoutPlacement: true,
+          })
+      )
     }
   }
 
@@ -209,6 +233,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       name: group.name,
       bookmarkIds: [...group.bookmarkIds],
     }))
+    scene.quickRecords = (selectedScene.quickRecords ?? []).map((record) => ({ ...record }))
     const next = cloneNavigationConfig(navigation)
     next.scenes.push(scene)
     saveNavigation(next, `场景“${scene.name}”已复制。`, () => setSelectedSceneId(scene.id))
@@ -321,7 +346,8 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   }
 
   function moveGroupTo(groupId: string, targetIndex: number) {
-    if (saveMutation.isPending || !navigation || !selectedScene || groupId === dragOverGroupId) return
+    if (saveMutation.isPending || !navigation || !selectedScene || groupId === dragOverGroupId)
+      return
     const sourceIndex = selectedScene.groups.findIndex((group) => group.id === groupId)
     if (sourceIndex < 0 || sourceIndex === targetIndex) return
     const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
@@ -433,9 +459,60 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
 
   function handleAddBookmark() {
     if (!navigation || !bookmarkDraft) return
+    // Invalidate any older request before validation.  A validation failure
+    // does not call saveNavigation, but an older request may still finish.
+    saveOperationRef.current += 1
+    setFeedback(null)
+    clearToasts()
     try {
-      const result = validateBookmarkForm(bookmarkDraft, manageableNavigation ?? navigation)
+      const targetConfig = manageableNavigation ?? navigation
       let base = cloneNavigationConfig(navigation)
+      if (bookmarkDraft.placements.length === 0) {
+        const result = validateQuickRecordForm(bookmarkDraft)
+        const recordSceneId = [selectedSceneId, activeSceneId, targetConfig.defaultSceneId].find(
+          (sceneId) => targetConfig.scenes.some((scene) => scene.id === sceneId)
+        )
+        if (!recordSceneId) {
+          throw new Error('请先选择一个可用场景')
+        }
+        const recordScene = base.scenes.find((scene) => scene.id === recordSceneId)
+        if (!recordScene || (recordScene.protected && !sceneTokens[recordScene.id])) {
+          throw new Error('当前场景不可用于快速记录，请先解锁后重试')
+        }
+        const now = Date.now()
+        const existing = recordScene.quickRecords?.find(
+          (record) =>
+            record.primaryUrl === result.bookmark.primaryUrl ||
+            record.secondaryUrl === result.bookmark.primaryUrl ||
+            record.primaryUrl === result.bookmark.secondaryUrl ||
+            record.secondaryUrl === result.bookmark.secondaryUrl
+        )
+        const record = {
+          id: existing?.id ?? `quick-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          name: existing?.name ?? result.bookmark.name,
+          icon: existing?.icon ?? result.bookmark.icon,
+          primaryUrl: existing?.primaryUrl ?? result.bookmark.primaryUrl,
+          ...((existing?.secondaryUrl ?? result.bookmark.secondaryUrl)
+            ? { secondaryUrl: existing?.secondaryUrl ?? result.bookmark.secondaryUrl }
+            : {}),
+          ...((existing?.note ?? result.bookmark.note)
+            ? { note: existing?.note ?? result.bookmark.note }
+            : {}),
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        }
+        base = upsertQuickRecord(base, recordSceneId, record, existing?.id)
+        saveNavigation(base, `记录“${record.name}”已保存。`, () => {
+          setBookmarkDraft(
+            createEmptyBookmarkForm(base, recordSceneId, null, { withoutPlacement: true })
+          )
+          setBookmarkSlugTouched(false)
+          setIsOpen(false)
+        })
+        return
+      }
+
+      const result = validateBookmarkForm(bookmarkDraft, targetConfig)
       const placements = result.placements.map((placement) => ({ ...placement }))
       result.groupsToCreate.forEach(({ sceneId, name }) => {
         const scene = base.scenes.find((item) => item.id === sceneId)!
@@ -446,7 +523,9 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       })
       base = upsertBookmark(base, result.bookmark, placements)
       saveNavigation(base, `书签“${result.bookmark.name}”已创建。`, () => {
-        setBookmarkDraft(createEmptyBookmarkForm(base, selectedSceneId))
+        setBookmarkDraft(
+          createEmptyBookmarkForm(base, selectedSceneId, null, { withoutPlacement: true })
+        )
         setBookmarkSlugTouched(false)
         setIsOpen(false)
       })
@@ -700,20 +779,23 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                     className={`config-panel-card grid gap-2 p-3 ${draggingGroupId ? 'transition-none' : 'transition'} sm:grid-cols-[minmax(0,1fr)_auto] ${draggingGroupId === group.id ? 'opacity-50' : ''} ${dragOverGroupId === group.id && draggingGroupId !== group.id ? 'border-primary/50 ring-2 ring-primary/10' : ''}`}
                   >
                     <div className="flex min-w-0 items-start gap-2">
-                      <GripVertical className="mt-2 h-4 w-4 shrink-0 cursor-grab text-muted-foreground/65" aria-hidden="true" />
-                      <div className="min-w-0 flex-1">
-                      <Input
-                        value={groupDrafts[group.id] ?? ''}
-                        onChange={(event) =>
-                          setGroupDrafts((current) => ({
-                            ...current,
-                            [group.id]: event.target.value,
-                          }))
-                        }
+                      <GripVertical
+                        className="mt-2 h-4 w-4 shrink-0 cursor-grab text-muted-foreground/65"
+                        aria-hidden="true"
                       />
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {group.bookmarkIds.length} 个书签
-                      </p>
+                      <div className="min-w-0 flex-1">
+                        <Input
+                          value={groupDrafts[group.id] ?? ''}
+                          onChange={(event) =>
+                            setGroupDrafts((current) => ({
+                              ...current,
+                              [group.id]: event.target.value,
+                            }))
+                          }
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {group.bookmarkIds.length} 个书签
+                        </p>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-start gap-1.5">
@@ -765,6 +847,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                 config={manageableNavigation}
                 values={bookmarkDraft}
                 feedback={feedback}
+                allowEmptyPlacements
                 submitLabel={messages.bookmarkManage.bookmarkSection.submitButton}
                 submitDisabled={saveMutation.isPending}
                 onSubmit={handleAddBookmark}

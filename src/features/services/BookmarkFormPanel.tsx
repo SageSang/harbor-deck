@@ -18,6 +18,7 @@ interface BookmarkFormProps {
   feedback: FeedbackState | null
   submitLabel: string
   submitDisabled?: boolean
+  allowEmptyPlacements?: boolean
   onSubmit: () => void
   onCancel?: () => void
   onFieldChange: <K extends keyof BookmarkFormValues>(
@@ -32,6 +33,7 @@ export function BookmarkForm({
   feedback,
   submitLabel,
   submitDisabled,
+  allowEmptyPlacements = false,
   onSubmit,
   onCancel,
   onFieldChange,
@@ -155,7 +157,7 @@ export function BookmarkForm({
                       type="button"
                       variant="outline"
                       size="icon"
-                      disabled={values.placements.length === 1}
+                      disabled={!allowEmptyPlacements && values.placements.length === 1}
                       aria-label={messages.common.delete}
                       onClick={() =>
                         onFieldChange(

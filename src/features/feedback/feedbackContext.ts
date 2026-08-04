@@ -15,6 +15,7 @@ export interface ConfirmOptions {
 
 export interface FeedbackContextValue {
   showToast: (toast: ToastInput) => void
+  clearToasts: () => void
   confirm: (options: ConfirmOptions) => Promise<boolean>
 }
 

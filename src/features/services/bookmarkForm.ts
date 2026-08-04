@@ -2,6 +2,7 @@ import { ZodError } from 'zod'
 import type { NavigationConfig, ServiceConfig } from '@/config/schema'
 import { getCurrentMessages } from '@/i18n/runtime'
 import { cleanServiceConfig, slugify } from '@/features/services/servicesConfig'
+import { getRandomBookmarkIcon } from '@/features/services/randomBookmarkIcon'
 import {
   buildUniqueNavigationId,
   createSceneGroup,
@@ -28,6 +29,28 @@ export interface BookmarkFormValues {
 
 interface ValidateBookmarkFormOptions {
   currentSlug?: string
+  allowEmptyPlacements?: boolean
+}
+
+/**
+ * Quick records are intentionally not normal bookmarks yet.  They do not
+ * need a slug or a placement, so validate only the fields that are persisted
+ * on the record.  Keeping this separate prevents an empty-placement save
+ * from being rejected by normal bookmark rules (for example a duplicate or
+ * manually edited slug).
+ */
+export function validateQuickRecordForm(values: BookmarkFormValues) {
+  const bookmark = cleanServiceConfig({
+    slug: 'quick-record',
+    name: values.name.trim(),
+    note: values.note?.trim() ?? '',
+    icon: values.icon.trim() || undefined,
+    primaryUrl: values.primaryUrl.trim(),
+    secondaryUrl: values.secondaryUrl.trim(),
+    forceNewTab: values.forceNewTab,
+  })
+
+  return { bookmark }
 }
 
 function getNextBookmarkIndex(config: NavigationConfig) {
@@ -43,8 +66,8 @@ function createPlacement(
   return {
     sceneId: scene.id,
     groupId: scene.groups.some((group) => group.id === groupId)
-      ? groupId ?? ''
-      : scene.groups[0]?.id ?? '',
+      ? (groupId ?? '')
+      : (scene.groups[0]?.id ?? ''),
     newGroupName: '',
   }
 }
@@ -53,7 +76,7 @@ export function createEmptyBookmarkForm(
   config: NavigationConfig,
   sceneId?: string | null,
   groupId?: string | null,
-  options?: { blank?: boolean }
+  options?: { blank?: boolean; withoutPlacement?: boolean }
 ): BookmarkFormValues {
   const messages = getCurrentMessages()
   const nextIndex = getNextBookmarkIndex(config)
@@ -61,7 +84,7 @@ export function createEmptyBookmarkForm(
     config.scenes.find((scene) => scene.id === sceneId)?.id ?? config.defaultSceneId
 
   return {
-    placements: [createPlacement(config, targetSceneId, groupId)],
+    placements: options?.withoutPlacement ? [] : [createPlacement(config, targetSceneId, groupId)],
     name: options?.blank ? '' : messages.common.newBookmarkName(nextIndex),
     note: '',
     slug: buildUniqueNavigationId(
@@ -69,7 +92,7 @@ export function createEmptyBookmarkForm(
       config.bookmarks.map((bookmark) => bookmark.slug),
       'bookmark'
     ),
-    icon: '',
+    icon: getRandomBookmarkIcon(),
     primaryUrl: options?.blank ? '' : 'http://127.0.0.1',
     secondaryUrl: '',
     forceNewTab: false,
@@ -141,13 +164,14 @@ export function validateBookmarkForm(
   })
 
   if (
+    !options?.allowEmptyPlacements &&
     config.bookmarks.some(
       (item) => item.slug === bookmark.slug && item.slug !== options?.currentSlug
     )
   ) {
     throw new Error(messages.errors.bookmarkSlugExists(bookmark.slug))
   }
-  if (values.placements.length === 0) {
+  if (values.placements.length === 0 && !options?.allowEmptyPlacements) {
     throw new Error('请至少选择一个场景和分组')
   }
 

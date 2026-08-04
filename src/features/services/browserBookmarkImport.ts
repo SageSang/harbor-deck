@@ -1,8 +1,7 @@
 import type { NavigationConfig } from '@/config/schema'
 import { getCurrentMessages } from '@/i18n/runtime'
-import {
-  cleanServiceConfig,
-} from '@/features/services/servicesConfig'
+import { cleanServiceConfig } from '@/features/services/servicesConfig'
+import { getRandomBookmarkIcon } from '@/features/services/randomBookmarkIcon'
 import {
   buildUniqueNavigationId,
   cloneNavigationConfig,
@@ -215,15 +214,14 @@ export function importBrowserBookmarks(
     const targetGroup = bookmark.groupName
       ? ensureImportGroup(bookmark.groupName)
       : ensureDefaultGroup()
-    const existingBookmark = nextConfig.bookmarks.find(
-      (item) => item.primaryUrl === bookmark.url
-    )
+    const existingBookmark = nextConfig.bookmarks.find((item) => item.primaryUrl === bookmark.url)
     const name = deriveBookmarkName(bookmark.name, bookmark.url)
     const bookmarkConfig =
       existingBookmark ??
       cleanServiceConfig({
         slug: buildUniqueNavigationId(name, occupiedBookmarkIds, 'bookmark'),
         name,
+        icon: getRandomBookmarkIcon(),
         primaryUrl: bookmark.url,
       })
 

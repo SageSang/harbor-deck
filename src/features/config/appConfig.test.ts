@@ -36,6 +36,7 @@ describe('appConfig helpers', () => {
             name: '默认',
             protected: false,
             groups: [],
+            quickRecords: [],
           },
         ],
       },

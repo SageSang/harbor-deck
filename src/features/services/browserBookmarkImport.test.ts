@@ -34,17 +34,25 @@ describe('browserBookmarkImport', () => {
     const config: NavigationConfig = {
       defaultSceneId: 'default',
       bookmarks: [],
-      scenes: [{ id: 'default', name: '默认', protected: false, groups: [] }],
+      scenes: [{ id: 'default', name: '默认', protected: false, groups: [], quickRecords: [] }],
     }
 
-    const result = importBrowserBookmarks(config, [
-      { name: 'OpenAI', url: 'https://openai.com/' },
-      { name: 'GitHub', url: 'https://github.com/' },
-    ], 'default')
+    const result = importBrowserBookmarks(
+      config,
+      [
+        { name: 'OpenAI', url: 'https://openai.com/' },
+        { name: 'GitHub', url: 'https://github.com/' },
+      ],
+      'default'
+    )
 
     expect(result.scenes[0].groups).toHaveLength(1)
     expect(result.scenes[0].groups[0].name).toBe(IMPORTED_BOOKMARK_GROUP_NAME)
     expect(result.scenes[0].groups[0].bookmarkIds).toEqual(['openai', 'github'])
+    expect(result.bookmarks.map((bookmark) => bookmark.icon)).toEqual([
+      expect.any(String),
+      expect.any(String),
+    ])
   })
 
   it('creates suffixed import groups for conflicting folder names and reuses default group for ungrouped bookmarks', () => {
@@ -52,7 +60,11 @@ describe('browserBookmarkImport', () => {
       defaultSceneId: 'default',
       bookmarks: [
         { slug: 'existing-dev', name: 'Existing Dev', primaryUrl: 'https://existing.example.com/' },
-        { slug: 'existing-imported', name: 'Existing Imported', primaryUrl: 'https://imported.example.com/' },
+        {
+          slug: 'existing-imported',
+          name: 'Existing Imported',
+          primaryUrl: 'https://imported.example.com/',
+        },
       ],
       scenes: [
         {
@@ -61,19 +73,32 @@ describe('browserBookmarkImport', () => {
           protected: false,
           groups: [
             { id: 'dev', name: 'Dev', bookmarkIds: ['existing-dev'] },
-            { id: 'imported', name: IMPORTED_BOOKMARK_GROUP_NAME, bookmarkIds: ['existing-imported'] },
+            {
+              id: 'imported',
+              name: IMPORTED_BOOKMARK_GROUP_NAME,
+              bookmarkIds: ['existing-imported'],
+            },
           ],
+          quickRecords: [],
         },
       ],
     }
 
-    const result = importBrowserBookmarks(config, [
-      { name: 'MDN', url: 'https://developer.mozilla.org/', groupName: 'Dev' },
-      { name: 'Node.js', url: 'https://nodejs.org/', groupName: 'Dev' },
-      { name: 'OpenAI', url: 'https://openai.com/' },
-    ], 'default')
+    const result = importBrowserBookmarks(
+      config,
+      [
+        { name: 'MDN', url: 'https://developer.mozilla.org/', groupName: 'Dev' },
+        { name: 'Node.js', url: 'https://nodejs.org/', groupName: 'Dev' },
+        { name: 'OpenAI', url: 'https://openai.com/' },
+      ],
+      'default'
+    )
 
-    expect(result.scenes[0].groups.map((group) => group.name)).toEqual(['Dev', '导入书签', 'Dev(导入)'])
+    expect(result.scenes[0].groups.map((group) => group.name)).toEqual([
+      'Dev',
+      '导入书签',
+      'Dev(导入)',
+    ])
     expect(result.scenes[0].groups[1].bookmarkIds).toEqual(['existing-imported', 'openai'])
     expect(result.scenes[0].groups[2].bookmarkIds).toEqual(['mdn', 'nodejs'])
   })
@@ -90,6 +115,7 @@ describe('browserBookmarkImport', () => {
           name: 'Default',
           protected: false,
           groups: [{ id: 'main', name: 'Main', bookmarkIds: ['existing'] }],
+          quickRecords: [],
         },
       ],
     }

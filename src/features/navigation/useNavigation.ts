@@ -17,10 +17,11 @@ import {
 } from '@/features/config/api'
 import { useAppStore } from '@/store/appStore'
 
-export function useNavigationConfig() {
+export function useNavigationConfig(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: navigationConfigQueryKey,
     queryFn: fetchNavigationConfig,
+    enabled: options?.enabled ?? true,
     staleTime: 30_000,
   })
 }

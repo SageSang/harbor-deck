@@ -66,12 +66,6 @@ a {
   backdrop-filter: blur(22px);
 }
 
-.newtab-shell {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 16px;
-}
-
 .embedded-shell {
   position: relative;
   width: 100%;
@@ -268,33 +262,33 @@ a {
 }
 
 .popup-shell {
-  width: 390px;
+  width: 360px;
   min-height: 100dvh;
-  padding: 12px;
+  padding: 8px;
 }
 
 .popup-card {
   display: grid;
-  gap: 10px;
-  border-radius: 24px;
-  padding: 18px;
+  gap: 7px;
+  border-radius: 20px;
+  padding: 12px;
 }
 
 .popup-card h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 19px;
   line-height: 1.15;
 }
 
 .popup-form,
 .popup-scenes {
   display: grid;
-  gap: 10px;
+  gap: 7px;
 }
 
 .popup-form .field {
-  padding: 10px;
-  border-radius: 16px;
+  padding: 7px 8px;
+  border-radius: 12px;
 }
 
 .popup-form .field span,
@@ -307,15 +301,15 @@ a {
 
 .popup-textarea {
   height: auto;
-  min-height: 72px;
-  padding-top: 10px;
+  min-height: 58px;
+  padding-top: 7px;
   resize: vertical;
 }
 
 .popup-scene {
   display: grid;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 7px 8px;
   border: 1px solid rgba(182, 141, 106, 0.16);
   border-radius: 16px;
   background: rgba(255, 252, 248, 0.72);
@@ -391,8 +385,8 @@ a {
 }
 
 .popup-groups .toggle-option {
-  min-height: 34px;
-  padding: 0 10px;
+  min-height: 30px;
+  padding: 0 8px;
   border: 1px solid rgba(182, 141, 106, 0.16);
   border-radius: 12px;
   background: rgba(250, 245, 238, 0.8);

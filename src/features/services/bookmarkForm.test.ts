@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { NavigationConfig } from '@/config/schema'
-import { createDuplicateBookmarkForm } from './bookmarkForm'
+import {
+  createDuplicateBookmarkForm,
+  createEmptyBookmarkForm,
+  validateQuickRecordForm,
+  validateBookmarkForm,
+} from './bookmarkForm'
 
 function createNavigationConfig(): NavigationConfig {
   return {
@@ -32,6 +37,7 @@ function createNavigationConfig(): NavigationConfig {
             bookmarkIds: ['dashboard'],
           },
         ],
+        quickRecords: [],
       },
       {
         id: 'work',
@@ -44,6 +50,7 @@ function createNavigationConfig(): NavigationConfig {
             bookmarkIds: ['dashboard'],
           },
         ],
+        quickRecords: [],
       },
     ],
   }
@@ -70,3 +77,43 @@ describe('createDuplicateBookmarkForm', () => {
     })
   })
 })
+
+describe('quick record form submission', () => {
+  it('allows an empty placement list while retaining the bookmark fields', () => {
+    const config = createNavigationConfig()
+    const values = createEmptyBookmarkForm(config, 'personal', null, { withoutPlacement: true })
+
+    expect(values.placements).toEqual([])
+
+    const result = validateBookmarkForm(configureQuickRecord(values), config, {
+      allowEmptyPlacements: true,
+    })
+
+    expect(result.placements).toEqual([])
+    expect(result.bookmark.name).toBe('快速记录测试')
+    expect(result.bookmark.primaryUrl).toBe('https://quick-record.example.com')
+  })
+
+  it('does not apply the normal bookmark slug rules', () => {
+    const config = createNavigationConfig()
+    const values = {
+      ...createEmptyBookmarkForm(config, 'personal', null, { withoutPlacement: true }),
+      name: 'Another quick record',
+      slug: 'not a valid bookmark slug',
+      primaryUrl: 'https://another-quick-record.example.com',
+    }
+
+    const result = validateQuickRecordForm(values)
+
+    expect(result.bookmark.slug).toBe('quick-record')
+    expect(result.bookmark.name).toBe('Another quick record')
+  })
+})
+
+function configureQuickRecord(values: ReturnType<typeof createEmptyBookmarkForm>) {
+  return {
+    ...values,
+    name: '快速记录测试',
+    primaryUrl: 'https://quick-record.example.com',
+  }
+}

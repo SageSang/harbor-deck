@@ -17,6 +17,7 @@ export interface PopupDraft {
   secondaryUrl: string
   note: string
   selectedGroups: Record<string, string>
+  recordSceneId?: string
 }
 
 export type ResolutionReason =
@@ -36,5 +37,18 @@ export interface ResolutionCache {
   fallbackUrl: string
   activeUrl: string
   reason: Exclude<ResolutionReason, 'unconfigured'>
+  resolvedAt: number
+}
+
+/**
+ * Public, non-secret startup data kept for the new-tab micro-loader.
+ * The API token deliberately never enters this snapshot.
+ */
+export interface NewTabBootSnapshot {
+  primaryUrl: string
+  fallbackUrl: string
+  openMode: OpenMode
+  activeUrl: string
+  reason: ResolutionReason
   resolvedAt: number
 }

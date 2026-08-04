@@ -62,7 +62,12 @@ export function OptionsApp() {
   const [showApiToken, setShowApiToken] = useState(false)
 
   const messages = getMessages(language)
-  const cacheSeconds = Math.round(RESOLUTION_CACHE_TTL_MS / 1000)
+  const cacheDuration =
+    RESOLUTION_CACHE_TTL_MS >= 24 * 60 * 60 * 1000
+      ? language === 'zh-CN'
+        ? `${Math.round(RESOLUTION_CACHE_TTL_MS / (24 * 60 * 60 * 1000))} 天`
+        : `${Math.round(RESOLUTION_CACHE_TTL_MS / (24 * 60 * 60 * 1000))} day`
+      : `${Math.round(RESOLUTION_CACHE_TTL_MS / 1000)} seconds`
 
   useEffect(() => {
     document.body.dataset.page = 'options'
@@ -104,6 +109,15 @@ export function OptionsApp() {
       ])
 
       await writeSettings(nextSettings)
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'harbordeck:refresh-resolution',
+          force: true,
+        })
+      } catch {
+        // The settings are already saved; the next extension startup will
+        // rebuild the boot snapshot if the service worker is unavailable.
+      }
       setForm(nextSettings)
       setStatus(
         permissionGranted
@@ -280,7 +294,7 @@ export function OptionsApp() {
               }}
             />
             <p className="field-help">
-              {messages.options.probeTimeoutHint(DEFAULT_PROBE_TIMEOUT_MS, cacheSeconds)}
+              {messages.options.probeTimeoutHint(DEFAULT_PROBE_TIMEOUT_MS, cacheDuration)}
             </p>
           </div>
 

@@ -5,11 +5,13 @@ import type {
   PopupDraft,
   ResolutionCache,
   ResolutionReason,
+  NewTabBootSnapshot,
 } from '@extension/types'
 
 const STORAGE_KEY = 'harborDeckNewTabSettings'
 const LANGUAGE_STORAGE_KEY = 'harborDeckNewTabLanguage'
 const RESOLUTION_CACHE_KEY = 'harborDeckNewTabResolutionCache'
+export const NEW_TAB_BOOT_SNAPSHOT_KEY = 'harborDeckNewTabBootSnapshot'
 const POPUP_DRAFT_KEY = 'harborDeckPopupDraft'
 const POPUP_COLLAPSED_SCENES_KEY = 'harborDeckPopupCollapsedScenes'
 const LEGACY_STORAGE_KEY = ['smart', 'Harbor', 'NewTabSettings'].join('')
@@ -19,7 +21,10 @@ const LEGACY_RESOLUTION_CACHE_KEY = ['smart', 'Harbor', 'NewTabResolutionCache']
 export const MIN_PROBE_TIMEOUT_MS = 50
 export const MAX_PROBE_TIMEOUT_MS = 5000
 export const DEFAULT_PROBE_TIMEOUT_MS = 200
-export const RESOLUTION_CACHE_TTL_MS = 10_000
+// Keep the last successful address for a full day. New-tab startup can use it
+// immediately, while the background service worker refreshes it asynchronously
+// so LAN/WAN changes are picked up without adding launch latency.
+export const RESOLUTION_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 export const defaultLanguage = detectPreferredLanguage()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -187,6 +192,20 @@ export async function writeResolutionCache(cache: ResolutionCache): Promise<void
   })
 }
 
+export async function clearResolutionCache(): Promise<void> {
+  await chrome.storage.local.remove([RESOLUTION_CACHE_KEY, LEGACY_RESOLUTION_CACHE_KEY])
+}
+
+export async function writeNewTabBootSnapshot(snapshot: NewTabBootSnapshot): Promise<void> {
+  await chrome.storage.local.set({
+    [NEW_TAB_BOOT_SNAPSHOT_KEY]: snapshot,
+  })
+}
+
+export async function clearNewTabBootSnapshot(): Promise<void> {
+  await chrome.storage.local.remove(NEW_TAB_BOOT_SNAPSHOT_KEY)
+}
+
 function normalizePopupDraft(value: unknown): PopupDraft | null {
   if (!isRecord(value) || typeof value.tabUrl !== 'string' || typeof value.tabTitle !== 'string') {
     return null
@@ -210,6 +229,7 @@ function normalizePopupDraft(value: unknown): PopupDraft | null {
     secondaryUrl: typeof value.secondaryUrl === 'string' ? value.secondaryUrl : '',
     note: typeof value.note === 'string' ? value.note : '',
     selectedGroups,
+    ...(typeof value.recordSceneId === 'string' ? { recordSceneId: value.recordSceneId } : {}),
   }
 }
 

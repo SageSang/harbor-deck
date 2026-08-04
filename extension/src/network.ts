@@ -1,5 +1,6 @@
 import type { ResolvedTarget } from '@extension/types'
 import {
+  clearResolutionCache,
   normalizeProbeTimeoutMs,
   readResolutionCache,
   RESOLUTION_CACHE_TTL_MS,
@@ -42,7 +43,7 @@ async function probe(baseUrl: string, timeoutMs: number): Promise<boolean | null
   }
 
   const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     const healthUrl = new URL('/api/health', baseUrl).toString()
@@ -55,7 +56,7 @@ async function probe(baseUrl: string, timeoutMs: number): Promise<boolean | null
   } catch {
     return false
   } finally {
-    window.clearTimeout(timeoutId)
+    globalThis.clearTimeout(timeoutId)
   }
 }
 
@@ -85,10 +86,12 @@ async function cacheResolvedTarget(
 export async function resolveAvailableTarget(
   primaryUrl: string,
   fallbackUrl: string,
-  probeTimeoutMs?: number
+  probeTimeoutMs?: number,
+  forceRefresh = false
 ): Promise<ResolvedTarget> {
   const cached = await readResolutionCache()
   if (
+    !forceRefresh &&
     cached &&
     cached.primaryUrl === primaryUrl &&
     cached.fallbackUrl === fallbackUrl &&
@@ -101,6 +104,7 @@ export async function resolveAvailableTarget(
   }
 
   if (!primaryUrl && !fallbackUrl) {
+    await clearResolutionCache()
     return {
       activeUrl: '',
       reason: 'unconfigured',
@@ -153,6 +157,7 @@ export async function resolveAvailableTarget(
     activeUrl: fallbackUrl,
     reason: 'fallback',
   }
+  await clearResolutionCache()
   await cacheResolvedTarget(primaryUrl, fallbackUrl, result, false)
   return result
 }
