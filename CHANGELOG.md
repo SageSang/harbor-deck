@@ -12,6 +12,13 @@ This file records user-visible changes to HarborDeck. Detailed release bodies li
 
 - No unreleased changes.
 
+## v1.4.9 — 2026-08-06
+
+- Improved desktop bookmark cards with wider compact sizing, vertically centered icons, and up to three lines for long names while preserving dense layouts for large groups.
+- Added a one-time Group Management action that assigns random icons only to older bookmarks and quick records that still lack one, then disappears when complete.
+- Kept protected scenes unchanged unless they are unlocked and explicitly editable.
+- Published matching 1.4.9 web and extension artifacts.
+
 ## v1.4.8 — 2026-08-06
 
 - Added an immediate new-tab search field that preserves input while the application loads.

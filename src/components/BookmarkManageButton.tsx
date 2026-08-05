@@ -8,6 +8,7 @@ import {
   KeyRound,
   Layers3,
   Plus,
+  Sparkles,
   SquarePen,
   Trash2,
   Upload,
@@ -49,6 +50,10 @@ import {
 import { getFeedbackNoticeClass } from '@/features/feedback/feedbackStyles'
 import { useFeedback } from '@/features/feedback/useFeedback'
 import { bookmarkMatchesAnyUrl } from '@/features/services/bookmarkUrl'
+import {
+  fillMissingBookmarkIcons,
+  getMissingBookmarkIconCount,
+} from '@/features/services/randomBookmarkIcon'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 
@@ -107,6 +112,14 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     }
   }, [navigation, sceneTokens])
   const selectedScene = manageableNavigation?.scenes.find((scene) => scene.id === selectedSceneId)
+  const editableSceneIds = useMemo(
+    () => new Set(manageableNavigation?.scenes.map((scene) => scene.id) ?? []),
+    [manageableNavigation]
+  )
+  const missingIconCount = useMemo(
+    () => (navigation ? getMissingBookmarkIconCount(navigation, editableSceneIds) : 0),
+    [editableSceneIds, navigation]
+  )
 
   useEffect(() => {
     if (!manageableNavigation) return
@@ -551,6 +564,23 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     }
   }
 
+  async function handleFillMissingBookmarkIcons() {
+    if (!navigation || missingIconCount === 0) return
+    const accepted = await confirm({
+      title: messages.bookmarkManage.iconMigration.fillIconsConfirmTitle,
+      message: messages.bookmarkManage.iconMigration.fillIconsConfirmMessage(missingIconCount),
+      confirmLabel: messages.bookmarkManage.iconMigration.fillIconsConfirmAction,
+    })
+    if (!accepted) return
+
+    const result = fillMissingBookmarkIcons(navigation, { editableSceneIds })
+    if (result.updatedCount === 0) return
+    saveNavigation(
+      result.config,
+      messages.bookmarkManage.iconMigration.fillIconsUpdated(result.updatedCount)
+    )
+  }
+
   const panelTabs = useMemo(
     () => [
       {
@@ -734,6 +764,26 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
               summary="每个场景拥有独立分组；删除分组不会彻底删除共享书签。"
               headerActions={sceneSelector}
             >
+              {missingIconCount > 0 ? (
+                <div className="config-panel-card mb-3 space-y-3 p-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    {messages.bookmarkManage.iconMigration.fillIconsTitle}
+                  </div>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {messages.bookmarkManage.iconMigration.fillIconsDescription(missingIconCount)}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void handleFillMissingBookmarkIcons()}
+                    disabled={saveMutation.isPending}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {messages.bookmarkManage.iconMigration.fillIconsButton(missingIconCount)}
+                  </Button>
+                </div>
+              ) : null}
               <div className="config-panel-card mb-3 grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <Input
                   value={newGroupName}

@@ -55,7 +55,7 @@ The repository includes a generic Docker Compose configuration for Docker Compos
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.8
+    image: ghcr.io/sagesang/harbor-deck:1.4.9
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -81,7 +81,7 @@ Deployment steps:
 3. Point an HTTPS reverse proxy at `127.0.0.1:8080`, then open the HTTPS domain and create the administrator account.
 4. Create scenes and groups in Bookmark Management, then add or import bookmarks.
 
-The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.8` with `latest` only when you intentionally want automatic image updates.
+The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.9` with `latest` only when you intentionally want automatic image updates.
 
 For a direct Docker command:
 
@@ -93,7 +93,7 @@ docker run -d \
   -v ./config:/app/config \
   -e TZ=Asia/Shanghai \
   -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
-  ghcr.io/sagesang/harbor-deck:1.4.8
+  ghcr.io/sagesang/harbor-deck:1.4.9
 ```
 
 HTTPS is supported by putting the container behind any reverse proxy, including Synology Reverse Proxy, Caddy, or Nginx Proxy Manager. The application listens on HTTP inside the container; point the proxy at host `127.0.0.1:8080`. By default it trusts forwarded headers only from loopback, link-local, and private-network proxies. Set `HARBORDECK_TRUST_PROXY` to an explicit IP or CIDR when the proxy is elsewhere. Change the port binding back to `8080:80` only when direct LAN access is intentionally required.

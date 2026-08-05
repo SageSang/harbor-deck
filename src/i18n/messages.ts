@@ -150,6 +150,17 @@ const zhCN = {
       emptyState: '未在文件中找到可导入的书签，请确认这是浏览器导出的 HTML 书签文件。',
       importFailed: '导入书签失败，请检查文件格式后重试。',
     },
+    iconMigration: {
+      fillIconsTitle: '补全旧书签图标',
+      fillIconsDescription: (count: number) =>
+        `检测到 ${count} 个仍使用默认占位图标的旧书签或快速记录。只会补全缺失图标，已有图标不会改变；完成后此入口会自动消失。`,
+      fillIconsButton: (count: number) => `为 ${count} 个旧记录补全图标`,
+      fillIconsConfirmTitle: '为旧书签补全随机图标？',
+      fillIconsConfirmMessage: (count: number) =>
+        `将为 ${count} 个缺少图标的书签或快速记录分配随机图标，已有图标保持不变。此操作只执行一次。`,
+      fillIconsConfirmAction: '补全图标',
+      fillIconsUpdated: (count: number) => `已为 ${count} 个旧记录补全随机图标。`,
+    },
     groupSection: {
       label: '分组管理',
       description: '新增、重命名、删除、拖拽排序',
@@ -627,6 +638,17 @@ const en: typeof zhCN = {
       emptyState:
         'No importable bookmarks were found. Please make sure this is a browser-exported bookmark HTML file.',
       importFailed: 'Failed to import bookmarks. Please check the file format and try again.',
+    },
+    iconMigration: {
+      fillIconsTitle: 'Fill Missing Legacy Icons',
+      fillIconsDescription: (count: number) =>
+        `${count} older bookmarks or quick records still use the default placeholder. Only missing icons will be filled; existing icons stay unchanged. This entry disappears after completion.`,
+      fillIconsButton: (count: number) => `Fill icons for ${count} older records`,
+      fillIconsConfirmTitle: 'Assign random icons to older bookmarks?',
+      fillIconsConfirmMessage: (count: number) =>
+        `${count} bookmarks or quick records without icons will receive random icons. Existing icons stay unchanged. This runs once.`,
+      fillIconsConfirmAction: 'Fill Icons',
+      fillIconsUpdated: (count: number) => `Filled random icons for ${count} older records.`,
     },
     groupSection: {
       label: 'Groups',

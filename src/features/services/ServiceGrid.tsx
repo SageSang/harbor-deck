@@ -106,6 +106,8 @@ const DESKTOP_SECTION_GAP_PX = 12
 const DESKTOP_GRID_HORIZONTAL_PADDING_PX = 12
 const DESKTOP_CARD_GAP_PX = 10
 const DESKTOP_CARD_MIN_WIDTH_PX = 130
+const DESKTOP_COMPACT_CARD_PREFERRED_WIDTH_PX = 154
+const DESKTOP_COMPACT_CARD_MAX_WIDTH_PX = 176
 const LONG_PRESS_DELAY_MS = 550
 const LONG_PRESS_MOVE_THRESHOLD_PX = 8
 
@@ -871,6 +873,10 @@ export function ServiceGrid() {
     desktopColumnCount > 0 && gridWidth > 0
       ? getDesktopCardWidth(gridWidth, desktopColumnCount)
       : DESKTOP_CARD_MIN_WIDTH_PX
+  const compactCardWidth = Math.min(
+    Math.max(desktopCardWidth, DESKTOP_COMPACT_CARD_PREFERRED_WIDTH_PX),
+    DESKTOP_COMPACT_CARD_MAX_WIDTH_PX
+  )
 
   return (
     <>
@@ -904,14 +910,14 @@ export function ServiceGrid() {
             typeof dragOver.serviceIndex === 'undefined'
           const compactGroupWidth = getCompactGroupWidth(
             isCollapsed ? 0 : group.services.length,
-            desktopCardWidth
+            compactCardWidth
           )
           const canKeepSingleRow =
             isCollapsed ||
             (desktopColumnCount > 0 && group.services.length > 0 && compactGroupWidth <= gridWidth)
           const compactGridStyle = canKeepSingleRow
             ? ({
-                '--desktop-card-width': `${desktopCardWidth}px`,
+                '--desktop-card-width': `${compactCardWidth}px`,
               } as CSSProperties)
             : undefined
 
@@ -985,7 +991,7 @@ export function ServiceGrid() {
                 <div
                   hidden={isCollapsed}
                   aria-hidden={isCollapsed}
-                  className={`${isCollapsed ? '!hidden' : ''} harbor-bookmark-grid grid min-h-[76px] w-full flex-1 grid-cols-2 gap-2 rounded-[1.15rem] bg-background/34 p-1 transition sm:grid-cols-3 md:grid-cols-4 md:gap-2.5 md:p-1.5 ${canKeepSingleRow ? 'lg:w-fit lg:flex-none lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[var(--desktop-card-width)]' : 'lg:grid-cols-6 xl:grid-cols-8'} ${isGroupDropTarget ? 'bg-primary/6 ring-1 ring-primary/10' : ''}`}
+                  className={`${isCollapsed ? '!hidden' : ''} harbor-bookmark-grid grid min-h-[84px] w-full flex-1 grid-cols-2 gap-2 rounded-[1.15rem] bg-background/34 p-1 transition sm:grid-cols-3 md:grid-cols-4 md:gap-2.5 md:p-1.5 ${canKeepSingleRow ? 'lg:w-fit lg:flex-none lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[var(--desktop-card-width)]' : 'lg:grid-cols-6 xl:grid-cols-8'} ${isGroupDropTarget ? 'bg-primary/6 ring-1 ring-primary/10' : ''}`}
                   style={{ ...compactGridStyle, display: isCollapsed ? 'none' : undefined }}
                   onDragOver={(event) => {
                     if (!canDrag || draggingSlugs.length === 0) {
