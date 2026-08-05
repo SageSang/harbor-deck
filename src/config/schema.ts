@@ -4,13 +4,14 @@ import {
   builtinSearchEngineIds,
   isValidSearchEngineTemplate,
 } from './searchEngines.js'
-import {
-  isValidNetworkProbeHost,
-  networkProbeProtocols,
-} from './networkProbe.js'
+import { isValidNetworkProbeHost, networkProbeProtocols } from './networkProbe.js'
+import { isHttpUrl } from './httpUrl.js'
+
+export { isHttpUrl } from './httpUrl.js'
 
 const trimmedString = z.string().trim().min(1)
-const optionalUrl = z.string().trim().url().optional()
+export const httpUrlSchema = z.string().trim().url().refine(isHttpUrl, '仅支持 HTTP 或 HTTPS 地址')
+const optionalUrl = httpUrlSchema.optional()
 const positiveInteger = z.number().int().min(1)
 
 export const slugSchema = z
@@ -41,9 +42,9 @@ const canonicalServiceConfigSchema = z.object({
   name: trimmedString,
   note: z.string().max(5000).optional(),
   icon: z.string().trim().min(1).optional(),
-  primaryUrl: z.string().trim().url(),
+  primaryUrl: httpUrlSchema,
   secondaryUrl: optionalUrl,
-  probes: z.array(z.string().trim().url()).min(1).optional(),
+  probes: z.array(httpUrlSchema).min(1).optional(),
   forceNewTab: z.boolean().optional(),
 })
 
@@ -52,9 +53,9 @@ const legacyServiceConfigSchema = z.object({
   name: trimmedString,
   note: z.string().max(5000).optional(),
   icon: z.string().trim().min(1).optional(),
-  lanUrl: z.string().trim().url(),
+  lanUrl: httpUrlSchema,
   wanUrl: optionalUrl,
-  probes: z.array(z.string().trim().url()).min(1).optional(),
+  probes: z.array(httpUrlSchema).min(1).optional(),
   forceNewTab: z.boolean().optional(),
 })
 
@@ -101,7 +102,7 @@ export const quickRecordSchema = z.object({
   name: trimmedString.max(200),
   note: z.string().max(5000).optional(),
   icon: z.string().trim().min(1).optional(),
-  primaryUrl: z.string().trim().url(),
+  primaryUrl: httpUrlSchema,
   secondaryUrl: optionalUrl,
   createdAt: positiveInteger,
   updatedAt: positiveInteger,
@@ -170,6 +171,7 @@ export const navigationConfigSchema = z
       const groupIds = new Set<string>()
       const groupNames = new Set<string>()
       const placedBookmarkIds = new Set<string>()
+      const quickRecordIds = new Set<string>()
 
       scene.groups.forEach((group, groupIndex) => {
         if (groupIds.has(group.id)) {
@@ -194,14 +196,7 @@ export const navigationConfigSchema = z
           if (!bookmarkIds.has(bookmarkId)) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
-              path: [
-                'scenes',
-                sceneIndex,
-                'groups',
-                groupIndex,
-                'bookmarkIds',
-                bookmarkIndex,
-              ],
+              path: ['scenes', sceneIndex, 'groups', groupIndex, 'bookmarkIds', bookmarkIndex],
               message: `场景引用了不存在的书签：${bookmarkId}`,
             })
           }
@@ -209,19 +204,23 @@ export const navigationConfigSchema = z
           if (placedBookmarkIds.has(bookmarkId)) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
-              path: [
-                'scenes',
-                sceneIndex,
-                'groups',
-                groupIndex,
-                'bookmarkIds',
-                bookmarkIndex,
-              ],
+              path: ['scenes', sceneIndex, 'groups', groupIndex, 'bookmarkIds', bookmarkIndex],
               message: `同一书签不能在一个场景中重复出现：${bookmarkId}`,
             })
           }
           placedBookmarkIds.add(bookmarkId)
         })
+      })
+
+      scene.quickRecords.forEach((record, recordIndex) => {
+        if (quickRecordIds.has(record.id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['scenes', sceneIndex, 'quickRecords', recordIndex, 'id'],
+            message: `快速记录标识重复：${record.id}`,
+          })
+        }
+        quickRecordIds.add(record.id)
       })
     })
 
@@ -235,19 +234,17 @@ export const navigationConfigSchema = z
   })
   .default(defaultNavigationConfigValue)
 
-export const storedNavigationConfigSchema = navigationConfigSchema.superRefine(
-  (config, ctx) => {
-    config.scenes.forEach((scene, sceneIndex) => {
-      if (scene.protected && !scene.passwordHash) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['scenes', sceneIndex, 'passwordHash'],
-          message: '受保护场景必须设置密码哈希',
-        })
-      }
-    })
-  }
-)
+export const storedNavigationConfigSchema = navigationConfigSchema.superRefine((config, ctx) => {
+  config.scenes.forEach((scene, sceneIndex) => {
+    if (scene.protected && !scene.passwordHash) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['scenes', sceneIndex, 'passwordHash'],
+        message: '受保护场景必须设置密码哈希',
+      })
+    }
+  })
+})
 
 const searchEngineTemplateSchema = z
   .string()
@@ -279,7 +276,9 @@ export const webdavBackupConfigSchema = z
 
     if (config.url.length > 0) {
       try {
-        new URL(config.url)
+        if (!isHttpUrl(config.url)) {
+          throw new Error('Unsupported WebDAV URL protocol')
+        }
       } catch {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

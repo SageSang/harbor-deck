@@ -18,13 +18,20 @@ import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 import { resolveDirectUrl } from '@/core/navigation/resolveDirectUrl'
 import {
+  dismissSearchBootShell,
+  getSearchBootState,
+  MAX_SEARCH_BOOT_LENGTH,
+  SEARCH_BOOT_INPUT_EVENT,
+} from './searchBoot'
+import {
   EMBEDDED_FOCUS_MESSAGE_TYPE,
   focusSearchInputIfSafe,
   SEARCH_INPUT_ID,
 } from './searchFocus'
 
 export function SearchBox() {
-  const { data: systemConfig } = useSystemConfig()
+  const systemConfigQuery = useSystemConfig()
+  const systemConfig = systemConfigQuery.data
   const saveSystemMutation = useSaveSystemConfig()
   const searchKeyword = useAppStore((state) => state.searchKeyword)
   const setSearchKeyword = useAppStore((state) => state.setSearchKeyword)
@@ -34,6 +41,9 @@ export function SearchBox() {
   const engineMenuRef = useRef<HTMLDivElement | null>(null)
   const [isEngineMenuOpen, setIsEngineMenuOpen] = useState(false)
   const [engineTriggerWidth, setEngineTriggerWidth] = useState(72)
+  const [bootSubmitPending, setBootSubmitPending] = useState(
+    () => getSearchBootState()?.pendingSubmit ?? false
+  )
   const [engineMenuPosition, setEngineMenuPosition] = useState<{
     left: number
     top: number
@@ -54,12 +64,47 @@ export function SearchBox() {
   const isEmbedded =
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('embedded') === '1'
+  const hasActiveSearchBoot = getSearchBootState()?.released === false
 
   useLayoutEffect(() => {
-    if (isEmbedded) {
-      focusSearchInputIfSafe()
+    const bootState = getSearchBootState()
+    if (!bootState || bootState.released) {
+      if (isEmbedded) focusSearchInputIfSafe()
+      return
     }
-  }, [isEmbedded])
+
+    let handoffFrameId = 0
+    const syncBootValue = () => {
+      const nextValue = bootState.value.slice(0, MAX_SEARCH_BOOT_LENGTH)
+      setSearchKeyword(nextValue)
+      const searchInput = document.getElementById(SEARCH_INPUT_ID)
+      if (searchInput instanceof HTMLInputElement && searchInput.value !== nextValue) {
+        searchInput.value = nextValue
+      }
+    }
+    const handleBootInput = () => syncBootValue()
+
+    window.addEventListener(SEARCH_BOOT_INPUT_EVENT, handleBootInput)
+    syncBootValue()
+    handoffFrameId = window.requestAnimationFrame(() => {
+      syncBootValue()
+      setBootSubmitPending(bootState.pendingSubmit)
+
+      const searchInput = document.getElementById(SEARCH_INPUT_ID)
+      if (searchInput instanceof HTMLInputElement) {
+        searchInput.focus({ preventScroll: true })
+        searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length)
+      }
+
+      dismissSearchBootShell()
+      window.removeEventListener(SEARCH_BOOT_INPUT_EVENT, handleBootInput)
+    })
+
+    return () => {
+      window.cancelAnimationFrame(handoffFrameId)
+      window.removeEventListener(SEARCH_BOOT_INPUT_EVENT, handleBootInput)
+    }
+  }, [isEmbedded, setSearchKeyword])
 
   useEffect(() => {
     if (!isEmbedded) {
@@ -92,6 +137,15 @@ export function SearchBox() {
   useEffect(() => {
     setSelectedEngineId(defaultSearchEngine.id)
   }, [defaultSearchEngine.id])
+
+  useEffect(() => {
+    if (!bootSubmitPending || !systemConfigQuery.isFetched || !trimmedKeyword) return
+
+    setBootSubmitPending(false)
+    window.location.assign(
+      resolveDirectUrl(trimmedKeyword) ?? buildSearchUrl(defaultSearchEngine, trimmedKeyword)
+    )
+  }, [bootSubmitPending, defaultSearchEngine, systemConfigQuery.isFetched, trimmedKeyword])
 
   useEffect(() => {
     const trigger = engineTriggerRef.current
@@ -242,7 +296,7 @@ export function SearchBox() {
         </div>
         <Input
           id={SEARCH_INPUT_ID}
-          autoFocus={!isEmbedded}
+          autoFocus={!isEmbedded && !hasActiveSearchBoot}
           type="text"
           enterKeyHint="search"
           placeholder={messages.common.searchPlaceholder}

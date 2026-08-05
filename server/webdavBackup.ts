@@ -4,6 +4,7 @@ import { appConfigSchema, type AppConfig, type WebdavBackupConfig } from '../src
 const BACKUP_FILENAME_PREFIX = 'harbor-deck-config-'
 const BACKUP_FILENAME_PATTERN = /^harbor-deck-config-(\d{8}T\d{9}Z)\.json$/
 const DIRECTORY_EXISTS_STATUS = new Set([200, 201, 204, 405])
+const WEBDAV_REQUEST_TIMEOUT_MS = 15_000
 
 type FetchLike = typeof fetch
 
@@ -143,16 +144,27 @@ async function requestWebdav(
   options: WebdavRequestOptions,
   fetchImpl: FetchLike
 ) {
-  const response = await fetchImpl(url, {
-    method: options.method,
-    headers: {
-      ...createAuthHeaders(config),
-      ...(options.headers ?? {}),
-    },
-    body: options.body,
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), WEBDAV_REQUEST_TIMEOUT_MS)
 
-  return response
+  try {
+    return await fetchImpl(url, {
+      method: options.method,
+      headers: {
+        ...createAuthHeaders(config),
+        ...(options.headers ?? {}),
+      },
+      body: options.body,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`WebDAV 请求超时（${WEBDAV_REQUEST_TIMEOUT_MS / 1000} 秒）`)
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
 
 function createVersionFromFilename(

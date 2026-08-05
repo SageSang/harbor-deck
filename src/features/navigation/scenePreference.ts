@@ -46,7 +46,15 @@ export function readSceneTokens(): Record<string, string> {
   try {
     const stored = readStorage(window.sessionStorage, SCENE_TOKENS_KEY, LEGACY_SCENE_TOKENS_KEY)
     const parsed = JSON.parse(stored ?? '{}')
-    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return {}
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0
+      )
+    )
   } catch {
     return {}
   }

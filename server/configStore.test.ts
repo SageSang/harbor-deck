@@ -85,4 +85,42 @@ describe('configStore', () => {
     const configStore = await loadConfigStore()
     expect(await configStore.readAppConfig()).toEqual(appConfigSchema.parse({}))
   })
+
+  it('serializes read-modify-write navigation mutations', async () => {
+    const configStore = await loadConfigStore()
+
+    await Promise.all(
+      ['first', 'second'].map((id) =>
+        configStore.mutateNavigationConfig((current) => ({
+          navigation: {
+            ...current,
+            scenes: current.scenes.map((scene) =>
+              scene.id === current.defaultSceneId
+                ? {
+                    ...scene,
+                    quickRecords: [
+                      ...scene.quickRecords,
+                      {
+                        id,
+                        name: id,
+                        primaryUrl: `https://${id}.example.com`,
+                        createdAt: 1,
+                        updatedAt: 1,
+                      },
+                    ],
+                  }
+                : scene
+            ),
+          },
+          result: id,
+        }))
+      )
+    )
+
+    const navigation = await configStore.readNavigationConfig()
+    expect(navigation.scenes[0].quickRecords.map((record) => record.id)).toEqual([
+      'first',
+      'second',
+    ])
+  })
 })

@@ -10,6 +10,7 @@ const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7
 const LOGIN_ATTEMPT_WINDOW_MS = 1000 * 60 * 10
 const LOGIN_MAX_ATTEMPTS = 5
 const LOGIN_BLOCK_MS = 1000 * 60 * 30
+const LOGIN_ATTEMPT_CAPACITY = 10_000
 const DUMMY_PASSWORD_HASH = createDeterministicPasswordHash(
   'harbordeck-dummy-password',
   'harbordeck-dummy-salt'
@@ -147,13 +148,13 @@ export function createAuthService() {
     })
   }
 
-  function getAttemptKey(request: FastifyRequest, username: string) {
-    return `${request.ip}:${username.trim().toLowerCase()}`
+  function getAttemptKey(request: FastifyRequest) {
+    return request.socket.remoteAddress ?? 'unknown'
   }
 
-  function ensureNotRateLimited(request: FastifyRequest, reply: FastifyReply, username: string) {
+  function ensureNotRateLimited(request: FastifyRequest, reply: FastifyReply) {
     pruneLoginAttempts()
-    const record = loginAttempts.get(getAttemptKey(request, username))
+    const record = loginAttempts.get(getAttemptKey(request))
     const now = Date.now()
 
     if (record?.blockedUntil && record.blockedUntil > now) {
@@ -165,12 +166,16 @@ export function createAuthService() {
     return null
   }
 
-  function registerLoginFailure(request: FastifyRequest, username: string) {
+  function registerLoginFailure(request: FastifyRequest) {
     const now = Date.now()
-    const key = getAttemptKey(request, username)
+    const key = getAttemptKey(request)
     const current = loginAttempts.get(key)
 
     if (!current || current.firstAttemptAt + LOGIN_ATTEMPT_WINDOW_MS <= now) {
+      if (!current && loginAttempts.size >= LOGIN_ATTEMPT_CAPACITY) {
+        const oldestKey = loginAttempts.keys().next().value
+        if (oldestKey) loginAttempts.delete(oldestKey)
+      }
       loginAttempts.set(key, {
         count: 1,
         firstAttemptAt: now,
@@ -186,8 +191,8 @@ export function createAuthService() {
     })
   }
 
-  function clearLoginFailures(request: FastifyRequest, username: string) {
-    loginAttempts.delete(getAttemptKey(request, username))
+  function clearLoginFailures(request: FastifyRequest) {
+    loginAttempts.delete(getAttemptKey(request))
   }
 
   function getSessionFromRequest(request: FastifyRequest) {
@@ -315,7 +320,7 @@ export function createAuthService() {
     }
 
     const { username, password } = loginBodySchema.parse(request.body)
-    const limitedReply = ensureNotRateLimited(request, reply, username)
+    const limitedReply = ensureNotRateLimited(request, reply)
     if (limitedReply) {
       return limitedReply
     }
@@ -326,12 +331,12 @@ export function createAuthService() {
       : await verifyPassword(password, DUMMY_PASSWORD_HASH)
 
     if (!usernameMatches || !passwordMatches) {
-      registerLoginFailure(request, username)
+      registerLoginFailure(request)
       reply.code(401)
       return reply.send('账号或密码错误')
     }
 
-    clearLoginFailures(request, username)
+    clearLoginFailures(request)
     createSession(reply, request, configuredAuth.username)
 
     return {

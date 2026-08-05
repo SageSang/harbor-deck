@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import Fastify from 'fastify'
 import type { FastifyRequest } from 'fastify'
@@ -13,6 +15,7 @@ import {
   readAppConfig,
   readNavigationConfig,
   readSystemConfig,
+  mutateNavigationConfig,
   writeAppConfig,
   writeNavigationConfig,
   writeSystemConfig,
@@ -58,9 +61,7 @@ function protectedSceneChanged(
     return true
   }
 
-  const referencedBookmarkIds = new Set(
-    currentScene.groups.flatMap((group) => group.bookmarkIds)
-  )
+  const referencedBookmarkIds = new Set(currentScene.groups.flatMap((group) => group.bookmarkIds))
   const currentBookmarks = new Map(
     currentNavigation.bookmarks.map((bookmark) => [bookmark.slug, bookmark])
   )
@@ -89,9 +90,7 @@ function sanitizeAppConfig(config: Awaited<ReturnType<typeof readAppConfig>>) {
   }
 }
 
-function sanitizeNavigationConfig(
-  navigation: Awaited<ReturnType<typeof readNavigationConfig>>
-) {
+function sanitizeNavigationConfig(navigation: Awaited<ReturnType<typeof readNavigationConfig>>) {
   return {
     ...navigation,
     scenes: navigation.scenes.map((scene) => {
@@ -110,9 +109,7 @@ function resolveSceneServices(
   if (!scene) {
     return []
   }
-  const bookmarksById = new Map(
-    navigation.bookmarks.map((bookmark) => [bookmark.slug, bookmark])
-  )
+  const bookmarksById = new Map(navigation.bookmarks.map((bookmark) => [bookmark.slug, bookmark]))
   return scene.groups.map((group) => ({
     category: group.name,
     items: group.bookmarkIds.flatMap((bookmarkId) => {
@@ -191,9 +188,78 @@ function mergeAppSecrets(
   }
 }
 
-function applySecurityHeaders(reply: { header: (name: string, value: string) => unknown }) {
+function getTrustProxySetting(): boolean | string[] {
+  const value = process.env.HARBORDECK_TRUST_PROXY?.trim()
+  if (!value || value === '0' || value.toLowerCase() === 'false') {
+    return false
+  }
+  if (value === '1' || value.toLowerCase() === 'true') {
+    return true
+  }
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function getConnectionAddress(request: FastifyRequest) {
+  return request.socket.remoteAddress ?? 'unknown'
+}
+
+async function buildContentSecurityPolicy() {
+  const scriptSources = ["'self'"]
+
+  if (isProduction) {
+    try {
+      const indexHtml = await readFile(path.join(clientDistDir, 'index.html'), 'utf8')
+      const inlineScripts = indexHtml.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)
+      for (const match of inlineScripts) {
+        if (/\bsrc\s*=/i.test(match[1])) continue
+        const digest = createHash('sha256').update(match[2]).digest('base64')
+        scriptSources.push(`'sha256-${digest}'`)
+      }
+    } catch {
+      // The production build validates the generated CSP after dist exists.
+    }
+  }
+
+  return [
+    "default-src 'self'",
+    `script-src ${scriptSources.join(' ')}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: http: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' http: https:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ')
+}
+
+function applySecurityHeaders(
+  request: FastifyRequest,
+  reply: { header: (name: string, value: string) => unknown },
+  contentSecurityPolicy: string
+) {
   reply.header('X-Content-Type-Options', 'nosniff')
   reply.header('Referrer-Policy', 'same-origin')
+  reply.header('Content-Security-Policy', contentSecurityPolicy)
+  reply.header('X-Frame-Options', 'DENY')
+  reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+
+  if (request.protocol === 'https') {
+    reply.header('Strict-Transport-Security', 'max-age=31536000')
+  }
+
+  if (request.url.startsWith('/api/')) {
+    reply.header('Cache-Control', 'no-store')
+    reply.header('Pragma', 'no-cache')
+  }
+
+  if (request.url.startsWith('/api/integrations/')) {
+    reply.header('Vary', 'X-HarborDeck-Search-Token')
+  }
 }
 
 const isProduction = process.env.NODE_ENV === 'production'
@@ -217,7 +283,8 @@ function isIntegrationRequestAuthorized(request: FastifyRequest) {
 }
 
 export async function buildServer() {
-  const app = Fastify({ logger: true, trustProxy: true })
+  const contentSecurityPolicy = await buildContentSecurityPolicy()
+  const app = Fastify({ logger: true, trustProxy: getTrustProxySetting() })
   const authService = createAuthService()
   const sceneAccessService = createSceneAccessService()
 
@@ -241,7 +308,7 @@ export async function buildServer() {
     const sessionKey = authService.getSessionKey(request)
     return Boolean(
       sessionKey &&
-        sceneAccessService.validate(getSuppliedSceneToken(request, sceneId), sessionKey, sceneId)
+      sceneAccessService.validate(getSuppliedSceneToken(request, sceneId), sessionKey, sceneId)
     )
   }
 
@@ -267,8 +334,8 @@ export async function buildServer() {
 
   await webdavBackupManager.reloadSchedule()
 
-  app.addHook('onSend', async (_request, reply, payload) => {
-    applySecurityHeaders(reply)
+  app.addHook('onSend', async (request, reply, payload) => {
+    applySecurityHeaders(request, reply, contentSecurityPolicy)
     return payload
   })
 
@@ -300,9 +367,10 @@ export async function buildServer() {
 
     const query = integrationSearchQuerySchema.parse(request.query)
     const navigation = await readNavigationConfig()
-    const scene = query.sceneId && query.sceneId !== 'all'
-      ? navigation.scenes.find((item) => item.id === query.sceneId)
-      : undefined
+    const scene =
+      query.sceneId && query.sceneId !== 'all'
+        ? navigation.scenes.find((item) => item.id === query.sceneId)
+        : undefined
     if (query.sceneId && query.sceneId !== 'all' && !scene) {
       return reply.code(404).send('Scene not found')
     }
@@ -328,12 +396,11 @@ export async function buildServer() {
         publicScenes.find((scene) => scene.id === navigation.defaultSceneId)?.id ??
         publicScenes[0]?.id ??
         '',
-      scenes: publicScenes
-        .map((scene) => ({
-          id: scene.id,
-          name: scene.name,
-          groups: scene.groups.map((group) => ({ id: group.id, name: group.name })),
-        })),
+      scenes: publicScenes.map((scene) => ({
+        id: scene.id,
+        name: scene.name,
+        groups: scene.groups.map((group) => ({ id: group.id, name: group.name })),
+      })),
     }
   })
 
@@ -359,16 +426,19 @@ export async function buildServer() {
     }
     try {
       const body = integrationBookmarkBodySchema.parse(request.body)
-      const navigation = await readNavigationConfig()
-      const result = createIntegrationBookmark(navigation, body)
-      const savedNavigation = await writeNavigationConfig(result.navigation)
+      const { result } = await mutateNavigationConfig((navigation) => {
+        const integrationResult = createIntegrationBookmark(navigation, body)
+        return {
+          navigation: integrationResult.navigation,
+          result: integrationResult,
+        }
+      })
       return {
         created: result.created,
         bookmark: result.bookmark,
         ...(result.quickRecord ? { quickRecord: result.quickRecord } : {}),
         ...(result.recordSceneId ? { recordSceneId: result.recordSceneId } : {}),
         placements: result.placements,
-        navigation: sanitizeNavigationConfig(savedNavigation),
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to add bookmark'
@@ -550,15 +620,16 @@ export async function buildServer() {
     if (!sessionKey) {
       return reply.code(401).send('请先登录')
     }
-    if (!sceneAccessService.ensureCanAttempt(sessionKey, sceneId, request.ip)) {
+    const connectionAddress = getConnectionAddress(request)
+    if (!sceneAccessService.ensureCanAttempt(sessionKey, sceneId, connectionAddress)) {
       return reply.code(429).send('尝试过于频繁，请稍后再试')
     }
     if (!(await verifyPassword(password, scene.passwordHash))) {
-      sceneAccessService.registerFailure(sessionKey, sceneId, request.ip)
+      sceneAccessService.registerFailure(sessionKey, sceneId, connectionAddress)
       return reply.code(401).send('场景密码错误')
     }
 
-    sceneAccessService.clearFailures(sessionKey, sceneId, request.ip)
+    sceneAccessService.clearFailures(sessionKey, sceneId, connectionAddress)
     return sceneAccessService.issue(sessionKey, sceneId)
   })
 

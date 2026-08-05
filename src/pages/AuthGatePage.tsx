@@ -1,4 +1,5 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
+import { dismissSearchBootShell } from '@/components/searchBoot'
 import { Button } from '@/components/ui/button'
 import { useAuthStatus } from '@/features/auth/useAuth'
 import { useI18n } from '@/i18n/runtime'
@@ -29,6 +30,18 @@ function PageLoadFallback({ label }: { label: string }) {
 export function AuthGatePage() {
   const { messages } = useI18n()
   const authStatusQuery = useAuthStatus()
+
+  useEffect(() => {
+    if (
+      !authStatusQuery.isLoading &&
+      (authStatusQuery.isError ||
+        !authStatusQuery.data ||
+        authStatusQuery.data.setupRequired ||
+        !authStatusQuery.data.authenticated)
+    ) {
+      dismissSearchBootShell()
+    }
+  }, [authStatusQuery.data, authStatusQuery.isError, authStatusQuery.isLoading])
 
   if (authStatusQuery.isLoading) {
     return <PageLoadFallback label={messages.authPage.checking} />

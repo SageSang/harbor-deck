@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Bookmark, Check, Pencil } from 'lucide-react'
-import type { NavigationConfig, QuickRecord, ServiceConfig } from '@/config/schema'
+import {
+  isHttpUrl,
+  type NavigationConfig,
+  type QuickRecord,
+  type ServiceConfig,
+} from '@/config/schema'
 import { ModalShell } from '@/components/ModalShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,6 +20,7 @@ import {
 } from '@/features/navigation/navigationConfig'
 import { cleanServiceConfig } from '@/features/services/servicesConfig'
 import { formatBookmarkError } from '@/features/services/bookmarkForm'
+import { bookmarkMatchesAnyUrl } from '@/features/services/bookmarkUrl'
 import { getRandomBookmarkIcon } from '@/features/services/randomBookmarkIcon'
 import { useAppStore } from '@/store/appStore'
 
@@ -31,7 +37,11 @@ interface PlacementChoice {
   groupId: string
 }
 
-function findRecord(config: NavigationConfig | undefined, sceneId: string | null, recordId: string | null) {
+function findRecord(
+  config: NavigationConfig | undefined,
+  sceneId: string | null,
+  recordId: string | null
+) {
   if (!config || !sceneId || !recordId) return undefined
   return config.scenes
     .find((scene) => scene.id === sceneId)
@@ -53,7 +63,8 @@ export function QuickRecordEditDialog({
   const record = findRecord(navigation, sceneId, recordId)
   const editableScenes = useMemo(
     () =>
-      navigation?.scenes.filter((scene) => !scene.protected || Boolean(sceneTokens[scene.id])) ?? [],
+      navigation?.scenes.filter((scene) => !scene.protected || Boolean(sceneTokens[scene.id])) ??
+      [],
     [navigation, sceneTokens]
   )
   const [name, setName] = useState('')
@@ -91,16 +102,13 @@ export function QuickRecordEditDialog({
       setFeedback('请填写名称和主地址。')
       return
     }
-    try {
-      new URL(trimmedPrimary)
-      if (secondaryUrl.trim()) new URL(secondaryUrl.trim())
-    } catch {
+    const trimmedSecondary = secondaryUrl.trim()
+    if (!isHttpUrl(trimmedPrimary) || (trimmedSecondary && !isHttpUrl(trimmedSecondary))) {
       setFeedback('请输入有效的网址。')
       return
     }
 
     const now = Date.now()
-    const trimmedSecondary = secondaryUrl.trim()
     const trimmedNote = note.trim()
     const nextRecord: QuickRecord = {
       ...record,
@@ -115,26 +123,24 @@ export function QuickRecordEditDialog({
       if (placements.length === 0) {
         next = upsertQuickRecord(navigation, sceneId, nextRecord, record.id)
       } else {
-        const existing = navigation.bookmarks.find(
-          (bookmark) =>
-            bookmark.primaryUrl === trimmedPrimary ||
-            bookmark.secondaryUrl === trimmedPrimary ||
-            bookmark.primaryUrl === secondaryUrl.trim() ||
-            bookmark.secondaryUrl === secondaryUrl.trim()
+        const existing = navigation.bookmarks.find((bookmark) =>
+          bookmarkMatchesAnyUrl(bookmark, [trimmedPrimary, trimmedSecondary])
         )
-        const service: ServiceConfig = existing ?? cleanServiceConfig({
-          slug: buildUniqueNavigationId(
-            trimmedName,
-            navigation.bookmarks.map((bookmark) => bookmark.slug),
-            'bookmark'
-          ),
-          name: trimmedName,
-          note: note.trim(),
-          icon: record.icon ?? getRandomBookmarkIcon(),
-          primaryUrl: trimmedPrimary,
-          secondaryUrl: secondaryUrl.trim(),
-          forceNewTab: false,
-        })
+        const service: ServiceConfig =
+          existing ??
+          cleanServiceConfig({
+            slug: buildUniqueNavigationId(
+              trimmedName,
+              navigation.bookmarks.map((bookmark) => bookmark.slug),
+              'bookmark'
+            ),
+            name: trimmedName,
+            note: note.trim(),
+            icon: record.icon ?? getRandomBookmarkIcon(),
+            primaryUrl: trimmedPrimary,
+            secondaryUrl: secondaryUrl.trim(),
+            forceNewTab: false,
+          })
         next = removeQuickRecordFromScene(navigation, sceneId, record.id)
         const existingPlacements = existing ? getBookmarkPlacements(navigation, existing.slug) : []
         next = upsertBookmark(next, service, [
@@ -157,7 +163,8 @@ export function QuickRecordEditDialog({
         })
         onClose()
       },
-      onError: (error) => setFeedback(error instanceof Error ? error.message : '保存失败，请重试。'),
+      onError: (error) =>
+        setFeedback(error instanceof Error ? error.message : '保存失败，请重试。'),
     })
   }
 
@@ -206,15 +213,21 @@ export function QuickRecordEditDialog({
               <Bookmark className="h-4 w-4 text-primary" />
               保存到分组（可选）
             </div>
-            <p className="text-xs text-muted-foreground">每个场景最多选择一个分组；不选择任何分组则保持为快速记录。</p>
+            <p className="text-xs text-muted-foreground">
+              每个场景最多选择一个分组；不选择任何分组则保持为快速记录。
+            </p>
             <div className="space-y-2">
               {editableScenes.map((scene) => (
-                <div key={scene.id} className="rounded-xl border border-border/70 bg-background/55 p-2">
+                <div
+                  key={scene.id}
+                  className="rounded-xl border border-border/70 bg-background/55 p-2"
+                >
                   <div className="mb-1.5 text-xs font-semibold text-foreground">{scene.name}</div>
                   <div className="flex flex-wrap gap-1.5">
                     {scene.groups.map((group) => {
                       const selected = placements.some(
-                        (placement) => placement.sceneId === scene.id && placement.groupId === group.id
+                        (placement) =>
+                          placement.sceneId === scene.id && placement.groupId === group.id
                       )
                       return (
                         <button
@@ -236,7 +249,12 @@ export function QuickRecordEditDialog({
           {feedback ? <p className="text-sm text-destructive">{feedback}</p> : null}
         </div>
         <div className="flex justify-end gap-2 border-t border-border/65 p-3 sm:p-4">
-          <Button type="button" variant="outline" onClick={onClose} disabled={saveMutation.isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={saveMutation.isPending}
+          >
             取消
           </Button>
           <Button type="submit" disabled={saveMutation.isPending}>

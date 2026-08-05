@@ -55,18 +55,19 @@ The repository includes a generic Docker Compose configuration for Docker Compos
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.6
+    image: ghcr.io/sagesang/harbor-deck:1.4.8
     pull_policy: always
     container_name: harbor-deck
     restart: always
     ports:
-      - "8080:80"
+      - '127.0.0.1:8080:80'
     environment:
       NODE_ENV: production
-      PORT: "80"
+      PORT: '80'
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
       HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
+      HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
     volumes:
       - ./config:/app/config
     security_opt:
@@ -77,10 +78,10 @@ Deployment steps:
 
 1. Create a host configuration directory, for example `./config`; on Synology, `/volume1/docker/harbor-deck/config` is also suitable.
 2. Adjust the host-side path for your environment, then create and start the project from the YAML.
-3. Open `http://<server-ip>:8080` and create the administrator account on the first visit.
+3. Point an HTTPS reverse proxy at `127.0.0.1:8080`, then open the HTTPS domain and create the administrator account.
 4. Create scenes and groups in Bookmark Management, then add or import bookmarks.
 
-The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.6` with `latest` only when you intentionally want automatic image updates.
+The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.8` with `latest` only when you intentionally want automatic image updates.
 
 For a direct Docker command:
 
@@ -88,13 +89,14 @@ For a direct Docker command:
 docker run -d \
   --name harbor-deck \
   --restart always \
-  -p 8080:80 \
+  -p 127.0.0.1:8080:80 \
   -v ./config:/app/config \
   -e TZ=Asia/Shanghai \
-  ghcr.io/sagesang/harbor-deck:1.4.6
+  -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
+  ghcr.io/sagesang/harbor-deck:1.4.8
 ```
 
-HTTPS is supported by putting the container behind any reverse proxy, including Synology Reverse Proxy, Caddy, or Nginx Proxy Manager. The application itself listens on HTTP inside the container; TLS termination belongs at the proxy layer.
+HTTPS is supported by putting the container behind any reverse proxy, including Synology Reverse Proxy, Caddy, or Nginx Proxy Manager. The application listens on HTTP inside the container; point the proxy at host `127.0.0.1:8080`. By default it trusts forwarded headers only from loopback, link-local, and private-network proxies. Set `HARBORDECK_TRUST_PROXY` to an explicit IP or CIDR when the proxy is elsewhere. Change the port binding back to `8080:80` only when direct LAN access is intentionally required.
 
 ## Scenes, groups, and imports
 
@@ -142,14 +144,14 @@ Install the generated unpacked directory from `chrome://extensions` with Develop
 
 The options page accepts:
 
-| Setting | Meaning |
-| --- | --- |
-| `primaryUrl` | Usually the LAN address |
-| `fallbackUrl` | Usually the public/WAN address |
-| `openMode=direct` | Redirect the new-tab page to the selected address |
+| Setting             | Meaning                                            |
+| ------------------- | -------------------------------------------------- |
+| `primaryUrl`        | Usually the LAN address                            |
+| `fallbackUrl`       | Usually the public/WAN address                     |
+| `openMode=direct`   | Redirect the new-tab page to the selected address  |
 | `openMode=embedded` | Render the navigation page inside the new-tab page |
-| `probeTimeoutMs` | Reachability check timeout; default is 200 ms |
-| API token | Used by the “add current page” popup |
+| `probeTimeoutMs`    | Reachability check timeout; default is 200 ms      |
+| API token           | Used by the “add current page” popup               |
 
 The extension keeps only the last reachable address and its timestamp in a short-lived local cache. It never caches bookmark definitions or the server configuration. In direct mode, a fresh cache keeps the redirect fast; on a first or expired check, the extension leaves a short input-protection window. Keyboard input, paste, page navigation, or tab hiding cancels the redirect so a URL pasted into the browser address bar is not overwritten. Embedded mode appends `embedded=1` and disables automatic focus in the navigation search box, leaving the browser address bar usable.
 
@@ -157,10 +159,10 @@ The extension keeps only the last reachable address and its timestamp in a short
 
 The mounted directory contains `config.json`. The most important sections are:
 
-| Section | Purpose |
-| --- | --- |
-| `system` | Theme, app title, click behavior, search engines, and WebDAV backup |
-| `navigation.scenes[]` | Scene names, passwords, groups, and ordered bookmark references |
+| Section                  | Purpose                                                             |
+| ------------------------ | ------------------------------------------------------------------- |
+| `system`                 | Theme, app title, click behavior, search engines, and WebDAV backup |
+| `navigation.scenes[]`    | Scene names, passwords, groups, and ordered bookmark references     |
 | `navigation.bookmarks[]` | Shared bookmark definitions, URLs, icon, note, and opening behavior |
 
 Passwords are stored as hashes. There is one administrator account and no anonymous mode. A scene password is independent of the admin password and is valid only for a browser session; closing the browser, changing the password, restoring a backup, or restarting the server requires unlocking again. Five failed admin logins trigger a temporary lockout.

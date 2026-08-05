@@ -7,8 +7,8 @@
 const BOOT_SNAPSHOT_KEY = 'harborDeckNewTabBootSnapshot'
 const SETTINGS_KEY = 'harborDeckNewTabSettings'
 const BOOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000
-const CACHED_REDIRECT_GRACE_MS = 40
-const UNCACHED_REDIRECT_GRACE_MS = 80
+const CACHED_REDIRECT_GRACE_MS = 120
+const UNCACHED_REDIRECT_GRACE_MS = 180
 const REFRESH_MESSAGE = 'harbordeck:refresh-resolution'
 
 const SHELL_ID = 'harbordeck-instant-shell'
@@ -180,6 +180,21 @@ function requestResolutionRefresh() {
   }
 }
 
+function preconnectTarget(url: string) {
+  try {
+    const origin = new URL(url).origin
+    if (document.head.querySelector(`link[data-harbordeck-preconnect="${origin}"]`)) return
+
+    const link = document.createElement('link')
+    link.rel = 'preconnect'
+    link.href = origin
+    link.dataset.harbordeckPreconnect = origin
+    document.head.appendChild(link)
+  } catch {
+    // URL validation also runs on the options page; ignore stale invalid snapshots here.
+  }
+}
+
 function loadFullNewTabApp() {
   if (document.documentElement.dataset.harborDeckAppLoading === 'true') return
   document.documentElement.dataset.harborDeckAppLoading = 'true'
@@ -230,8 +245,14 @@ function installShellListeners() {
     cancelRedirect()
   }
 
+  const protectInput = () => cancelRedirect()
+
   input.addEventListener('input', markInput, { passive: true })
-  input.addEventListener('paste', markInput, { passive: true })
+  input.addEventListener('keydown', protectInput, { passive: true })
+  input.addEventListener('beforeinput', protectInput, { passive: true })
+  input.addEventListener('compositionstart', protectInput, { passive: true })
+  input.addEventListener('paste', protectInput, { passive: true })
+  input.addEventListener('pointerdown', protectInput, { passive: true })
   form.addEventListener('submit', (event) => {
     event.preventDefault()
     loaderWindow.__harborDeckInstantInputValue = input.value
@@ -266,6 +287,7 @@ async function bootstrap() {
 
   loaderWindow.__harborDeckBootSnapshot = state
   targetUrl = state.activeUrl
+  if (targetUrl) preconnectTarget(targetUrl)
   requestResolutionRefresh()
 
   if (!targetUrl) {

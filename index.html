@@ -7,9 +7,155 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HarborDeck - 智能导航页</title>
+    <style>
+      :root {
+        color-scheme: light;
+        background: #f7f5f2;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: #f7f5f2;
+      }
+
+      #harbordeck-search-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 999;
+        display: grid;
+        place-items: center;
+        box-sizing: border-box;
+        padding: 24px;
+        background: #f7f5f2;
+        color: #292524;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .harbordeck-search-boot-content {
+        width: min(100%, 736px);
+      }
+
+      .harbordeck-search-boot-brand {
+        margin: 0 0 18px;
+        color: #57534e;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-align: center;
+      }
+
+      .harbordeck-search-boot-field {
+        position: relative;
+        padding: 5px;
+        border: 1px solid rgba(120, 113, 108, 0.24);
+        border-radius: 19px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 12px 32px rgba(41, 37, 36, 0.08);
+      }
+
+      #harbordeck-search-boot-input {
+        width: 100%;
+        height: 42px;
+        box-sizing: border-box;
+        padding: 0 16px;
+        border: 0;
+        border-radius: 14px;
+        outline: none;
+        background: transparent;
+        color: #292524;
+        font: inherit;
+        font-size: 14px;
+        letter-spacing: 0;
+      }
+
+      #harbordeck-search-boot-input::placeholder {
+        color: #a8a29e;
+      }
+
+      #harbordeck-search-boot-input:focus {
+        box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.12);
+      }
+
+      .harbordeck-search-boot-status {
+        min-height: 20px;
+        margin: 12px 0 0;
+        color: #78716c;
+        font-size: 12px;
+        letter-spacing: 0;
+        text-align: center;
+      }
+    </style>
   </head>
   <body>
+    <section id="harbordeck-search-boot" aria-label="HarborDeck">
+      <div class="harbordeck-search-boot-content">
+        <p class="harbordeck-search-boot-brand">HarborDeck</p>
+        <div class="harbordeck-search-boot-field">
+          <input
+            id="harbordeck-search-boot-input"
+            type="text"
+            autofocus
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="搜索或输入网址"
+            aria-label="搜索"
+          />
+        </div>
+        <p class="harbordeck-search-boot-status" aria-live="polite">正在加载导航页…</p>
+      </div>
+    </section>
     <div id="root"></div>
+    <script id="harbordeck-search-boot-script">
+      ;(() => {
+        const maxLength = 2000
+        const input = document.getElementById('harbordeck-search-boot-input')
+        if (!(input instanceof HTMLInputElement)) return
+
+        const params = new URLSearchParams(window.location.search)
+        const handoffQuery = params.get('harbordeckQuery')?.slice(0, maxLength) ?? ''
+        if (handoffQuery) {
+          input.value = handoffQuery
+          params.delete('harbordeckQuery')
+          const query = params.toString()
+          window.history.replaceState(
+            null,
+            '',
+            `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
+          )
+        }
+
+        const state = {
+          value: input.value,
+          revision: 0,
+          pendingSubmit: false,
+          released: false,
+        }
+        window.__harborDeckSearchBoot = state
+
+        const publishValue = () => {
+          state.value = input.value.slice(0, maxLength)
+          state.revision += 1
+          window.dispatchEvent(
+            new CustomEvent('harbordeck:search-boot-input', {
+              detail: { value: state.value, revision: state.revision },
+            })
+          )
+        }
+
+        input.addEventListener('input', publishValue, { passive: true })
+        input.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' || event.isComposing || !input.value.trim()) return
+          event.preventDefault()
+          publishValue()
+          state.pendingSubmit = true
+        })
+
+        input.focus({ preventScroll: true })
+        input.setSelectionRange(input.value.length, input.value.length)
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -29,7 +29,6 @@ export interface BookmarkFormValues {
 
 interface ValidateBookmarkFormOptions {
   currentSlug?: string
-  allowEmptyPlacements?: boolean
 }
 
 /**
@@ -164,14 +163,13 @@ export function validateBookmarkForm(
   })
 
   if (
-    !options?.allowEmptyPlacements &&
     config.bookmarks.some(
       (item) => item.slug === bookmark.slug && item.slug !== options?.currentSlug
     )
   ) {
     throw new Error(messages.errors.bookmarkSlugExists(bookmark.slug))
   }
-  if (values.placements.length === 0 && !options?.allowEmptyPlacements) {
+  if (values.placements.length === 0) {
     throw new Error('请至少选择一个场景和分组')
   }
 

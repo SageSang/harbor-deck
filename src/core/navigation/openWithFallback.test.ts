@@ -76,4 +76,14 @@ describe('openWithFallback', () => {
 
     expect(assignMock).toHaveBeenCalledWith('https://example.com')
   })
+
+  it.each(['javascript:alert(1)', 'data:text/html,test', 'file:///etc/passwd'])(
+    'refuses to open unsupported URL %s',
+    async (url) => {
+      await openWithFallback({ primary: url }, { target: 'blank' })
+
+      expect(openMock).not.toHaveBeenCalled()
+      expect(assignMock).not.toHaveBeenCalled()
+    }
+  )
 })

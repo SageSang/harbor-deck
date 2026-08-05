@@ -55,18 +55,19 @@ HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.6
+    image: ghcr.io/sagesang/harbor-deck:1.4.8
     pull_policy: always
     container_name: harbor-deck
     restart: always
     ports:
-      - "8080:80"
+      - '127.0.0.1:8080:80'
     environment:
       NODE_ENV: production
-      PORT: "80"
+      PORT: '80'
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
       HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
+      HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
     volumes:
       - ./config:/app/config
     security_opt:
@@ -77,7 +78,7 @@ services:
 
 1. 创建宿主机配置目录，例如 `./config`；群晖环境可使用 `/volume1/docker/harbor-deck/config`。
 2. 按部署环境修改左侧宿主机路径，然后用以上 YAML 创建并启动项目。
-3. 打开 `http://服务器IP:8080`，第一次访问时创建管理员账号。
+3. 配置 HTTPS 反向代理指向宿主机 `127.0.0.1:8080`，通过 HTTPS 域名访问并创建管理员账号。
 4. 进入书签管理，创建场景和分组，然后添加或导入书签。
 
 容器内的 `/app/config` 不要修改。镜像支持 `linux/amd64` 和 `linux/arm64`。只有在确实需要自动跟随最新镜像时才把版本号改成 `latest`。
@@ -88,13 +89,14 @@ services:
 docker run -d \
   --name harbor-deck \
   --restart always \
-  -p 8080:80 \
+  -p 127.0.0.1:8080:80 \
   -v ./config:/app/config \
   -e TZ=Asia/Shanghai \
-  ghcr.io/sagesang/harbor-deck:1.4.6
+  -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
+  ghcr.io/sagesang/harbor-deck:1.4.8
 ```
 
-HTTPS 可以支持。应用容器内部监听 HTTP，可使用任意反向代理（包括群晖反向代理、Caddy 或 Nginx Proxy Manager）终止 TLS，再把 HTTPS 域名转发到容器端口。
+HTTPS 可以支持。应用容器内部监听 HTTP，可使用任意反向代理（包括群晖反向代理、Caddy 或 Nginx Proxy Manager）终止 TLS，再把 HTTPS 域名转发到宿主机 `127.0.0.1:8080`。默认只信任回环、链路本地和私有网络代理；代理不在这些网段时，用 `HARBORDECK_TRUST_PROXY` 明确填写其 IP 或 CIDR。只有确实需要绕过反向代理从局域网直连时，才把端口绑定改回 `8080:80`。
 
 ## 场景、分组与导入规则
 
@@ -142,14 +144,14 @@ npm run package:extension
 
 扩展设置项：
 
-| 设置 | 说明 |
-| --- | --- |
-| `primaryUrl` | 通常填写内网地址 |
-| `fallbackUrl` | 通常填写公网/外网地址 |
-| `openMode=direct` | 新标签页直接跳转到选中的地址 |
-| `openMode=embedded` | 在新标签页内部嵌入导航页 |
-| `probeTimeoutMs` | 地址检测超时时间，默认 200 毫秒 |
-| API Token | 扩展弹窗添加当前网页时使用 |
+| 设置                | 说明                            |
+| ------------------- | ------------------------------- |
+| `primaryUrl`        | 通常填写内网地址                |
+| `fallbackUrl`       | 通常填写公网/外网地址           |
+| `openMode=direct`   | 新标签页直接跳转到选中的地址    |
+| `openMode=embedded` | 在新标签页内部嵌入导航页        |
+| `probeTimeoutMs`    | 地址检测超时时间，默认 200 毫秒 |
+| API Token           | 扩展弹窗添加当前网页时使用      |
 
 扩展只在本地缓存最近一次地址判断结果及时间戳，缓存不包含书签定义，也不包含服务器配置。直达模式有新鲜缓存时可以快速跳转；第一次打开或缓存过期时会留下很短的输入保护窗口。检测到键盘输入、粘贴、页面离开或标签页隐藏，就会取消自动跳转，不抢走用户正在粘贴的网址。内嵌模式会加上 `embedded=1`，并关闭导航页搜索框的自动聚焦，浏览器地址栏输入不会被抢走。
 
@@ -157,11 +159,11 @@ npm run package:extension
 
 挂载目录中保存一个 `config.json`，核心字段如下：
 
-| 字段 | 用途 |
-| --- | --- |
-| `system` | 主题、应用名称、点击行为、搜索引擎和 WebDAV 备份 |
-| `navigation.scenes[]` | 场景名称、密码、分组及有序书签引用 |
-| `navigation.bookmarks[]` | 共享书签定义、URL、图标、备注和打开方式 |
+| 字段                     | 用途                                             |
+| ------------------------ | ------------------------------------------------ |
+| `system`                 | 主题、应用名称、点击行为、搜索引擎和 WebDAV 备份 |
+| `navigation.scenes[]`    | 场景名称、密码、分组及有序书签引用               |
+| `navigation.bookmarks[]` | 共享书签定义、URL、图标、备注和打开方式          |
 
 密码只保存哈希值。项目只有一个管理员账号，没有匿名模式。场景密码独立于管理员密码，只对当前浏览器会话有效；关闭浏览器、修改场景密码、恢复备份或重启服务后需要重新解锁。管理员连续登录失败 5 次会触发临时锁定。
 

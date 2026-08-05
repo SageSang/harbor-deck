@@ -1,17 +1,18 @@
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.5
+    image: ghcr.io/sagesang/harbor-deck:1.4.8
     pull_policy: always
     container_name: harbor-deck
     restart: always
     ports:
-      - "8080:80"
+      - '127.0.0.1:8080:80'
     environment:
       NODE_ENV: production
-      PORT: "80"
+      PORT: '80'
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
       HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
+      HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
     volumes:
       - /volume1/docker/harbor-deck/config:/app/config
     security_opt:

@@ -41,8 +41,8 @@ export function isValidSearchEngineTemplate(urlTemplate: string) {
   }
 
   try {
-    new URL(template.split(SEARCH_KEYWORD_PLACEHOLDER).join('keyword'))
-    return true
+    const parsed = new URL(template.split(SEARCH_KEYWORD_PLACEHOLDER).join('keyword'))
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
   } catch {
     return false
   }
@@ -65,14 +65,13 @@ export function getDefaultSearchEngine(
   const availableEngines = getSearchEngines(customSearchEngines)
 
   return (
-    availableEngines.find((engine) => engine.id === defaultSearchEngineId) ?? builtinSearchEngines[0]
+    availableEngines.find((engine) => engine.id === defaultSearchEngineId) ??
+    builtinSearchEngines[0]
   )
 }
 
 export function buildSearchUrl(engine: SearchEngineConfig, keyword: string) {
-  return engine.urlTemplate
-    .split(SEARCH_KEYWORD_PLACEHOLDER)
-    .join(encodeURIComponent(keyword))
+  return engine.urlTemplate.split(SEARCH_KEYWORD_PLACEHOLDER).join(encodeURIComponent(keyword))
 }
 
 export function createSearchEngineId(name: string, existingIds: Iterable<string>) {

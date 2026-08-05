@@ -1,14 +1,22 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
-import type { NavigationConfig, QuickRecord, ServiceConfig } from '../src/config/schema.js'
+import {
+  httpUrlSchema,
+  isHttpUrl,
+  type NavigationConfig,
+  type QuickRecord,
+  type ServiceConfig,
+} from '../src/config/schema.js'
+import { bookmarkMatchesAnyUrl } from '../src/features/services/bookmarkUrl.js'
+import { quickRecordMatchesSearch } from '../src/features/services/quickRecordSearch.js'
 
 export const integrationTokenHeader = 'x-harbordeck-search-token'
 const legacyIntegrationTokenHeader = 'x-smart-harbor-search-token'
 
 export const integrationBookmarkBodySchema = z.object({
   name: z.string().trim().min(1).max(200),
-  primaryUrl: z.string().trim().url(),
-  secondaryUrl: z.string().trim().url().optional(),
+  primaryUrl: httpUrlSchema,
+  secondaryUrl: httpUrlSchema.optional(),
   note: z.string().max(5000).optional(),
   placements: z
     .array(
@@ -23,7 +31,7 @@ export const integrationBookmarkBodySchema = z.object({
 })
 
 export const integrationBookmarkLookupQuerySchema = z.object({
-  url: z.string().trim().url().max(2000),
+  url: z.string().trim().max(2000).refine(isHttpUrl, 'Only HTTP and HTTPS URLs are supported'),
 })
 
 export type IntegrationBookmarkBody = z.infer<typeof integrationBookmarkBodySchema>
@@ -106,24 +114,6 @@ function matchesBookmark(bookmark: ServiceConfig, query: string) {
   return haystack.includes(query.toLocaleLowerCase())
 }
 
-function comparableUrl(value: string) {
-  try {
-    const parsed = new URL(value.trim())
-    parsed.hash = ''
-    return parsed.toString().replace(/\/$/, '')
-  } catch {
-    return value.trim().replace(/\/$/, '')
-  }
-}
-
-function urlsMatch(left: string | undefined, right: string | undefined) {
-  return Boolean(left && right && comparableUrl(left) === comparableUrl(right))
-}
-
-function bookmarkMatchesAnyUrl(bookmark: ServiceConfig, urls: string[]) {
-  return urls.some((url) => urlsMatch(bookmark.primaryUrl, url) || urlsMatch(bookmark.secondaryUrl, url))
-}
-
 function toIntegrationBookmarkInfo(bookmark: ServiceConfig): IntegrationBookmarkInfo {
   return {
     name: bookmark.name,
@@ -138,18 +128,7 @@ export function lookupIntegrationBookmark(navigation: NavigationConfig, url: str
   if (!bookmark) {
     for (const scene of navigation.scenes) {
       if (scene.protected) continue
-      const record = (scene.quickRecords ?? []).find((item) =>
-        bookmarkMatchesAnyUrl(
-          {
-            slug: item.id,
-            name: item.name,
-            primaryUrl: item.primaryUrl,
-            secondaryUrl: item.secondaryUrl,
-            note: item.note,
-          },
-          [url]
-        )
-      )
+      const record = (scene.quickRecords ?? []).find((item) => bookmarkMatchesAnyUrl(item, [url]))
       if (record) {
         return {
           bookmark: null,
@@ -218,13 +197,7 @@ export function searchNavigationBookmarks(
       })
     })
     ;(scene.quickRecords ?? []).forEach((record) => {
-      if (!matchesBookmark({
-        slug: record.id,
-        name: record.name,
-        primaryUrl: record.primaryUrl,
-        secondaryUrl: record.secondaryUrl,
-        note: record.note,
-      }, normalizedQuery)) {
+      if (!quickRecordMatchesSearch(record, normalizedQuery)) {
         return
       }
       results.push({
@@ -277,8 +250,8 @@ export function createIntegrationBookmark(
     })),
   }
 
-  const submittedUrls = [body.primaryUrl, body.secondaryUrl].filter(
-    (value): value is string => Boolean(value)
+  const submittedUrls = [body.primaryUrl, body.secondaryUrl].filter((value): value is string =>
+    Boolean(value)
   )
 
   // Empty placements deliberately mean “quick record”.  It stays searchable
@@ -292,31 +265,16 @@ export function createIntegrationBookmark(
       throw new Error('No unlocked record scene is available')
     }
 
-    const existingNormal = next.bookmarks.find((item) => bookmarkMatchesAnyUrl(item, submittedUrls))
     const existing = (targetScene.quickRecords ?? []).find((record) =>
-      bookmarkMatchesAnyUrl(
-        {
-          slug: record.id,
-          name: record.name,
-          primaryUrl: record.primaryUrl,
-          secondaryUrl: record.secondaryUrl,
-          note: record.note,
-        },
-        submittedUrls
-      )
+      bookmarkMatchesAnyUrl(record, submittedUrls)
     )
-    const baseName = existingNormal?.name ?? existing?.name ?? body.name
-    const basePrimaryUrl = existingNormal?.primaryUrl ?? existing?.primaryUrl ?? body.primaryUrl
-    const baseSecondaryUrl =
-      existingNormal?.secondaryUrl ?? existing?.secondaryUrl ?? body.secondaryUrl
-    const baseNote = existingNormal?.note ?? existing?.note ?? body.note?.trim()
     const now = Date.now()
     const record: QuickRecord = {
       id: existing?.id ?? `quick-${now.toString(36)}-${randomInt(1000, 9999)}`,
-      name: baseName,
-      primaryUrl: basePrimaryUrl,
-      ...(baseSecondaryUrl ? { secondaryUrl: baseSecondaryUrl } : {}),
-      ...(baseNote ? { note: baseNote } : {}),
+      name: body.name,
+      primaryUrl: body.primaryUrl,
+      ...(body.secondaryUrl ? { secondaryUrl: body.secondaryUrl } : {}),
+      ...(body.note?.trim() ? { note: body.note.trim() } : {}),
       icon: existing?.icon ?? iconPool[randomInt(iconPool.length)],
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -352,38 +310,30 @@ export function createIntegrationBookmark(
 
   let bookmark = next.bookmarks.find((item) => bookmarkMatchesAnyUrl(item, submittedUrls))
   let created = false
-  const existingQuickRecord =
-    !bookmark
-      ? Array.from(targets.values())
-          .map(({ sceneId }) => next.scenes.find((scene) => scene.id === sceneId))
-          .flatMap((scene) => scene?.quickRecords ?? [])
-          .find((record) =>
-            bookmarkMatchesAnyUrl(
-              {
-                slug: record.id,
-                name: record.name,
-                primaryUrl: record.primaryUrl,
-                secondaryUrl: record.secondaryUrl,
-                note: record.note,
-              },
-              submittedUrls
-            )
-          )
-      : undefined
+  const existingQuickRecord = !bookmark
+    ? Array.from(targets.values())
+        .map(({ sceneId }) => next.scenes.find((scene) => scene.id === sceneId))
+        .flatMap((scene) => scene?.quickRecords ?? [])
+        .find((record) => bookmarkMatchesAnyUrl(record, submittedUrls))
+    : undefined
   if (!bookmark) {
     bookmark = existingQuickRecord
       ? {
-          slug: buildUniqueSlug(existingQuickRecord.name, next.bookmarks.map((item) => item.slug)),
-          name: existingQuickRecord.name,
+          slug: buildUniqueSlug(
+            body.name,
+            next.bookmarks.map((item) => item.slug)
+          ),
+          name: body.name,
           icon: existingQuickRecord.icon,
-          primaryUrl: existingQuickRecord.primaryUrl,
-          ...(existingQuickRecord.secondaryUrl
-            ? { secondaryUrl: existingQuickRecord.secondaryUrl }
-            : {}),
-          ...(existingQuickRecord.note ? { note: existingQuickRecord.note } : {}),
+          primaryUrl: body.primaryUrl,
+          ...(body.secondaryUrl ? { secondaryUrl: body.secondaryUrl } : {}),
+          ...(body.note?.trim() ? { note: body.note.trim() } : {}),
         }
       : {
-          slug: buildUniqueSlug(body.name, next.bookmarks.map((item) => item.slug)),
+          slug: buildUniqueSlug(
+            body.name,
+            next.bookmarks.map((item) => item.slug)
+          ),
           name: body.name,
           icon: iconPool[randomInt(iconPool.length)],
           primaryUrl: body.primaryUrl,
@@ -398,11 +348,11 @@ export function createIntegrationBookmark(
     if (
       !mergedBookmark.secondaryUrl &&
       submittedSecondaryUrl &&
-      !urlsMatch(mergedBookmark.primaryUrl, submittedSecondaryUrl)
+      !bookmarkMatchesAnyUrl(mergedBookmark, [submittedSecondaryUrl])
     ) {
       mergedBookmark.secondaryUrl = submittedSecondaryUrl
     }
-    if (!mergedBookmark.secondaryUrl && !urlsMatch(mergedBookmark.primaryUrl, body.primaryUrl)) {
+    if (!mergedBookmark.secondaryUrl && !bookmarkMatchesAnyUrl(mergedBookmark, [body.primaryUrl])) {
       mergedBookmark.secondaryUrl = body.primaryUrl
     }
     if (!mergedBookmark.note && body.note?.trim()) {
@@ -419,18 +369,11 @@ export function createIntegrationBookmark(
     const scene = next.scenes.find((item) => item.id === sceneId)!
     const targetGroup = scene.groups.find((group) => group.id === groupId)!
     const quickRecord = (scene.quickRecords ?? []).find((record) =>
-      bookmarkMatchesAnyUrl(
-        {
-          slug: record.id,
-          name: record.name,
-          primaryUrl: record.primaryUrl,
-          secondaryUrl: record.secondaryUrl,
-          note: record.note,
-        },
-        submittedUrls
-      )
+      bookmarkMatchesAnyUrl(record, submittedUrls)
     )
-    scene.quickRecords = (scene.quickRecords ?? []).filter((record) => record.id !== quickRecord?.id)
+    scene.quickRecords = (scene.quickRecords ?? []).filter(
+      (record) => record.id !== quickRecord?.id
+    )
     scene.groups.forEach((group) => {
       if (group.id !== targetGroup.id) {
         group.bookmarkIds = group.bookmarkIds.filter((id) => id !== bookmark!.slug)

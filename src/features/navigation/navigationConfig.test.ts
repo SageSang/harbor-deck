@@ -181,6 +181,32 @@ describe('quick records', () => {
       { ...record, name: 'Quick one updated', updatedAt: 2 },
     ])
   })
+
+  it('rejects duplicate record ids within a scene', () => {
+    const record = {
+      id: 'quick-duplicate',
+      name: 'Duplicate',
+      primaryUrl: 'https://quick.example.com',
+      createdAt: 1,
+      updatedAt: 1,
+    }
+
+    expect(() =>
+      parseNavigationConfig({
+        defaultSceneId: 'personal',
+        bookmarks: [],
+        scenes: [
+          {
+            id: 'personal',
+            name: 'Personal',
+            protected: false,
+            groups: [],
+            quickRecords: [record, { ...record, primaryUrl: 'https://other.example.com' }],
+          },
+        ],
+      })
+    ).toThrow('快速记录标识重复')
+  })
 })
 
 describe('bookmark placement updates', () => {

@@ -4,6 +4,7 @@ const SCENE_UNLOCK_TTL_MS = 1000 * 60 * 60
 const ATTEMPT_WINDOW_MS = 1000 * 60 * 10
 const MAX_ATTEMPTS = 5
 const BLOCK_MS = 1000 * 60 * 30
+const ATTEMPT_CAPACITY = 10_000
 
 interface UnlockRecord {
   sessionKey: string
@@ -33,7 +34,10 @@ export function createSceneAccessService() {
       }
     })
     attempts.forEach((record, key) => {
-      if ((!record.blockedUntil || record.blockedUntil <= now) && record.firstAttemptAt + ATTEMPT_WINDOW_MS <= now) {
+      if (
+        (!record.blockedUntil || record.blockedUntil <= now) &&
+        record.firstAttemptAt + ATTEMPT_WINDOW_MS <= now
+      ) {
         attempts.delete(key)
       }
     })
@@ -54,6 +58,10 @@ export function createSceneAccessService() {
     const now = Date.now()
     const current = attempts.get(key)
     if (!current || current.firstAttemptAt + ATTEMPT_WINDOW_MS <= now) {
+      if (!current && attempts.size >= ATTEMPT_CAPACITY) {
+        const oldestKey = attempts.keys().next().value
+        if (oldestKey) attempts.delete(oldestKey)
+      }
       attempts.set(key, { count: 1, firstAttemptAt: now })
       return
     }
@@ -86,9 +94,9 @@ export function createSceneAccessService() {
     const record = unlocks.get(hashToken(token))
     return Boolean(
       record &&
-        record.sessionKey === sessionKey &&
-        record.sceneId === sceneId &&
-        record.expiresAt > Date.now()
+      record.sessionKey === sessionKey &&
+      record.sceneId === sceneId &&
+      record.expiresAt > Date.now()
     )
   }
 

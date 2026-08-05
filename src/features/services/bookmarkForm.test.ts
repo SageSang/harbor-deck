@@ -4,7 +4,6 @@ import {
   createDuplicateBookmarkForm,
   createEmptyBookmarkForm,
   validateQuickRecordForm,
-  validateBookmarkForm,
 } from './bookmarkForm'
 
 function createNavigationConfig(): NavigationConfig {
@@ -85,11 +84,8 @@ describe('quick record form submission', () => {
 
     expect(values.placements).toEqual([])
 
-    const result = validateBookmarkForm(configureQuickRecord(values), config, {
-      allowEmptyPlacements: true,
-    })
+    const result = validateQuickRecordForm(configureQuickRecord(values))
 
-    expect(result.placements).toEqual([])
     expect(result.bookmark.name).toBe('快速记录测试')
     expect(result.bookmark.primaryUrl).toBe('https://quick-record.example.com')
   })

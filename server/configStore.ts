@@ -7,6 +7,7 @@ import {
   storedNavigationConfigSchema,
   systemConfigSchema,
   type AppConfig,
+  type NavigationConfig,
 } from '../src/config/schema.js'
 
 const configDir = path.resolve(process.env.CONFIG_DIR ?? path.join(process.cwd(), 'config'))
@@ -145,6 +146,27 @@ export async function writeNavigationConfig(value: unknown) {
     const filePath = await ensureAppConfigFile()
     await writeJsonFile(filePath, nextConfig)
     return nextConfig.navigation
+  })
+}
+
+export async function mutateNavigationConfig<TResult>(
+  mutation: (current: NavigationConfig) => { navigation: unknown; result: TResult }
+) {
+  return withWriteLock(async () => {
+    const currentConfig = await readAppConfig()
+    const mutationResult = mutation(currentConfig.navigation)
+    const navigation = storedNavigationConfigSchema.parse(mutationResult.navigation)
+    const nextConfig: AppConfig = {
+      ...currentConfig,
+      navigation,
+    }
+
+    const filePath = await ensureAppConfigFile()
+    await writeJsonFile(filePath, nextConfig)
+    return {
+      navigation: nextConfig.navigation,
+      result: mutationResult.result,
+    }
   })
 }
 

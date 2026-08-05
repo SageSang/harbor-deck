@@ -63,6 +63,8 @@ describe('auth module', () => {
   afterEach(async () => {
     delete process.env.CONFIG_DIR
     delete process.env.NODE_ENV
+    delete process.env.HARBORDECK_SEARCH_TOKEN
+    delete process.env.HARBORDECK_TRUST_PROXY
 
     if (app) {
       await app.close()
@@ -127,6 +129,71 @@ describe('auth module', () => {
 
     expect(healthResponse.statusCode).toBe(200)
     expect(healthResponse.json()).toEqual({ ok: true })
+  })
+
+  it('sets hardened response headers and trusts forwarded HTTPS only when configured', async () => {
+    const server = await buildTestServer()
+    const spoofedHttpsResponse = await server.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { 'x-forwarded-proto': 'https' },
+    })
+
+    expect(spoofedHttpsResponse.headers['cache-control']).toBe('no-store')
+    expect(spoofedHttpsResponse.headers.pragma).toBe('no-cache')
+    expect(spoofedHttpsResponse.headers['content-security-policy']).toContain("default-src 'self'")
+    expect(spoofedHttpsResponse.headers['content-security-policy']).toContain(
+      "frame-ancestors 'none'"
+    )
+    expect(spoofedHttpsResponse.headers['x-frame-options']).toBe('DENY')
+    expect(spoofedHttpsResponse.headers['permissions-policy']).toBe(
+      'camera=(), microphone=(), geolocation=()'
+    )
+    expect(spoofedHttpsResponse.headers['strict-transport-security']).toBeUndefined()
+
+    await server.close()
+    app = null
+    process.env.HARBORDECK_TRUST_PROXY = 'loopback'
+    const trustedProxyServer = await buildTestServer()
+    const trustedHttpsResponse = await trustedProxyServer.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { 'x-forwarded-proto': 'https' },
+    })
+
+    expect(trustedHttpsResponse.headers['strict-transport-security']).toBe('max-age=31536000')
+  })
+
+  it('does not expose navigation data from integration writes', async () => {
+    process.env.HARBORDECK_SEARCH_TOKEN = 'integration-test-token'
+    const server = await buildTestServer()
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/integrations/bookmarks',
+      headers: { 'x-harbordeck-search-token': 'integration-test-token' },
+      payload: {
+        name: 'Security test',
+        primaryUrl: 'https://security.example.com',
+        placements: [],
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).not.toHaveProperty('navigation')
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(response.headers.vary).toBe('X-HarborDeck-Search-Token')
+
+    const rejectedResponse = await server.inject({
+      method: 'POST',
+      url: '/api/integrations/bookmarks',
+      headers: { 'x-harbordeck-search-token': 'integration-test-token' },
+      payload: {
+        name: 'Unsafe test',
+        primaryUrl: 'javascript:alert(1)',
+        placements: [],
+      },
+    })
+    expect(rejectedResponse.statusCode).toBe(400)
   })
 
   it('preserves stored auth when saving sanitized config payloads', async () => {
@@ -311,8 +378,9 @@ describe('auth module', () => {
     const wrongLoginResponse = await server.inject({
       method: 'POST',
       url: '/api/auth/login',
+      headers: { 'x-forwarded-for': '198.51.100.1' },
       payload: {
-        username: 'admin-user',
+        username: 'attacker-one',
         password: 'wrong-password-999',
       },
     })
@@ -323,8 +391,9 @@ describe('auth module', () => {
       const response = await server.inject({
         method: 'POST',
         url: '/api/auth/login',
+        headers: { 'x-forwarded-for': `198.51.100.${attempt + 2}` },
         payload: {
-          username: 'admin-user',
+          username: `attacker-${attempt + 2}`,
           password: 'wrong-password-999',
         },
       })
@@ -335,6 +404,7 @@ describe('auth module', () => {
     const limitedResponse = await server.inject({
       method: 'POST',
       url: '/api/auth/login',
+      headers: { 'x-forwarded-for': '203.0.113.200' },
       payload: {
         username: 'admin-user',
         password: 'wrong-password-999',

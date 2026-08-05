@@ -27,11 +27,17 @@ import {
 import { useNavigationConfig, useSaveNavigationConfig } from '@/features/navigation/useNavigation'
 import { ServiceCard } from './ServiceCard'
 import {
+  findBookmarkNavigationTarget,
+  type BookmarkNavigationDirection,
+  type BookmarkNavigationEntry,
+} from './bookmarkNavigation'
+import {
   getGroupKey,
   persistCollapsedGroupKeys,
   readCollapsedGroupKeys,
 } from '@/features/navigation/groupPreference'
 import { preloadServiceIcons } from './iconRegistry'
+import { quickRecordMatchesSearch } from './quickRecordSearch'
 import { useServices } from './useServices'
 
 interface DragOverState {
@@ -91,14 +97,6 @@ type ContextMenuState =
   | QuickRecordContextMenuState
   | GroupContextMenuState
   | SelectionContextMenuState
-type BookmarkNavigationDirection = 'left' | 'right' | 'up' | 'down'
-
-interface BookmarkNavigationEntry {
-  slug: string
-  groupIndex: number
-  serviceIndex: number
-}
-
 const DESKTOP_SECTION_HORIZONTAL_PADDING_PX = 24
 // Keep the group label wide enough for normal folder paths while leaving a
 // predictable amount of room for the desktop card columns. The label may wrap
@@ -153,87 +151,6 @@ function isEditableTarget(target: EventTarget | null) {
     target instanceof HTMLElement &&
     target.matches('input, textarea, select, [contenteditable="true"]')
   )
-}
-
-function findAdjacentBookmarkSlug(
-  currentSlug: string,
-  direction: BookmarkNavigationDirection,
-  entries: readonly BookmarkNavigationEntry[],
-  bookmarkRefs: ReadonlyMap<string, HTMLDivElement>
-) {
-  const currentIndex = entries.findIndex((entry) => entry.slug === currentSlug)
-  const currentElement = bookmarkRefs.get(currentSlug)
-  if (currentIndex < 0 || !currentElement) {
-    return null
-  }
-
-  const currentRect = currentElement.getBoundingClientRect()
-  const currentCenterX = currentRect.left + currentRect.width / 2
-  const currentCenterY = currentRect.top + currentRect.height / 2
-  const candidates = entries.flatMap((entry) => {
-    if (entry.slug === currentSlug) {
-      return []
-    }
-    const element = bookmarkRefs.get(entry.slug)
-    if (!element) {
-      return []
-    }
-    const rect = element.getBoundingClientRect()
-    return [
-      {
-        entry,
-        centerX: rect.left + rect.width / 2,
-        centerY: rect.top + rect.height / 2,
-      },
-    ]
-  })
-
-  const directional = candidates.filter(({ centerX, centerY }) => {
-    switch (direction) {
-      case 'left':
-        return centerX < currentCenterX - 2
-      case 'right':
-        return centerX > currentCenterX + 2
-      case 'up':
-        return centerY < currentCenterY - 2
-      case 'down':
-        return centerY > currentCenterY + 2
-    }
-  })
-
-  const sameRowThreshold = Math.max(currentRect.height * 1.35, 32)
-  const sameColumnThreshold = Math.max(currentRect.width * 1.35, 72)
-  const aligned = directional.filter(({ centerX, centerY }) => {
-    if (direction === 'left' || direction === 'right') {
-      return Math.abs(centerY - currentCenterY) <= sameRowThreshold
-    }
-    return Math.abs(centerX - currentCenterX) <= sameColumnThreshold
-  })
-  const pool = aligned.length > 0 ? aligned : directional
-
-  pool.sort((left, right) => {
-    if (direction === 'left' || direction === 'right') {
-      const primary =
-        Math.abs(left.centerX - currentCenterX) - Math.abs(right.centerX - currentCenterX)
-      return (
-        primary ||
-        Math.abs(left.centerY - currentCenterY) - Math.abs(right.centerY - currentCenterY)
-      )
-    }
-    const primary =
-      Math.abs(left.centerY - currentCenterY) - Math.abs(right.centerY - currentCenterY)
-    return (
-      primary || Math.abs(left.centerX - currentCenterX) - Math.abs(right.centerX - currentCenterX)
-    )
-  })
-
-  if (pool[0]) {
-    return pool[0].entry.slug
-  }
-
-  const fallbackIndex =
-    direction === 'left' || direction === 'up' ? currentIndex - 1 : currentIndex + 1
-  return entries[fallbackIndex]?.slug ?? null
 }
 
 export function ServiceGrid() {
@@ -293,12 +210,7 @@ export function ServiceGrid() {
     const scene = findScene(navigationQuery.data, activeSceneId)
     const keyword = searchKeyword.trim().toLocaleLowerCase()
     return (scene?.quickRecords ?? [])
-      .filter((record) =>
-        [record.name, record.id, record.primaryUrl, record.secondaryUrl ?? '', record.note ?? '']
-          .join('\n')
-          .toLocaleLowerCase()
-          .includes(keyword)
-      )
+      .filter((record) => quickRecordMatchesSearch(record, keyword))
       .map((record) => ({
         slug: `quick-${record.id}`,
         name: record.name,
@@ -679,9 +591,20 @@ export function ServiceGrid() {
         targetServiceIndex
       )
       clearDragState()
-      saveMutation.mutate(nextConfig)
-    } catch {
+      saveMutation.mutate(nextConfig, {
+        onError: (error) => {
+          showToast({
+            type: 'error',
+            message: error instanceof Error ? error.message : messages.common.saveFailedRetry,
+          })
+        },
+      })
+    } catch (error) {
       clearDragState()
+      showToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : messages.common.saveFailedRetry,
+      })
     }
   }
 
@@ -1140,18 +1063,15 @@ export function ServiceGrid() {
                                   return
                                 }
                                 event.preventDefault()
-                                const nextSlug = findAdjacentBookmarkSlug(
+                                const navigationTarget = findBookmarkNavigationTarget(
                                   service.slug,
                                   event.key.slice(5).toLowerCase() as BookmarkNavigationDirection,
                                   visibleBookmarkEntries,
                                   bookmarkRefs.current
                                 )
-                                if (nextSlug) {
-                                  focusBookmark(nextSlug)
-                                } else if (
-                                  event.key === 'ArrowUp' &&
-                                  visibleBookmarkEntries[0]?.slug === service.slug
-                                ) {
+                                if (navigationTarget?.type === 'bookmark') {
+                                  focusBookmark(navigationTarget.slug)
+                                } else if (navigationTarget?.type === 'search') {
                                   focusSearchBox()
                                 }
                                 return

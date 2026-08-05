@@ -81,6 +81,22 @@ describe('systemConfigSchema', () => {
     ).toThrow('{keyword}')
   })
 
+  it('rejects custom search templates with executable protocols', () => {
+    expect(() =>
+      systemConfigSchema.parse({
+        appName: 'HarborDeck',
+        defaultSearchEngine: 'custom',
+        customSearchEngines: [
+          {
+            id: 'custom',
+            name: 'Custom',
+            urlTemplate: 'javascript:alert({keyword})',
+          },
+        ],
+      })
+    ).toThrow('{keyword}')
+  })
+
   it('rejects missing default search engine ids', () => {
     expect(() =>
       systemConfigSchema.parse({

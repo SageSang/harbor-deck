@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { appConfigSchema, type AppConfig, type WebdavBackupConfig } from '../src/config/schema.js'
 import {
   createWebdavBackup,
@@ -254,5 +254,24 @@ describe('webdav backup helpers', () => {
     })
 
     expect(restored).toEqual(config)
+  })
+
+  it('aborts a WebDAV request that never responds', async () => {
+    vi.useFakeTimers()
+    try {
+      const config = createAppConfig('https://dav.example.test', {})
+      const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+        })
+      }) as typeof fetch
+
+      const request = listWebdavBackupVersions(config.system.webdavBackup, { fetchImpl })
+      const expectation = expect(request).rejects.toThrow('WebDAV 请求超时（15 秒）')
+      await vi.advanceTimersByTimeAsync(15_000)
+      await expectation
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -12,6 +12,20 @@ This file records user-visible changes to HarborDeck. Detailed release bodies li
 
 - No unreleased changes.
 
+## v1.4.8 — 2026-08-06
+
+- Added an immediate new-tab search field that preserves input while the application loads.
+- Fixed extension updates for existing bookmarks and quick records, including stale search matches after editing.
+- Completed wrap-around keyboard navigation between the search field and bookmark grid.
+- Restricted navigable URLs to HTTP/HTTPS, removed integration response data leakage, hardened authentication throttling and proxy trust, and added CSP and security response headers.
+- Updated runtime dependencies and published matching 1.4.8 web and extension artifacts.
+
+## v1.4.7 — 2026-08-05
+
+- Preserved bookmark form fields when switching scenes.
+- Added searchable quick records when saving without a placement.
+- Kept quick-record validation separate from normal bookmark slug rules and prevented stale save callbacks from replacing current feedback.
+
 ## v1.4.6 — 2026-08-03
 
 - Search results temporarily expand matching bookmark groups and restore each group's previous collapsed state after the search is cleared.

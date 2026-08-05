@@ -138,7 +138,7 @@ export function upsertQuickRecord(
   const next = cloneNavigationConfig(config)
   const scene = findScene(next, sceneId)
   if (!scene) {
-    throw new Error('鎵€閫夊満鏅笉瀛樺湪')
+    throw new Error('所选场景不存在')
   }
   const currentId = previousRecordId ?? record.id
   const quickRecords = scene.quickRecords ?? (scene.quickRecords = [])
@@ -287,7 +287,7 @@ export function addBookmarksToSceneGroups(
     const scene = findScene(next, placement.sceneId)
     const targetGroup = scene?.groups.find((group) => group.id === placement.groupId)
     if (!scene || !targetGroup) {
-      throw new Error('鎵€閫夊満鏅垎缁勪笉瀛樺湪')
+      throw new Error('所选场景分组不存在')
     }
 
     requestedIds.forEach((bookmarkId) => {

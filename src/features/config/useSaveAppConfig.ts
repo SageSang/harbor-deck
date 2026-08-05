@@ -3,8 +3,8 @@ import type { AppConfig } from '@/config/schema'
 import {
   appConfigQueryKey,
   saveAppConfig,
-    navigationConfigQueryKey,
-    sceneListQueryKey,
+  navigationConfigQueryKey,
+  sceneListQueryKey,
   systemConfigQueryKey,
 } from '@/features/config/api'
 

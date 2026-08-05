@@ -48,6 +48,7 @@ import {
 } from '@/features/navigation/useNavigation'
 import { getFeedbackNoticeClass } from '@/features/feedback/feedbackStyles'
 import { useFeedback } from '@/features/feedback/useFeedback'
+import { bookmarkMatchesAnyUrl } from '@/features/services/bookmarkUrl'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 
@@ -482,10 +483,10 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
         const now = Date.now()
         const existing = recordScene.quickRecords?.find(
           (record) =>
-            record.primaryUrl === result.bookmark.primaryUrl ||
-            record.secondaryUrl === result.bookmark.primaryUrl ||
-            record.primaryUrl === result.bookmark.secondaryUrl ||
-            record.secondaryUrl === result.bookmark.secondaryUrl
+            bookmarkMatchesAnyUrl(record, [
+              result.bookmark.primaryUrl,
+              result.bookmark.secondaryUrl,
+            ])
         )
         const record = {
           id: existing?.id ?? `quick-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,

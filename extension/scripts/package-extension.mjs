@@ -20,8 +20,28 @@ await fs.rm(packageDir, { recursive: true, force: true })
 await fs.rm(zipPath, { force: true })
 await fs.cp(distDir, packageDir, { recursive: true })
 
-await execFileAsync('zip', ['-r', zipPath, '.'], {
-  cwd: packageDir,
-})
+if (process.platform === 'win32') {
+  await execFileAsync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "Compress-Archive -Path (Join-Path $env:HARBOR_DECK_EXTENSION_PACKAGE_DIR '*') -DestinationPath $env:HARBOR_DECK_EXTENSION_ZIP_PATH -Force",
+    ],
+    {
+      env: {
+        ...process.env,
+        HARBOR_DECK_EXTENSION_PACKAGE_DIR: packageDir,
+        HARBOR_DECK_EXTENSION_ZIP_PATH: zipPath,
+      },
+      windowsHide: true,
+    }
+  )
+} else {
+  await execFileAsync('zip', ['-r', zipPath, '.'], {
+    cwd: packageDir,
+  })
+}
 
 process.stdout.write(`${packageDir}\n${zipPath}\n`)

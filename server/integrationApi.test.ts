@@ -181,4 +181,32 @@ describe('integrationApi', () => {
     expect(converted.navigation.scenes[0].quickRecords).toHaveLength(0)
     expect(converted.navigation.scenes[0].groups[0].bookmarkIds).toContain(converted.bookmark?.slug)
   })
+
+  it('updates quick-record metadata and stops matching removed or internal text', () => {
+    const saved = createIntegrationBookmark(navigation, {
+      name: 'Original keyword',
+      primaryUrl: 'https://rename.example.com/current',
+      note: 'removed note keyword',
+      recordSceneId: 'default',
+      placements: [],
+    })
+    const updated = createIntegrationBookmark(saved.navigation, {
+      name: 'Current title',
+      primaryUrl: 'https://rename.example.com/current',
+      recordSceneId: 'default',
+      placements: [],
+    })
+
+    expect(updated.created).toBe(false)
+    expect(updated.quickRecord).toMatchObject({
+      id: saved.quickRecord?.id,
+      name: 'Current title',
+      primaryUrl: 'https://rename.example.com/current',
+    })
+    expect(updated.quickRecord?.note).toBeUndefined()
+    expect(searchNavigationBookmarks(updated.navigation, 'original keyword')).toEqual([])
+    expect(searchNavigationBookmarks(updated.navigation, 'removed note keyword')).toEqual([])
+    expect(searchNavigationBookmarks(updated.navigation, 'quick-')).toEqual([])
+    expect(searchNavigationBookmarks(updated.navigation, 'current title')).toHaveLength(1)
+  })
 })

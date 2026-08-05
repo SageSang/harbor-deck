@@ -1,4 +1,5 @@
 import type { OpenTarget } from '@/config/schema'
+import { isHttpUrl } from '@/config/httpUrl'
 import type { ResolvedUrls } from './resolveTargetUrl'
 
 interface OpenWithFallbackOptions {
@@ -24,6 +25,10 @@ export async function openWithFallback(
   urls: ResolvedUrls,
   options: OpenWithFallbackOptions = {}
 ): Promise<void> {
+  if (!isHttpUrl(urls.primary)) {
+    return
+  }
+
   const target = options.target ?? 'self'
   const popup = target === 'blank' ? window.open('', '_blank') : null
 

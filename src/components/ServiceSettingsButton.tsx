@@ -241,20 +241,31 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
   }
 
   async function handleReload() {
-    const [{ data: nextNavigationConfig }, { data: nextSystemConfig }] = await Promise.all([
-      refetch(),
-      refetchSystemConfig(),
-    ])
-    const nextAppConfig = buildAppConfig(
-      nextSystemConfig ?? defaultSystemConfig,
-      nextNavigationConfig ?? defaultNavigationConfig
-    )
+    setJsonFeedback(null)
+    try {
+      const [navigationResult, systemResult] = await Promise.all([
+        refetch(),
+        refetchSystemConfig(),
+      ])
+      const reloadError = navigationResult.error ?? systemResult.error
+      if (reloadError) {
+        throw reloadError
+      }
+      if (!navigationResult.data || !systemResult.data) {
+        throw new Error(messages.common.requestFailed)
+      }
 
-    setJsonDraft(formatAppConfig(nextAppConfig))
-    setSystemDraft(nextAppConfig.system)
-    setBackupDraft(cloneWebdavBackupConfig(nextAppConfig.system.webdavBackup))
-    setJsonFeedback({ type: 'success', message: messages.settings.jsonSection.reloaded })
-    showToast({ type: 'warning', message: messages.settings.jsonSection.reloaded })
+      const nextAppConfig = buildAppConfig(systemResult.data, navigationResult.data)
+      setJsonDraft(formatAppConfig(nextAppConfig))
+      setSystemDraft(nextAppConfig.system)
+      setBackupDraft(cloneWebdavBackupConfig(nextAppConfig.system.webdavBackup))
+      setJsonFeedback({ type: 'success', message: messages.settings.jsonSection.reloaded })
+      showToast({ type: 'warning', message: messages.settings.jsonSection.reloaded })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : messages.common.requestFailed
+      setJsonFeedback({ type: 'error', message })
+      showToast({ type: 'error', message })
+    }
   }
 
   function handleFormat() {

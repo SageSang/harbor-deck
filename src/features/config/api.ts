@@ -10,8 +10,7 @@ import {
   type SystemConfig,
 } from '@/config/schema'
 import { getCurrentMessages } from '@/i18n/runtime'
-import { defaultAppConfig, parseAppConfig } from '@/features/config/appConfig'
-import { defaultNavigationConfig } from '@/config/defaultConfig'
+import { parseAppConfig } from '@/features/config/appConfig'
 import { readSceneTokens } from '@/features/navigation/scenePreference'
 
 export { defaultSystemConfig }
@@ -63,24 +62,12 @@ export async function requestJson<T>(url: string, options?: ApiRequestOptions): 
   return response.json() as Promise<T>
 }
 
-function isNetworkError(error: unknown) {
-  return error instanceof TypeError
-}
-
 export async function fetchAppConfig(): Promise<AppConfig> {
   const messages = getCurrentMessages()
-
-  try {
-    const data = await requestJson<unknown>('/api/config/app', {
-      fallbackMessage: messages.errors.loadAppConfigFailed,
-    })
-    return parseAppConfig(data)
-  } catch (error) {
-    if (isNetworkError(error)) {
-      return defaultAppConfig
-    }
-    throw error
-  }
+  const data = await requestJson<unknown>('/api/config/app', {
+    fallbackMessage: messages.errors.loadAppConfigFailed,
+  })
+  return parseAppConfig(data)
 }
 
 export async function saveAppConfig(config: AppConfig): Promise<AppConfig> {
@@ -95,18 +82,10 @@ export async function saveAppConfig(config: AppConfig): Promise<AppConfig> {
 
 export async function fetchNavigationConfig(): Promise<NavigationConfig> {
   const messages = getCurrentMessages()
-
-  try {
-    const data = await requestJson<unknown>('/api/config/navigation', {
-      fallbackMessage: messages.errors.loadServicesConfigFailed,
-    })
-    return navigationConfigSchema.parse(data)
-  } catch (error) {
-    if (isNetworkError(error)) {
-      return defaultNavigationConfig
-    }
-    throw error
-  }
+  const data = await requestJson<unknown>('/api/config/navigation', {
+    fallbackMessage: messages.errors.loadServicesConfigFailed,
+  })
+  return navigationConfigSchema.parse(data)
 }
 
 export async function saveNavigationConfig(config: NavigationConfig): Promise<NavigationConfig> {
@@ -176,18 +155,10 @@ export async function setScenePassword(sceneId: string, password: string | null)
 
 export async function fetchSystemConfig(): Promise<SystemConfig> {
   const messages = getCurrentMessages()
-
-  try {
-    const data = await requestJson<unknown>('/api/config/system', {
-      fallbackMessage: messages.errors.loadSystemConfigFailed,
-    })
-    return systemConfigSchema.parse(data)
-  } catch (error) {
-    if (isNetworkError(error)) {
-      return defaultSystemConfig
-    }
-    throw error
-  }
+  const data = await requestJson<unknown>('/api/config/system', {
+    fallbackMessage: messages.errors.loadSystemConfigFailed,
+  })
+  return systemConfigSchema.parse(data)
 }
 
 export async function saveSystemConfig(config: SystemConfig): Promise<SystemConfig> {
