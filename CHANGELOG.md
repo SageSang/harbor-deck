@@ -12,6 +12,12 @@ This file records user-visible changes to HarborDeck. Detailed release bodies li
 
 - No unreleased changes.
 
+## v1.4.10 — 2026-08-09
+
+- Add “Copy Link” to bookmark and quick-record context menus, preferring the secondary/public URL and falling back to the primary/LAN URL.
+- Fix extension edits for existing bookmarks by updating the original bookmark slug, including title, URLs, and notes.
+- Publish matching 1.4.10 web and extension artifacts.
+
 ## v1.4.9 — 2026-08-06
 
 - Improved desktop bookmark cards with wider compact sizing, vertically centered icons, and up to three lines for long names while preserving dense layouts for large groups.

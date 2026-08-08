@@ -30,6 +30,7 @@ interface SceneResponse {
 
 interface ExistingBookmarkResponse {
   bookmark: {
+    slug: string
     name: string
     primaryUrl: string
     secondaryUrl?: string
@@ -81,6 +82,7 @@ export function PopupApp() {
   const [note, setNote] = useState('')
   const [selectedGroups, setSelectedGroups] = useState<Record<string, string>>({})
   const [recordSceneId, setRecordSceneId] = useState('')
+  const [existingBookmarkSlug, setExistingBookmarkSlug] = useState('')
   const [saving, setSaving] = useState(false)
   const [collapsedSceneIds, setCollapsedSceneIds] = useState<Set<string>>(new Set())
 
@@ -104,9 +106,20 @@ export function PopupApp() {
       note,
       selectedGroups,
       recordSceneId,
+      existingBookmarkSlug,
     }
     void writePopupDraft(draft)
-  }, [note, recordSceneId, secondaryUrl, selectedGroups, state.settings, state.sourceTabUrl, state.tabTitle, state.tabUrl])
+  }, [
+    existingBookmarkSlug,
+    note,
+    recordSceneId,
+    secondaryUrl,
+    selectedGroups,
+    state.settings,
+    state.sourceTabUrl,
+    state.tabTitle,
+    state.tabUrl,
+  ])
 
   useEffect(() => {
     let cancelled = false
@@ -133,6 +146,7 @@ export function PopupApp() {
       setNote(reusableDraft?.note ?? '')
       setSelectedGroups(reusableDraft?.selectedGroups ?? {})
       setRecordSceneId(reusableDraft?.recordSceneId ?? '')
+      setExistingBookmarkSlug(reusableDraft?.existingBookmarkSlug ?? '')
       if (!settings.apiToken || (!settings.primaryUrl && !settings.fallbackUrl)) {
         await chrome.runtime.openOptionsPage()
         window.close()
@@ -145,22 +159,28 @@ export function PopupApp() {
       )
       if (cancelled || !target.activeUrl) return
       try {
-        const response = await fetch(apiUrl(target.activeUrl, '/api/integrations/bookmarks/scenes'), {
-          headers: { 'X-HarborDeck-Search-Token': settings.apiToken },
-          cache: 'no-store',
-        })
+        const response = await fetch(
+          apiUrl(target.activeUrl, '/api/integrations/bookmarks/scenes'),
+          {
+            headers: { 'X-HarborDeck-Search-Token': settings.apiToken },
+            cache: 'no-store',
+          }
+        )
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const result = (await response.json()) as SceneResponse
         if (cancelled) return
         const sortedScenes = [...result.scenes].sort(
-          (left, right) => Number(right.id === result.defaultSceneId) - Number(left.id === result.defaultSceneId)
+          (left, right) =>
+            Number(right.id === result.defaultSceneId) - Number(left.id === result.defaultSceneId)
         )
         setScenes({
           ...result,
           scenes: sortedScenes,
         })
         setCollapsedSceneIds(new Set(sortedScenes.map((scene) => scene.id)))
-        setRecordSceneId((current) => current || reusableDraft?.recordSceneId || result.defaultSceneId)
+        setRecordSceneId(
+          (current) => current || reusableDraft?.recordSceneId || result.defaultSceneId
+        )
 
         if (!reusableDraft && /^https?:\/\//i.test(sourceTabUrl)) {
           try {
@@ -183,6 +203,7 @@ export function PopupApp() {
                 }))
                 setSecondaryUrl(existing.bookmark.secondaryUrl ?? '')
                 setNote(existing.bookmark.note ?? '')
+                setExistingBookmarkSlug(existing.bookmark.slug)
                 setSelectedGroups(
                   Object.fromEntries(
                     existing.placements.map((placement) => [placement.sceneId, placement.groupId])
@@ -197,6 +218,7 @@ export function PopupApp() {
                 }))
                 setSecondaryUrl(existing.quickRecord.secondaryUrl ?? '')
                 setNote(existing.quickRecord.note ?? '')
+                setExistingBookmarkSlug('')
                 setSelectedGroups({})
                 setRecordSceneId(existing.quickRecord.sceneId)
               }
@@ -209,7 +231,9 @@ export function PopupApp() {
         if (!cancelled) {
           setState((current) => ({
             ...current,
-            error: isZh ? '无法读取可用场景，请检查服务地址和 Token。' : 'Unable to load scenes. Check the server URL and token.',
+            error: isZh
+              ? '无法读取可用场景，请检查服务地址和 Token。'
+              : 'Unable to load scenes. Check the server URL and token.',
           }))
         }
       }
@@ -269,6 +293,7 @@ export function PopupApp() {
           secondaryUrl: secondaryUrl.trim() || undefined,
           note: note.trim() || undefined,
           placements: selectedTargets,
+          ...(existingBookmarkSlug && selectedTargets.length > 0 ? { existingBookmarkSlug } : {}),
           ...(selectedTargets.length === 0 ? { recordSceneId } : {}),
         }),
       })
@@ -287,14 +312,20 @@ export function PopupApp() {
                 ? 'Record already existed and was updated.'
                 : 'Quick record saved.'
             : isZh
-              ? '书签已添加。'
-              : 'Bookmark added.',
+              ? saved.created === false
+                ? '书签已更新。'
+                : '书签已添加。'
+              : saved.created === false
+                ? 'Bookmark updated.'
+                : 'Bookmark added.',
       }))
       window.setTimeout(() => window.close(), 450)
     } catch {
       setState((current) => ({
         ...current,
-        error: isZh ? '添加失败，请检查地址、Token 和目标场景。' : 'Add failed. Check the URL, token, and target scenes.',
+        error: isZh
+          ? '添加失败，请检查地址、Token 和目标场景。'
+          : 'Add failed. Check the URL, token, and target scenes.',
       }))
     } finally {
       setSaving(false)
@@ -302,7 +333,13 @@ export function PopupApp() {
   }
 
   if (!state.settings) {
-    return <main className="page-shell popup-shell"><section className="panel popup-card"><p>{isZh ? '正在读取当前页面…' : 'Reading current page…'}</p></section></main>
+    return (
+      <main className="page-shell popup-shell">
+        <section className="panel popup-card">
+          <p>{isZh ? '正在读取当前页面…' : 'Reading current page…'}</p>
+        </section>
+      </main>
+    )
   }
 
   return (
@@ -310,12 +347,49 @@ export function PopupApp() {
       <section className="panel popup-card">
         <div className="eyebrow">HarborDeck</div>
         <h1>{isZh ? '添加到导航' : 'Add to HarborDeck'}</h1>
-        <p className="hint">{isZh ? '选择一个或多个场景分组。受保护场景不会出现在这里。' : 'Choose one or more scene groups. Protected scenes are hidden.'}</p>
+        <p className="hint">
+          {isZh
+            ? '选择一个或多个场景分组。受保护场景不会出现在这里。'
+            : 'Choose one or more scene groups. Protected scenes are hidden.'}
+        </p>
         <form className="popup-form" onSubmit={handleSubmit}>
-          <label className="field"><span>{isZh ? '标题' : 'Title'}</span><input className="input" value={state.tabTitle} onChange={(event) => setState((current) => ({ ...current, tabTitle: event.target.value }))} /></label>
-          <label className="field"><span>URL</span><input className="input" value={state.tabUrl} onChange={(event) => setState((current) => ({ ...current, tabUrl: event.target.value }))} /></label>
-          <label className="field"><span>{isZh ? '备用 URL（可选）' : 'Secondary URL (optional)'}</span><input className="input" value={secondaryUrl} onChange={(event) => setSecondaryUrl(event.target.value)} /></label>
-          <label className="field"><span>{isZh ? '备注（可选）' : 'Note (optional)'}</span><textarea className="input popup-textarea" rows={3} value={note} onChange={(event) => setNote(event.target.value)} /></label>
+          <label className="field">
+            <span>{isZh ? '标题' : 'Title'}</span>
+            <input
+              className="input"
+              value={state.tabTitle}
+              onChange={(event) =>
+                setState((current) => ({ ...current, tabTitle: event.target.value }))
+              }
+            />
+          </label>
+          <label className="field">
+            <span>URL</span>
+            <input
+              className="input"
+              value={state.tabUrl}
+              onChange={(event) =>
+                setState((current) => ({ ...current, tabUrl: event.target.value }))
+              }
+            />
+          </label>
+          <label className="field">
+            <span>{isZh ? '备用 URL（可选）' : 'Secondary URL (optional)'}</span>
+            <input
+              className="input"
+              value={secondaryUrl}
+              onChange={(event) => setSecondaryUrl(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>{isZh ? '备注（可选）' : 'Note (optional)'}</span>
+            <textarea
+              className="input popup-textarea"
+              rows={3}
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+            />
+          </label>
           <div className="popup-scenes">
             {scenes?.scenes.map((scene) => (
               <div className="popup-scene" key={scene.id}>
@@ -325,7 +399,10 @@ export function PopupApp() {
                   aria-expanded={!collapsedSceneIds.has(scene.id)}
                   onClick={() => toggleSceneCollapse(scene.id)}
                 >
-                  <strong>{scene.name}{recordSceneId === scene.id && selectedCount === 0 ? ' · 快速记录' : ''}</strong>
+                  <strong>
+                    {scene.name}
+                    {recordSceneId === scene.id && selectedCount === 0 ? ' · 快速记录' : ''}
+                  </strong>
                   {collapsedSceneIds.has(scene.id) ? (
                     <ChevronRight aria-hidden="true" />
                   ) : (
@@ -335,7 +412,14 @@ export function PopupApp() {
                 {!collapsedSceneIds.has(scene.id) ? (
                   <div className="popup-groups">
                     {scene.groups.map((group) => (
-                      <button key={group.id} type="button" className={`toggle-option ${selectedGroups[scene.id] === group.id ? 'active' : ''}`} onClick={() => toggleGroup(scene.id, group.id)}>{group.name}</button>
+                      <button
+                        key={group.id}
+                        type="button"
+                        className={`toggle-option ${selectedGroups[scene.id] === group.id ? 'active' : ''}`}
+                        onClick={() => toggleGroup(scene.id, group.id)}
+                      >
+                        {group.name}
+                      </button>
                     ))}
                   </div>
                 ) : null}
@@ -344,7 +428,27 @@ export function PopupApp() {
           </div>
           {state.error ? <p className="status-note error">{state.error}</p> : null}
           {state.status ? <p className="status-note success">{state.status}</p> : null}
-          <button className="btn btn-primary" type="submit" disabled={saving || !recordSceneId || !state.settings.apiToken}>{saving ? (isZh ? '保存中…' : 'Saving…') : selectedCount === 0 ? (isZh ? '保存记录' : 'Save record') : (isZh ? '确认添加' : 'Add Bookmark')}</button>
+          <button
+            className="btn btn-primary"
+            type="submit"
+            disabled={saving || !recordSceneId || !state.settings.apiToken}
+          >
+            {saving
+              ? isZh
+                ? '保存中…'
+                : 'Saving…'
+              : selectedCount === 0
+                ? isZh
+                  ? '保存记录'
+                  : 'Save record'
+                : existingBookmarkSlug
+                  ? isZh
+                    ? '保存修改'
+                    : 'Save Changes'
+                  : isZh
+                    ? '确认添加'
+                    : 'Add Bookmark'}
+          </button>
         </form>
       </section>
     </main>

@@ -18,14 +18,11 @@ export interface PopupDraft {
   note: string
   selectedGroups: Record<string, string>
   recordSceneId?: string
+  existingBookmarkSlug?: string
 }
 
 export type ResolutionReason =
-  | 'primary'
-  | 'fallback'
-  | 'primary-unverified'
-  | 'fallback-unverified'
-  | 'unconfigured'
+  'primary' | 'fallback' | 'primary-unverified' | 'fallback-unverified' | 'unconfigured'
 
 export interface ResolvedTarget {
   activeUrl: string

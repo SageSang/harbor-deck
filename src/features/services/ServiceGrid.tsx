@@ -1,7 +1,17 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown, ChevronRight, Copy, Pencil, Plus, Trash2, X } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Link2,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { BookmarkBatchPlacementDialog } from '@/features/services/BookmarkBatchPlacementDialog'
 import { GroupRenameDialog } from '@/features/services/GroupRenameDialog'
 import { useI18n } from '@/i18n/runtime'
@@ -38,6 +48,7 @@ import {
 } from '@/features/navigation/groupPreference'
 import { preloadServiceIcons } from './iconRegistry'
 import { quickRecordMatchesSearch } from './quickRecordSearch'
+import { getPreferredBookmarkCopyUrl } from './bookmarkUrl'
 import { useServices } from './useServices'
 
 interface DragOverState {
@@ -153,6 +164,30 @@ function isEditableTarget(target: EventTarget | null) {
     target instanceof HTMLElement &&
     target.matches('input, textarea, select, [contenteditable="true"]')
   )
+}
+
+async function copyTextToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value)
+      return
+    } catch {
+      // Fall through for HTTP LAN deployments where Clipboard API access may be denied.
+    }
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  textarea.remove()
+  if (!copied) {
+    throw new Error('Unable to copy link')
+  }
 }
 
 export function ServiceGrid() {
@@ -643,6 +678,40 @@ export function ServiceGrid() {
     })
   }
 
+  async function handleCopyBookmarkLink(slug: string) {
+    const bookmark = navigationQuery.data?.bookmarks.find((item) => item.slug === slug)
+    if (!bookmark) return
+    setContextMenu(null)
+    try {
+      await copyTextToClipboard(getPreferredBookmarkCopyUrl(bookmark))
+      showToast({
+        type: 'success',
+        message: messages.serviceGrid.linkCopied(bookmark.name),
+      })
+    } catch {
+      showToast({ type: 'error', message: messages.serviceGrid.copyLinkFailed })
+    }
+  }
+
+  async function handleCopyQuickRecordLink(recordId: string, recordSceneId: string) {
+    const record = navigationQuery.data
+      ? findScene(navigationQuery.data, recordSceneId)?.quickRecords?.find(
+          (item) => item.id === recordId
+        )
+      : undefined
+    if (!record) return
+    setContextMenu(null)
+    try {
+      await copyTextToClipboard(getPreferredBookmarkCopyUrl(record))
+      showToast({
+        type: 'success',
+        message: messages.serviceGrid.linkCopied(record.name),
+      })
+    } catch {
+      showToast({ type: 'error', message: messages.serviceGrid.copyLinkFailed })
+    }
+  }
+
   async function handleDeleteQuickRecord(recordId: string, recordSceneId: string) {
     const navigation = navigationQuery.data
     const record = navigation
@@ -868,7 +937,7 @@ export function ServiceGrid() {
   }
 
   const menuLeft = contextMenu ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 208)) : 0
-  const menuTop = contextMenu ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - 120)) : 0
+  const menuTop = contextMenu ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - 184)) : 0
   const desktopCardWidth =
     desktopColumnCount > 0 && gridWidth > 0
       ? getDesktopCardWidth(gridWidth, desktopColumnCount)
@@ -1270,6 +1339,14 @@ export function ServiceGrid() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => void handleCopyBookmarkLink(contextMenu.slug)}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                  >
+                    <Link2 className="h-4 w-4" />
+                    {messages.serviceGrid.copyLinkAction}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       setBookmarkDialog({ mode: 'duplicate', slug: contextMenu.slug })
                       setContextMenu(null)
@@ -1307,7 +1384,19 @@ export function ServiceGrid() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleDeleteQuickRecord(contextMenu.recordId, contextMenu.sceneId)}
+                    onClick={() =>
+                      void handleCopyQuickRecordLink(contextMenu.recordId, contextMenu.sceneId)
+                    }
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                  >
+                    <Link2 className="h-4 w-4" />
+                    {messages.serviceGrid.copyLinkAction}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleDeleteQuickRecord(contextMenu.recordId, contextMenu.sceneId)
+                    }
                     className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
                   >
                     <Trash2 className="h-4 w-4" />

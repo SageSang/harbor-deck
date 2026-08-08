@@ -1,6 +1,6 @@
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.9
+    image: ghcr.io/sagesang/harbor-deck:1.4.10
     pull_policy: always
     container_name: harbor-deck
     restart: always

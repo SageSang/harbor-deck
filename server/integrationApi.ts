@@ -18,6 +18,7 @@ export const integrationBookmarkBodySchema = z.object({
   primaryUrl: httpUrlSchema,
   secondaryUrl: httpUrlSchema.optional(),
   note: z.string().max(5000).optional(),
+  existingBookmarkSlug: z.string().trim().min(1).max(200).optional(),
   placements: z
     .array(
       z.object({
@@ -48,6 +49,7 @@ export interface IntegrationSearchResult {
 }
 
 export interface IntegrationBookmarkInfo {
+  slug: string
   name: string
   primaryUrl: string
   secondaryUrl?: string
@@ -116,11 +118,18 @@ function matchesBookmark(bookmark: ServiceConfig, query: string) {
 
 function toIntegrationBookmarkInfo(bookmark: ServiceConfig): IntegrationBookmarkInfo {
   return {
+    slug: bookmark.slug,
     name: bookmark.name,
     primaryUrl: bookmark.primaryUrl,
     ...(bookmark.secondaryUrl ? { secondaryUrl: bookmark.secondaryUrl } : {}),
     ...(bookmark.note ? { note: bookmark.note } : {}),
   }
+}
+
+function isBookmarkVisibleInUnlockedScene(navigation: NavigationConfig, slug: string) {
+  return navigation.scenes.some(
+    (scene) => !scene.protected && scene.groups.some((group) => group.bookmarkIds.includes(slug))
+  )
 }
 
 export function lookupIntegrationBookmark(navigation: NavigationConfig, url: string) {
@@ -308,7 +317,16 @@ export function createIntegrationBookmark(
     throw new Error('No unlocked target scenes are available')
   }
 
-  let bookmark = next.bookmarks.find((item) => bookmarkMatchesAnyUrl(item, submittedUrls))
+  const requestedBookmark = body.existingBookmarkSlug
+    ? next.bookmarks.find(
+        (item) =>
+          item.slug === body.existingBookmarkSlug &&
+          isBookmarkVisibleInUnlockedScene(next, item.slug)
+      )
+    : undefined
+  let bookmark =
+    requestedBookmark ?? next.bookmarks.find((item) => bookmarkMatchesAnyUrl(item, submittedUrls))
+  const replaceExistingMetadata = Boolean(requestedBookmark)
   let created = false
   const existingQuickRecord = !bookmark
     ? Array.from(targets.values())
@@ -344,19 +362,37 @@ export function createIntegrationBookmark(
     created = true
   } else {
     const mergedBookmark = { ...bookmark }
-    const submittedSecondaryUrl = body.secondaryUrl?.trim()
-    if (
-      !mergedBookmark.secondaryUrl &&
-      submittedSecondaryUrl &&
-      !bookmarkMatchesAnyUrl(mergedBookmark, [submittedSecondaryUrl])
-    ) {
-      mergedBookmark.secondaryUrl = submittedSecondaryUrl
-    }
-    if (!mergedBookmark.secondaryUrl && !bookmarkMatchesAnyUrl(mergedBookmark, [body.primaryUrl])) {
-      mergedBookmark.secondaryUrl = body.primaryUrl
-    }
-    if (!mergedBookmark.note && body.note?.trim()) {
-      mergedBookmark.note = body.note.trim()
+    if (replaceExistingMetadata) {
+      mergedBookmark.name = body.name
+      mergedBookmark.primaryUrl = body.primaryUrl
+      if (body.secondaryUrl) {
+        mergedBookmark.secondaryUrl = body.secondaryUrl
+      } else {
+        delete mergedBookmark.secondaryUrl
+      }
+      if (body.note?.trim()) {
+        mergedBookmark.note = body.note.trim()
+      } else {
+        delete mergedBookmark.note
+      }
+    } else {
+      const submittedSecondaryUrl = body.secondaryUrl?.trim()
+      if (
+        !mergedBookmark.secondaryUrl &&
+        submittedSecondaryUrl &&
+        !bookmarkMatchesAnyUrl(mergedBookmark, [submittedSecondaryUrl])
+      ) {
+        mergedBookmark.secondaryUrl = submittedSecondaryUrl
+      }
+      if (
+        !mergedBookmark.secondaryUrl &&
+        !bookmarkMatchesAnyUrl(mergedBookmark, [body.primaryUrl])
+      ) {
+        mergedBookmark.secondaryUrl = body.primaryUrl
+      }
+      if (!mergedBookmark.note && body.note?.trim()) {
+        mergedBookmark.note = body.note.trim()
+      }
     }
     if (JSON.stringify(mergedBookmark) !== JSON.stringify(bookmark)) {
       const bookmarkIndex = next.bookmarks.findIndex((item) => item.slug === bookmark!.slug)

@@ -52,13 +52,18 @@ describe('integrationApi', () => {
   it('searches unlocked scenes and prefers the secondary URL', () => {
     const results = searchNavigationBookmarks(navigation, 'har')
     expect(results).toHaveLength(1)
-    expect(results[0]).toMatchObject({ sceneId: 'default', name: 'Harbor Admin', url: 'https://harbor.example.com' })
+    expect(results[0]).toMatchObject({
+      sceneId: 'default',
+      name: 'Harbor Admin',
+      url: 'https://harbor.example.com',
+    })
     expect(searchNavigationBookmarks(navigation, 'har', 'private')).toEqual([])
   })
 
   it('returns existing public metadata and placements without exposing private-only bookmarks', () => {
     expect(lookupIntegrationBookmark(navigation, 'https://harbor.example.com')).toEqual({
       bookmark: {
+        slug: 'harbor',
         name: 'Harbor Admin',
         primaryUrl: 'http://192.168.1.2:8080',
         secondaryUrl: 'https://harbor.example.com',
@@ -69,9 +74,7 @@ describe('integrationApi', () => {
 
     const privateOnly = parseNavigationConfig({
       defaultSceneId: 'default',
-      bookmarks: [
-        { slug: 'secret', name: 'Secret', primaryUrl: 'https://secret.example.com' },
-      ],
+      bookmarks: [{ slug: 'secret', name: 'Secret', primaryUrl: 'https://secret.example.com' }],
       scenes: [
         {
           id: 'default',
@@ -139,6 +142,7 @@ describe('integrationApi', () => {
       primaryUrl: 'https://secret.example.com',
       secondaryUrl: 'https://secret.example.com/remote',
       note: 'Added note',
+      existingBookmarkSlug: 'secret',
       placements: [{ sceneId: 'default', groupId: 'tools' }],
     })
     expect(privateMerge.bookmark).toMatchObject({
@@ -156,6 +160,25 @@ describe('integrationApi', () => {
     ).toThrow()
   })
 
+  it('fully updates an existing unlocked bookmark when its lookup slug is supplied', () => {
+    const updated = createIntegrationBookmark(navigation, {
+      name: 'Harbor Dashboard',
+      primaryUrl: 'http://192.168.1.3:8080',
+      existingBookmarkSlug: 'harbor',
+      placements: [{ sceneId: 'default', groupId: 'tools' }],
+    })
+
+    expect(updated.created).toBe(false)
+    expect(updated.bookmark).toMatchObject({
+      slug: 'harbor',
+      name: 'Harbor Dashboard',
+      primaryUrl: 'http://192.168.1.3:8080',
+    })
+    expect(updated.bookmark.secondaryUrl).toBeUndefined()
+    expect(updated.bookmark.note).toBeUndefined()
+    expect(updated.navigation.bookmarks).toHaveLength(navigation.bookmarks.length)
+  })
+
   it('saves an empty-placement request as a searchable quick record and converts it', () => {
     const saved = createIntegrationBookmark(navigation, {
       name: 'Scratch note',
@@ -168,7 +191,9 @@ describe('integrationApi', () => {
     expect(searchNavigationBookmarks(saved.navigation, 'scratch')).toMatchObject([
       { recordId: saved.quickRecord?.id, name: 'Scratch note' },
     ])
-    expect(lookupIntegrationBookmark(saved.navigation, 'https://scratch.example.com')).toMatchObject({
+    expect(
+      lookupIntegrationBookmark(saved.navigation, 'https://scratch.example.com')
+    ).toMatchObject({
       quickRecord: { name: 'Scratch note', sceneId: 'default' },
     })
 

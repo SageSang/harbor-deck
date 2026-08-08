@@ -3,6 +3,10 @@ interface BookmarkUrls {
   secondaryUrl?: string
 }
 
+export function getPreferredBookmarkCopyUrl(bookmark: BookmarkUrls) {
+  return bookmark.secondaryUrl?.trim() || bookmark.primaryUrl.trim()
+}
+
 export function normalizeBookmarkUrl(value: string) {
   const parsed = new URL(value.trim())
   parsed.hash = ''
@@ -14,9 +18,7 @@ export function bookmarkMatchesAnyUrl(
   candidates: Array<string | undefined>
 ) {
   const candidateUrls = new Set(
-    candidates
-      .filter((value): value is string => Boolean(value?.trim()))
-      .map(normalizeBookmarkUrl)
+    candidates.filter((value): value is string => Boolean(value?.trim())).map(normalizeBookmarkUrl)
   )
 
   if (candidateUrls.size === 0) {

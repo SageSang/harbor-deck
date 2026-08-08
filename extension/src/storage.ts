@@ -107,11 +107,7 @@ export function normalizeUrl(value: string): string {
 }
 
 export async function readSettings(): Promise<ExtensionSettings> {
-  const nextSettings = await readMigratedValue(
-    chrome.storage.sync,
-    STORAGE_KEY,
-    LEGACY_STORAGE_KEY
-  )
+  const nextSettings = await readMigratedValue(chrome.storage.sync, STORAGE_KEY, LEGACY_STORAGE_KEY)
 
   if (!isRecord(nextSettings)) {
     return defaultSettings
@@ -230,6 +226,9 @@ function normalizePopupDraft(value: unknown): PopupDraft | null {
     note: typeof value.note === 'string' ? value.note : '',
     selectedGroups,
     ...(typeof value.recordSceneId === 'string' ? { recordSceneId: value.recordSceneId } : {}),
+    ...(typeof value.existingBookmarkSlug === 'string'
+      ? { existingBookmarkSlug: value.existingBookmarkSlug }
+      : {}),
   }
 }
 
