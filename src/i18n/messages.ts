@@ -150,6 +150,19 @@ const zhCN = {
       emptyState: '未在文件中找到可导入的书签，请确认这是浏览器导出的 HTML 书签文件。',
       importFailed: '导入书签失败，请检查文件格式后重试。',
     },
+    exportSection: {
+      label: '导出书签',
+      description: '导出浏览器书签',
+      title: '导出浏览器书签',
+      summary: '将所选场景导出为 Chrome 和 Edge 可直接导入的 HTML 文件。',
+      targetTitle: '导出目标',
+      targetHint: (sceneName: string) =>
+        `会保留“${sceneName}”的一级分组和书签顺序；有备用链接时优先导出备用链接，快速记录会作为根目录书签导出。`,
+      exportButton: '导出 HTML 文件',
+      footerHint: '下载后可在 Chrome 或 Edge 的书签管理器中导入。',
+      exported: (sceneName: string) => `已导出“${sceneName}”的浏览器书签。`,
+      exportFailed: '导出书签失败，请稍后重试。',
+    },
     iconMigration: {
       fillIconsTitle: '补全旧书签图标',
       fillIconsDescription: (count: number) =>
@@ -642,6 +655,19 @@ const en: typeof zhCN = {
       emptyState:
         'No importable bookmarks were found. Please make sure this is a browser-exported bookmark HTML file.',
       importFailed: 'Failed to import bookmarks. Please check the file format and try again.',
+    },
+    exportSection: {
+      label: 'Export Bookmarks',
+      description: 'Export browser bookmarks',
+      title: 'Export Browser Bookmarks',
+      summary: 'Export the selected scene as an HTML file that Chrome and Edge can import directly.',
+      targetTitle: 'Export Target',
+      targetHint: (sceneName: string) =>
+        `The export keeps the one-level groups and bookmark order from “${sceneName}”. Secondary URLs are preferred, and quick records are exported as root-level bookmarks.`,
+      exportButton: 'Export HTML File',
+      footerHint: 'Import the downloaded file from the bookmark manager in Chrome or Edge.',
+      exported: (sceneName: string) => `Browser bookmarks for “${sceneName}” were exported.`,
+      exportFailed: 'Failed to export bookmarks. Please try again later.',
     },
     iconMigration: {
       fillIconsTitle: 'Fill Missing Legacy Icons',

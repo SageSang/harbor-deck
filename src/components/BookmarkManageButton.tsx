@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   Copy,
+  Download,
   FolderTree,
   GripVertical,
   KeyRound,
@@ -23,6 +24,7 @@ import {
   importBrowserBookmarks,
   parseBrowserBookmarksHtml,
 } from '@/features/services/browserBookmarkImport'
+import { exportBrowserBookmarksHtml } from '@/features/services/browserBookmarkExport'
 import {
   buildSuggestedSlug,
   createEmptyBookmarkForm,
@@ -66,7 +68,7 @@ interface BookmarkManageButtonProps {
   initialOpen?: boolean
 }
 
-type SectionKey = 'scenes' | 'groups' | 'bookmark' | 'import'
+type SectionKey = 'scenes' | 'groups' | 'bookmark' | 'import' | 'export'
 
 export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButtonProps) {
   const navigationQuery = useNavigationConfig()
@@ -564,6 +566,36 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     }
   }
 
+  function handleExportBookmarks() {
+    if (!navigation || !selectedScene) return
+
+    try {
+      const html = exportBrowserBookmarksHtml(navigation, selectedScene.id)
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const downloadUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      const safeSceneName =
+        Array.from(selectedScene.name.trim())
+          .map((character) =>
+            character.charCodeAt(0) < 32 || /[<>:"/\\|?*]/.test(character) ? '-' : character
+          )
+          .join('')
+          .replace(/\s+/g, '-') || 'bookmarks'
+
+      anchor.href = downloadUrl
+      anchor.download = `harbor-deck-${safeSceneName}-${new Date().toISOString().slice(0, 10)}.html`
+      anchor.click()
+      URL.revokeObjectURL(downloadUrl)
+
+      notify('success', messages.bookmarkManage.exportSection.exported(selectedScene.name))
+    } catch (error) {
+      notify(
+        'error',
+        error instanceof Error ? error.message : messages.bookmarkManage.exportSection.exportFailed
+      )
+    }
+  }
+
   async function handleFillMissingBookmarkIcons() {
     if (!navigation || missingIconCount === 0) return
     const accepted = await confirm({
@@ -606,6 +638,12 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
         label: messages.bookmarkManage.importSection.label,
         description: '导入到所选场景',
         icon: Upload,
+      },
+      {
+        key: 'export' as const,
+        label: messages.bookmarkManage.exportSection.label,
+        description: messages.bookmarkManage.exportSection.description,
+        icon: Download,
       },
     ],
     [messages]
@@ -906,14 +944,14 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                 onFieldChange={handleBookmarkFieldChange}
               />
             </ConfigPanelSection>
-          ) : (
+          ) : activeSection === 'import' ? (
             <ConfigPanelSection
-              title="导入浏览器书签"
-              summary="先选择目标场景，多层文件夹会按完整路径生成该场景内的一级分组。"
+              title={messages.bookmarkManage.importSection.title}
+              summary={messages.bookmarkManage.importSection.summary}
               headerActions={sceneSelector}
               footer={
                 <div className={getFeedbackNoticeClass(feedback?.type)}>
-                  {feedback?.message ?? `无文件夹书签会进入“${IMPORTED_BOOKMARK_GROUP_NAME}”。`}
+                  {feedback?.message ?? messages.bookmarkManage.importSection.footerHint}
                 </div>
               }
             >
@@ -927,10 +965,12 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
               <div className="config-panel-card space-y-3 p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <Upload className="h-4 w-4" />
-                  导入到“{selectedScene.name}”
+                  {messages.bookmarkManage.importSection.targetGroupTitle} · {selectedScene.name}
                 </div>
                 <p className="text-xs leading-5 text-muted-foreground">
-                  例如“书签栏 / 开发 / 前端”会成为一个一级分组；相同 URL 会复用已有书签。
+                  {messages.bookmarkManage.importSection.targetGroupHint(
+                    IMPORTED_BOOKMARK_GROUP_NAME
+                  )}
                 </p>
                 <Button
                   type="button"
@@ -938,7 +978,32 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                   disabled={saveMutation.isPending}
                 >
                   <Upload className="h-4 w-4" />
-                  选择 HTML 文件
+                  {messages.bookmarkManage.importSection.selectButton}
+                </Button>
+              </div>
+            </ConfigPanelSection>
+          ) : (
+            <ConfigPanelSection
+              title={messages.bookmarkManage.exportSection.title}
+              summary={messages.bookmarkManage.exportSection.summary}
+              headerActions={sceneSelector}
+              footer={
+                <div className={getFeedbackNoticeClass(feedback?.type)}>
+                  {feedback?.message ?? messages.bookmarkManage.exportSection.footerHint}
+                </div>
+              }
+            >
+              <div className="config-panel-card space-y-3 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Download className="h-4 w-4" />
+                  {messages.bookmarkManage.exportSection.targetTitle} · {selectedScene.name}
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {messages.bookmarkManage.exportSection.targetHint(selectedScene.name)}
+                </p>
+                <Button type="button" onClick={handleExportBookmarks}>
+                  <Download className="h-4 w-4" />
+                  {messages.bookmarkManage.exportSection.exportButton}
                 </Button>
               </div>
             </ConfigPanelSection>
