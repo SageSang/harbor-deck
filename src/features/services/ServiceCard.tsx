@@ -5,6 +5,7 @@ import { openWithFallback } from '@/core/navigation/openWithFallback'
 import type { NetworkMode } from '@/core/network/detectNetworkMode'
 import type { OpenTarget, Service } from '@/config/schema'
 import { cn } from '@/lib/utils'
+import { getPreferredBookmarkCopyUrl } from './bookmarkUrl'
 import { ServiceIcon } from './ServiceIcon'
 
 interface ServiceCardProps extends HTMLAttributes<HTMLDivElement> {
@@ -58,6 +59,8 @@ export const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function
     void openService(middleClickOpenTarget)
   }
 
+  const cardTitle = [service.name, getPreferredBookmarkCopyUrl(service)].filter(Boolean).join('\n')
+
   return (
     <Card
       ref={ref}
@@ -67,7 +70,7 @@ export const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function
         isDropTarget && 'border-primary/50 ring-2 ring-primary/15',
         className
       )}
-      title={service.name}
+      title={cardTitle}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
       {...props}
