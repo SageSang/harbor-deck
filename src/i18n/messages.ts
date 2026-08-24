@@ -234,6 +234,7 @@ const zhCN = {
     slug: '书签标识 *',
     slugHint: '用于唯一标识书签，建议使用简短英文；仅支持小写字母、数字和连字符。',
     icon: '图标',
+    randomIcon: '随机图标',
     iconHint: '可选，不填写也能正常保存。',
     primaryUrl: '主地址 *',
     primaryUrlHint: '优先打开这个地址，通常填写内网地址；如果只有一个地址，填这里即可。',
@@ -747,6 +748,7 @@ const en: typeof zhCN = {
     slugHint:
       'Used as the unique identifier. Short English text is recommended; only lowercase letters, numbers, and hyphens are allowed.',
     icon: 'Icon',
+    randomIcon: 'Random icon',
     iconHint: 'Optional. The bookmark can still be saved without it.',
     primaryUrl: 'Primary URL *',
     primaryUrlHint:

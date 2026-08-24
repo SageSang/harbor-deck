@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { NavigationConfig } from '@/config/schema'
-import { fillMissingBookmarkIcons, getMissingBookmarkIconCount } from './randomBookmarkIcon'
+import { resolveDynamicIconName } from './icons'
+import {
+  fillMissingBookmarkIcons,
+  getMissingBookmarkIconCount,
+  getRandomBookmarkIcon,
+} from './randomBookmarkIcon'
 
 const navigation: NavigationConfig = {
   defaultSceneId: 'default',
@@ -34,6 +39,14 @@ const navigation: NavigationConfig = {
     },
   ],
 }
+
+describe('random bookmark icon selection', () => {
+  it('returns an icon supported by the icon registry', () => {
+    for (let index = 0; index < 50; index += 1) {
+      expect(resolveDynamicIconName(getRandomBookmarkIcon())).not.toBeNull()
+    }
+  })
+})
 
 describe('legacy bookmark icon migration', () => {
   it('fills only missing icons in editable scenes', () => {

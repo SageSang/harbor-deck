@@ -1,11 +1,12 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { IconPicker } from '@/components/IconPicker'
-import { Plus, Trash2 } from 'lucide-react'
+import { Dices, Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '@/i18n/runtime'
 import type { NavigationConfig } from '@/config/schema'
 import { getFeedbackNoticeClass } from '@/features/feedback/feedbackStyles'
 import type { BookmarkFormValues } from '@/features/services/bookmarkForm'
+import { getRandomBookmarkIcon } from '@/features/services/randomBookmarkIcon'
 
 interface FeedbackState {
   type: 'success' | 'error'
@@ -220,8 +221,21 @@ export function BookmarkForm({
             </p>
           </label>
 
-          <label className={fieldCardClass}>
-            <span className={`block ${fieldLabelClass}`}>{messages.bookmarkForm.icon}</span>
+          <div className={fieldCardClass}>
+            <div className="flex items-center justify-between gap-3">
+              <span className={`block ${fieldLabelClass}`}>{messages.bookmarkForm.icon}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label={messages.bookmarkForm.randomIcon}
+                title={messages.bookmarkForm.randomIcon}
+                onClick={() => onFieldChange('icon', getRandomBookmarkIcon())}
+                className="h-8 w-8"
+              >
+                <Dices className="h-4 w-4" />
+              </Button>
+            </div>
             <IconPicker
               size="sm"
               value={values.icon || undefined}
@@ -230,7 +244,7 @@ export function BookmarkForm({
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               {messages.bookmarkForm.iconHint}
             </p>
-          </label>
+          </div>
 
           <label className={fieldCardClass}>
             <span className={`block ${fieldLabelClass}`}>{messages.bookmarkForm.primaryUrl}</span>
