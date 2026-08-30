@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   addBookmarksToSceneGroups,
   moveBookmarksInScene,
+  getSceneGroupDropIndex,
   getBookmarkPlacementConflicts,
   parseNavigationConfig,
+  moveSceneGroup,
   renameGroupInScene,
   removeBookmarksFromScene,
   removeGroupFromScene,
@@ -88,6 +90,76 @@ describe('navigation removal helpers', () => {
   it('does not change the config when the target group does not exist', () => {
     const config = createNavigationConfig()
     expect(removeGroupFromScene(config, 'personal', 'missing')).toEqual(config)
+  })
+})
+
+describe('moveSceneGroup', () => {
+  it('adjusts a visual drop target after removing a preceding source group', () => {
+    expect(getSceneGroupDropIndex(0, 2)).toBe(1)
+    expect(getSceneGroupDropIndex(2, 0)).toBe(0)
+    expect(getSceneGroupDropIndex(1, 1)).toBe(1)
+    expect(getSceneGroupDropIndex(0, 3)).toBe(2)
+  })
+
+  it('reorders only the requested scene and keeps group contents intact', () => {
+    const config = parseNavigationConfig({
+      defaultSceneId: 'personal',
+      bookmarks: [{ slug: 'shared', name: 'Shared', primaryUrl: 'https://shared.example.com' }],
+      scenes: [
+        {
+          id: 'personal',
+          name: 'Personal',
+          protected: false,
+          groups: [
+            { id: 'first', name: 'First', bookmarkIds: ['shared'] },
+            { id: 'second', name: 'Second', bookmarkIds: [] },
+            { id: 'third', name: 'Third', bookmarkIds: [] },
+          ],
+        },
+        {
+          id: 'work',
+          name: 'Work',
+          protected: false,
+          groups: [{ id: 'work-first', name: 'Work First', bookmarkIds: ['shared'] }],
+        },
+      ],
+    })
+
+    const moved = moveSceneGroup(config, 'personal', 'second', 0)
+
+    expect(
+      moved.scenes.find((scene) => scene.id === 'personal')?.groups.map((group) => group.id)
+    ).toEqual(['second', 'first', 'third'])
+    expect(moved.scenes.find((scene) => scene.id === 'personal')?.groups[1].bookmarkIds).toEqual([
+      'shared',
+    ])
+    expect(
+      moved.scenes.find((scene) => scene.id === 'work')?.groups.map((group) => group.id)
+    ).toEqual(['work-first'])
+  })
+
+  it('supports appending a group and treats an invalid scene or group as a no-op', () => {
+    const config = parseNavigationConfig({
+      defaultSceneId: 'personal',
+      bookmarks: [],
+      scenes: [
+        {
+          id: 'personal',
+          name: 'Personal',
+          protected: false,
+          groups: [
+            { id: 'first', name: 'First', bookmarkIds: [] },
+            { id: 'second', name: 'Second', bookmarkIds: [] },
+            { id: 'third', name: 'Third', bookmarkIds: [] },
+          ],
+        },
+      ],
+    })
+
+    const appended = moveSceneGroup(config, 'personal', 'first', 3)
+    expect(appended.scenes[0].groups.map((group) => group.id)).toEqual(['second', 'third', 'first'])
+    expect(moveSceneGroup(config, 'missing', 'first', 0)).toEqual(config)
+    expect(moveSceneGroup(config, 'personal', 'missing', 0)).toEqual(config)
   })
 })
 

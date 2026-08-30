@@ -223,7 +223,9 @@ export function upsertBookmark(
         insertIndex = sourceIndex + 1
       }
     } else if (options.preserveExistingPlacement && previousBookmarkId) {
-      const originalIndex = originalPlacementIndexes.get(`${placement.sceneId}:${placement.groupId}`)
+      const originalIndex = originalPlacementIndexes.get(
+        `${placement.sceneId}:${placement.groupId}`
+      )
       if (typeof originalIndex === 'number') {
         insertIndex = Math.min(originalIndex, group.bookmarkIds.length)
       }
@@ -328,6 +330,10 @@ export function moveSceneGroup(
   const [group] = scene.groups.splice(sourceIndex, 1)
   scene.groups.splice(Math.max(0, Math.min(targetIndex, scene.groups.length)), 0, group)
   return parseNavigationConfig(next)
+}
+
+export function getSceneGroupDropIndex(sourceIndex: number, targetIndex: number) {
+  return sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
 }
 
 export function removeBookmarkFromScene(

@@ -1,11 +1,12 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, MouseEvent } from 'react'
+import type { CSSProperties, DragEvent, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Check,
   ChevronDown,
   ChevronRight,
   Copy,
+  GripVertical,
   Link2,
   Pencil,
   Plus,
@@ -26,8 +27,10 @@ import { cloneServicesConfig, defaultServicesConfig } from '@/features/services/
 import {
   findScene,
   addBookmarksToSceneGroups,
+  getSceneGroupDropIndex,
   getBookmarkPlacementConflicts,
   moveBookmarksInScene,
+  moveSceneGroup,
   renameGroupInScene,
   removeBookmarksFromScene,
   removeGroupFromScene,
@@ -54,6 +57,10 @@ import { useServices } from './useServices'
 interface DragOverState {
   groupIndex: number
   serviceIndex?: number
+}
+
+interface GroupDragOverState {
+  groupIndex: number
 }
 
 interface BookmarkContextMenuState {
@@ -108,11 +115,13 @@ type ContextMenuState =
   | QuickRecordContextMenuState
   | GroupContextMenuState
   | SelectionContextMenuState
+
+const GROUP_DRAG_DATA_TYPE = 'application/x-harbordeck-group'
 const DESKTOP_SECTION_HORIZONTAL_PADDING_PX = 24
 // Keep the group label wide enough for normal folder paths while leaving a
 // predictable amount of room for the desktop card columns. The label may wrap
 // up to three lines; flex-row stretching keeps adjacent groups aligned.
-const DESKTOP_LABEL_WIDTH_PX = 144
+const DESKTOP_LABEL_WIDTH_PX = 176
 const DESKTOP_SECTION_GAP_PX = 12
 const DESKTOP_GRID_HORIZONTAL_PADDING_PX = 12
 const DESKTOP_CARD_GAP_PX = 10
@@ -166,6 +175,10 @@ function isEditableTarget(target: EventTarget | null) {
   )
 }
 
+function isGroupDragEvent(event: DragEvent<HTMLElement>) {
+  return Array.from(event.dataTransfer.types).includes(GROUP_DRAG_DATA_TYPE)
+}
+
 async function copyTextToClipboard(value: string) {
   if (navigator.clipboard?.writeText) {
     try {
@@ -203,6 +216,8 @@ export function ServiceGrid() {
   const { messages } = useI18n()
   const [draggingSlugs, setDraggingSlugs] = useState<string[]>([])
   const [dragOver, setDragOver] = useState<DragOverState | null>(null)
+  const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null)
+  const [groupDragOver, setGroupDragOver] = useState<GroupDragOverState | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
@@ -241,6 +256,7 @@ export function ServiceGrid() {
   const activeConfig = useMemo(() => cloneServicesConfig(config ?? defaultServicesConfig), [config])
   const isSearchActive = searchKeyword.trim().length > 0
   const canDrag = !isSearchActive && !saveMutation.isPending
+  const canDragGroups = canDrag && !selectionMode && Boolean(activeSceneId)
 
   const quickRecordServices = useMemo(() => {
     if (!isSearchActive || !activeSceneId || !navigationQuery.data) return []
@@ -268,7 +284,11 @@ export function ServiceGrid() {
 
     return groupedServices
       .map((group) => {
-        const actualGroupIndex = activeConfig.findIndex((item) => item.category === group.category)
+        // Navigation and scene-service queries settle independently after a save.
+        // Match by the scene-unique group name so a brief order mismatch cannot
+        // pair a rendered label with another group's id.
+        const actualGroupIndex =
+          scene?.groups.findIndex((item) => item.name === group.category) ?? -1
         return {
           ...group,
           actualGroupIndex,
@@ -276,7 +296,7 @@ export function ServiceGrid() {
         }
       })
       .filter((group) => group.actualGroupIndex >= 0)
-  }, [activeConfig, activeSceneId, groupedServices, navigationQuery.data])
+  }, [activeSceneId, groupedServices, navigationQuery.data])
   const renderGroups = useMemo(
     () =>
       quickRecordServices.length > 0
@@ -503,6 +523,11 @@ export function ServiceGrid() {
     setDragOver(null)
   }
 
+  function clearGroupDragState() {
+    setDraggingGroupId(null)
+    setGroupDragOver(null)
+  }
+
   function clearLongPress() {
     if (longPressTimerRef.current !== null) {
       window.clearTimeout(longPressTimerRef.current)
@@ -599,6 +624,80 @@ export function ServiceGrid() {
       }
       return next
     })
+  }
+
+  function handleGroupDragOver(event: DragEvent<HTMLElement>, targetGroupIndex: number) {
+    if (!canDragGroups || !isGroupDragEvent(event)) {
+      return
+    }
+
+    const navigation = navigationQuery.data
+    const scene = navigation && activeSceneId ? findScene(navigation, activeSceneId) : undefined
+    const draggedGroupId = event.dataTransfer.getData(GROUP_DRAG_DATA_TYPE) || draggingGroupId
+    const sourceGroupIndex = scene?.groups.findIndex((group) => group.id === draggedGroupId) ?? -1
+
+    if (!scene || sourceGroupIndex < 0 || sourceGroupIndex === targetGroupIndex) {
+      setGroupDragOver(null)
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'move'
+    setGroupDragOver((current) =>
+      current?.groupIndex === targetGroupIndex ? current : { groupIndex: targetGroupIndex }
+    )
+  }
+
+  function commitGroupDrop(event: DragEvent<HTMLElement>, targetGroupIndex: number) {
+    if (!canDragGroups || !isGroupDragEvent(event)) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const navigation = navigationQuery.data
+    const scene = navigation && activeSceneId ? findScene(navigation, activeSceneId) : undefined
+    const draggedGroupId = event.dataTransfer.getData(GROUP_DRAG_DATA_TYPE) || draggingGroupId
+    const sourceGroupIndex = scene?.groups.findIndex((group) => group.id === draggedGroupId) ?? -1
+
+    clearGroupDragState()
+
+    if (!navigation || !scene || !activeSceneId || !draggedGroupId || sourceGroupIndex < 0) {
+      return
+    }
+
+    if (sourceGroupIndex === targetGroupIndex) {
+      return
+    }
+
+    const adjustedTargetIndex = getSceneGroupDropIndex(sourceGroupIndex, targetGroupIndex)
+
+    try {
+      const nextConfig = moveSceneGroup(
+        navigation,
+        activeSceneId,
+        draggedGroupId,
+        adjustedTargetIndex
+      )
+      saveMutation.mutate(nextConfig, {
+        onSuccess: () => {
+          showToast({ type: 'success', message: messages.serviceGrid.groupOrderUpdated })
+        },
+        onError: (error) => {
+          showToast({
+            type: 'error',
+            message: error instanceof Error ? error.message : messages.serviceGrid.groupOrderFailed,
+          })
+        },
+      })
+    } catch (error) {
+      showToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : messages.serviceGrid.groupOrderFailed,
+      })
+    }
   }
 
   function commitDrop(targetGroupIndex: number, targetServiceIndex?: number) {
@@ -965,7 +1064,25 @@ export function ServiceGrid() {
           </div>
         </div>
       ) : null}
-      <div ref={gridRef} className="flex w-full flex-wrap items-stretch gap-3 md:gap-3.5">
+      <div
+        ref={gridRef}
+        className={`flex w-full flex-wrap items-stretch gap-3 md:gap-3.5 ${groupDragOver?.groupIndex === displayGroups.length ? 'after:h-1 after:w-full after:rounded-full after:bg-primary/45' : ''}`}
+        onDragOver={(event) => {
+          if (!canDragGroups || !isGroupDragEvent(event) || event.target !== event.currentTarget) {
+            return
+          }
+
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'move'
+          setGroupDragOver({ groupIndex: displayGroups.length })
+        }}
+        onDrop={(event) => {
+          if (event.target !== event.currentTarget) {
+            return
+          }
+          commitGroupDrop(event, displayGroups.length)
+        }}
+      >
         {renderGroups.map((group) => {
           const isCollapsed = isGroupCollapsedForView(
             activeSceneId,
@@ -975,8 +1092,9 @@ export function ServiceGrid() {
           )
           const isGroupDropTarget =
             Boolean(group.groupId) &&
-            dragOver?.groupIndex === group.actualGroupIndex &&
-            typeof dragOver.serviceIndex === 'undefined'
+            ((dragOver?.groupIndex === group.actualGroupIndex &&
+              typeof dragOver.serviceIndex === 'undefined') ||
+              groupDragOver?.groupIndex === group.actualGroupIndex)
           const compactGroupWidth = getCompactGroupWidth(
             isCollapsed ? 0 : group.services.length,
             compactCardWidth
@@ -993,11 +1111,22 @@ export function ServiceGrid() {
           return (
             <section
               key={group.isQuickRecordGroup ? '__quick-records__' : group.groupId || group.category}
+              data-group-id={group.groupId || undefined}
               className={`harbor-group-section flex w-full flex-col rounded-[1.55rem] border border-border/75 bg-card/62 p-2.5 shadow-[0_16px_34px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition duration-300 md:p-3 dark:bg-card/60 dark:shadow-[0_18px_44px_rgba(0,0,0,0.28)] ${canKeepSingleRow ? 'lg:w-fit lg:flex-none' : 'lg:flex-1 lg:basis-full'} ${isGroupDropTarget ? 'border-primary/40 ring-2 ring-primary/10' : ''}`}
+              onDragOver={
+                group.groupId
+                  ? (event) => handleGroupDragOver(event, group.actualGroupIndex)
+                  : undefined
+              }
+              onDrop={
+                group.groupId
+                  ? (event) => commitGroupDrop(event, group.actualGroupIndex)
+                  : undefined
+              }
             >
               <div className="flex flex-1 flex-col gap-2.5 md:h-full md:flex-row md:items-stretch md:gap-3">
                 <div
-                  className="relative flex w-full shrink-0 cursor-pointer items-center justify-center rounded-[1.15rem] border border-border/70 bg-[linear-gradient(180deg,hsl(var(--background)/0.96),hsl(var(--background)/0.84))] px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:min-h-[76px] md:w-[9rem] md:flex-col md:justify-center md:self-stretch"
+                  className="relative flex w-full shrink-0 cursor-pointer items-center justify-center rounded-[1.15rem] border border-border/70 bg-[linear-gradient(180deg,hsl(var(--background)/0.96),hsl(var(--background)/0.84))] px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:min-h-[76px] md:w-[11rem] md:flex-col md:justify-center md:self-stretch"
                   title={
                     isCollapsed
                       ? messages.serviceGrid.expandGroup
@@ -1020,9 +1149,36 @@ export function ServiceGrid() {
                     })
                   }}
                 >
-                  <div className="w-full min-w-0 px-1 md:px-2">
+                  {group.groupId ? (
+                    <button
+                      type="button"
+                      draggable={canDragGroups}
+                      aria-label={messages.serviceGrid.dragGroup(group.category)}
+                      title={messages.serviceGrid.dragGroup(group.category)}
+                      className="absolute left-2 top-2 inline-flex h-7 w-7 cursor-grab items-center justify-center rounded-full text-muted-foreground/65 transition hover:bg-primary/10 hover:text-primary active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+                      onClick={(event) => event.stopPropagation()}
+                      onDragStart={(event) => {
+                        if (!canDragGroups) {
+                          event.preventDefault()
+                          return
+                        }
+                        clearDragState()
+                        clearLongPress()
+                        setContextMenu(null)
+                        setGroupDragOver(null)
+                        setDraggingGroupId(group.groupId)
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData(GROUP_DRAG_DATA_TYPE, group.groupId)
+                        event.dataTransfer.setData('text/plain', group.groupId)
+                      }}
+                      onDragEnd={clearGroupDragState}
+                    >
+                      <GripVertical className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  ) : null}
+                  <div className="w-full min-w-0 px-8">
                     <h3
-                      className="w-full min-w-0 overflow-hidden break-words text-center text-[14px] font-semibold leading-5 tracking-tight text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] md:text-[15px]"
+                      className="w-full min-w-0 overflow-hidden break-words text-center text-[14px] font-semibold leading-5 text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] md:text-[15px]"
                       title={group.category}
                     >
                       {group.category}
@@ -1063,6 +1219,9 @@ export function ServiceGrid() {
                   className={`${isCollapsed ? '!hidden' : ''} harbor-bookmark-grid grid min-h-[84px] w-full flex-1 grid-cols-2 gap-2 rounded-[1.15rem] bg-background/34 p-1 transition sm:grid-cols-3 md:grid-cols-4 md:gap-2.5 md:p-1.5 ${canKeepSingleRow ? 'lg:w-fit lg:flex-none lg:grid-flow-col lg:grid-cols-none lg:auto-cols-[var(--desktop-card-width)]' : 'lg:grid-cols-6 xl:grid-cols-8'} ${isGroupDropTarget ? 'bg-primary/6 ring-1 ring-primary/10' : ''}`}
                   style={{ ...compactGridStyle, display: isCollapsed ? 'none' : undefined }}
                   onDragOver={(event) => {
+                    if (isGroupDragEvent(event)) {
+                      return
+                    }
                     if (!canDrag || draggingSlugs.length === 0) {
                       return
                     }
@@ -1071,6 +1230,9 @@ export function ServiceGrid() {
                     setDragOver({ groupIndex: group.actualGroupIndex })
                   }}
                   onDrop={(event) => {
+                    if (isGroupDragEvent(event)) {
+                      return
+                    }
                     if (!canDrag) {
                       return
                     }
@@ -1200,6 +1362,9 @@ export function ServiceGrid() {
                               })
                             }}
                             onDrop={(event) => {
+                              if (isGroupDragEvent(event)) {
+                                return
+                              }
                               if (!canDrag) {
                                 return
                               }
@@ -1273,6 +1438,15 @@ export function ServiceGrid() {
             </section>
           )
         })}
+        {draggingGroupId ? (
+          <div
+            aria-hidden="true"
+            data-group-drop-end="true"
+            className={`h-2 w-full rounded-full border border-dashed border-primary/25 transition-colors ${groupDragOver?.groupIndex === displayGroups.length ? 'bg-primary/45' : 'bg-transparent'}`}
+            onDragOver={(event) => handleGroupDragOver(event, displayGroups.length)}
+            onDrop={(event) => commitGroupDrop(event, displayGroups.length)}
+          />
+        ) : null}
       </div>
 
       <LazyBookmarkEditDialog

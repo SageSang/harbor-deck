@@ -38,6 +38,7 @@ import {
   cloneNavigationConfig,
   createScene,
   createSceneGroup,
+  getSceneGroupDropIndex,
   renameGroupInScene,
   moveSceneGroup,
   removeGroupFromScene,
@@ -354,11 +355,10 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     const index = selectedScene.groups.findIndex((group) => group.id === groupId)
     const target = index + direction
     if (target < 0 || target >= selectedScene.groups.length) return
-    const next = cloneNavigationConfig(navigation)
-    const groups = next.scenes.find((scene) => scene.id === selectedScene.id)!.groups
-    const [group] = groups.splice(index, 1)
-    groups.splice(target, 0, group)
-    saveNavigation(next, '分组顺序已更新。')
+    saveNavigation(
+      moveSceneGroup(navigation, selectedScene.id, groupId, target),
+      messages.bookmarkManage.groupSection.orderUpdated
+    )
   }
 
   function moveGroupTo(groupId: string, targetIndex: number) {
@@ -366,7 +366,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       return
     const sourceIndex = selectedScene.groups.findIndex((group) => group.id === groupId)
     if (sourceIndex < 0 || sourceIndex === targetIndex) return
-    const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
+    const adjustedTargetIndex = getSceneGroupDropIndex(sourceIndex, targetIndex)
     saveNavigation(
       moveSceneGroup(navigation, selectedScene.id, groupId, adjustedTargetIndex),
       messages.bookmarkManage.groupSection.orderUpdated
@@ -496,12 +496,8 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
           throw new Error('当前场景不可用于快速记录，请先解锁后重试')
         }
         const now = Date.now()
-        const existing = recordScene.quickRecords?.find(
-          (record) =>
-            bookmarkMatchesAnyUrl(record, [
-              result.bookmark.primaryUrl,
-              result.bookmark.secondaryUrl,
-            ])
+        const existing = recordScene.quickRecords?.find((record) =>
+          bookmarkMatchesAnyUrl(record, [result.bookmark.primaryUrl, result.bookmark.secondaryUrl])
         )
         const record = {
           id: existing?.id ?? `quick-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
