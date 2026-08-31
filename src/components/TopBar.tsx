@@ -28,15 +28,18 @@ export function TopBar() {
   const manualNetworkMode = useAppStore((state) => state.manualNetworkMode)
   const setManualNetworkMode = useAppStore((state) => state.setManualNetworkMode)
   const setNetworkModeStrategy = useAppStore((state) => state.setNetworkModeStrategy)
-  const setTheme = useAppStore((state) => state.setTheme)
+  const setSkin = useAppStore((state) => state.setSkin)
   const { data: systemConfig } = useSystemConfig()
+  const systemSkin = systemConfig?.skin
   const { messages } = useI18n()
   const [isNetworkInfoOpen, setIsNetworkInfoOpen] = useState(false)
   const networkInfoRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    setTheme(systemConfig?.darkMode ? 'dark' : 'light')
-  }, [setTheme, systemConfig?.darkMode])
+    if (systemSkin) {
+      setSkin(systemSkin)
+    }
+  }, [setSkin, systemSkin])
 
   useEffect(() => {
     document.title = `${systemConfig?.appName ?? 'HarborDeck'} - ${messages.meta.pageTitleSuffix}`

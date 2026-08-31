@@ -46,6 +46,7 @@ import {
 } from './bookmarkNavigation'
 import {
   getGroupKey,
+  hasStoredCollapsedGroupKeys,
   persistCollapsedGroupKeys,
   readCollapsedGroupKeys,
 } from '@/features/navigation/groupPreference'
@@ -226,6 +227,9 @@ export function ServiceGrid() {
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(
     () => new Set(readCollapsedGroupKeys())
+  )
+  const [collapsedGroupPreferenceInitialized, setCollapsedGroupPreferenceInitialized] = useState(
+    hasStoredCollapsedGroupKeys
   )
   const [renamingGroup, setRenamingGroup] = useState<GroupRenameState | null>(null)
   const [gridWidth, setGridWidth] = useState(0)
@@ -450,8 +454,28 @@ export function ServiceGrid() {
   }, [firstVisibleBookmarkSlug, lastVisibleBookmarkSlug])
 
   useEffect(() => {
+    if (collapsedGroupPreferenceInitialized || !activeSceneId || !navigationQuery.data) {
+      return
+    }
+
+    const scene = findScene(navigationQuery.data, activeSceneId)
+    if (!scene) {
+      return
+    }
+
+    setCollapsedGroupKeys(
+      new Set(scene.groups.map((group) => getGroupKey(scene.id, group.id)))
+    )
+    setCollapsedGroupPreferenceInitialized(true)
+  }, [activeSceneId, collapsedGroupPreferenceInitialized, navigationQuery.data])
+
+  useEffect(() => {
+    if (!collapsedGroupPreferenceInitialized) {
+      return
+    }
+
     persistCollapsedGroupKeys(collapsedGroupKeys)
-  }, [collapsedGroupKeys])
+  }, [collapsedGroupKeys, collapsedGroupPreferenceInitialized])
 
   useEffect(() => {
     if (selectionMode && selectedSlugs.size === 0) {

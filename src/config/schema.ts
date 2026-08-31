@@ -6,6 +6,7 @@ import {
 } from './searchEngines.js'
 import { isValidNetworkProbeHost, networkProbeProtocols } from './networkProbe.js'
 import { isHttpUrl } from './httpUrl.js'
+import { APP_SKINS, DEFAULT_APP_SKIN } from '../../shared/theme.js'
 
 export { isHttpUrl } from './httpUrl.js'
 
@@ -343,9 +344,27 @@ export const networkProbeConfigSchema = z
   })
   .default({})
 
-export const systemConfigSchema = z
+function migrateLegacySystemSkin(input: unknown) {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return input
+  }
+
+  const config = input as Record<string, unknown>
+  if ('skin' in config || typeof config.darkMode !== 'boolean') {
+    return input
+  }
+
+  return {
+    ...config,
+    skin: config.darkMode ? 'midnight' : 'frost',
+  }
+}
+
+const systemConfigObjectSchema = z
   .object({
     appName: trimmedString.default('HarborDeck'),
+    skin: z.enum(APP_SKINS).default(DEFAULT_APP_SKIN),
+    // Kept for config compatibility with versions before multi-skin support.
     darkMode: z.boolean().default(false),
     clickOpenTarget: openTargetSchema.default('self'),
     middleClickOpenTarget: openTargetSchema.default('blank'),
@@ -390,6 +409,9 @@ export const systemConfigSchema = z
       })
     }
   })
+
+export const systemConfigSchema = z
+  .preprocess(migrateLegacySystemSkin, systemConfigObjectSchema)
   .default({})
 
 export const appConfigSchema = z

@@ -6,6 +6,7 @@ describe('appConfig helpers', () => {
     expect(parseAppConfig({})).toEqual({
       system: {
         appName: 'HarborDeck',
+        skin: 'midnight',
         darkMode: false,
         clickOpenTarget: 'self',
         middleClickOpenTarget: 'blank',
@@ -21,7 +22,7 @@ describe('appConfig helpers', () => {
           url: '',
           username: '',
           password: '',
-        remotePath: '/harbor-deck',
+          remotePath: '/harbor-deck',
           autoBackup: false,
           intervalDays: 7,
           maxVersions: 10,

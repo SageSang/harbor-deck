@@ -7,17 +7,79 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HarborDeck - 智能导航页</title>
+    <script id="harbordeck-theme-boot">
+      ;(() => {
+        const isSkin = (value) => value === 'midnight' || value === 'frost' || value === 'ember'
+        const handoffSkin = new URLSearchParams(window.location.search).get('harbordeckSkin')
+        let skin = isSkin(handoffSkin) ? handoffSkin : null
+
+        if (!skin) {
+          try {
+            const storedSkin = window.localStorage.getItem('harborDeckWebTheme')
+            skin = isSkin(storedSkin) ? storedSkin : null
+          } catch {
+            // Fall through to the operating-system preference.
+          }
+        }
+
+        if (!skin) {
+          skin = window.matchMedia('(prefers-color-scheme: light)').matches ? 'frost' : 'midnight'
+        }
+
+        document.documentElement.dataset.skin = skin
+        document.documentElement.classList.toggle('dark', skin !== 'frost')
+
+        if (isSkin(handoffSkin)) {
+          try {
+            window.localStorage.setItem('harborDeckWebTheme', handoffSkin)
+          } catch {
+            // React will still apply the skin for this navigation.
+          }
+        }
+      })()
+    </script>
     <style>
       :root {
+        color-scheme: dark;
+        background: hsl(222 32% 10%);
+        --boot-background: hsl(222 32% 10%);
+        --boot-foreground: hsl(210 35% 96%);
+        --boot-primary: hsl(183 72% 54%);
+        --boot-muted: hsl(215 18% 70% / 0.84);
+        --boot-border: hsl(220 20% 27% / 0.72);
+        --boot-field: hsl(222 28% 14% / 0.94);
+        --boot-shadow: hsl(222 50% 3% / 0.42);
+      }
+
+      :root[data-skin='frost'] {
         color-scheme: light;
-        background: #f7f5f2;
+        background: hsl(210 36% 97%);
+        --boot-background: hsl(210 36% 97%);
+        --boot-foreground: hsl(215 28% 17%);
+        --boot-primary: hsl(199 78% 42%);
+        --boot-muted: hsl(215 14% 42% / 0.76);
+        --boot-border: hsl(210 22% 83% / 0.82);
+        --boot-field: hsl(210 40% 99% / 0.94);
+        --boot-shadow: hsl(215 28% 17% / 0.16);
+      }
+
+      :root[data-skin='ember'] {
+        color-scheme: dark;
+        background: hsl(18 24% 10%);
+        --boot-background: hsl(18 24% 10%);
+        --boot-foreground: hsl(35 40% 96%);
+        --boot-primary: hsl(28 88% 61%);
+        --boot-muted: hsl(31 18% 70% / 0.84);
+        --boot-border: hsl(22 22% 29% / 0.76);
+        --boot-field: hsl(19 22% 14% / 0.94);
+        --boot-shadow: hsl(18 40% 3% / 0.44);
       }
 
       html,
       body {
         min-height: 100%;
         margin: 0;
-        background: #f7f5f2;
+        background: var(--boot-background);
       }
 
       #harbordeck-search-boot {
@@ -28,8 +90,8 @@
         place-items: center;
         box-sizing: border-box;
         padding: 24px;
-        background: #f7f5f2;
-        color: #292524;
+        background: var(--boot-background);
+        color: var(--boot-foreground);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
 
@@ -39,7 +101,7 @@
 
       .harbordeck-search-boot-brand {
         margin: 0 0 18px;
-        color: #57534e;
+        color: var(--boot-primary);
         font-size: 18px;
         font-weight: 700;
         letter-spacing: 0;
@@ -49,10 +111,10 @@
       .harbordeck-search-boot-field {
         position: relative;
         padding: 5px;
-        border: 1px solid rgba(120, 113, 108, 0.24);
+        border: 1px solid var(--boot-border);
         border-radius: 19px;
-        background: rgba(255, 255, 255, 0.94);
-        box-shadow: 0 12px 32px rgba(41, 37, 36, 0.08);
+        background: var(--boot-field);
+        box-shadow: 0 12px 32px var(--boot-shadow);
       }
 
       #harbordeck-search-boot-input {
@@ -64,24 +126,24 @@
         border-radius: 14px;
         outline: none;
         background: transparent;
-        color: #292524;
+        color: var(--boot-foreground);
         font: inherit;
         font-size: 14px;
         letter-spacing: 0;
       }
 
       #harbordeck-search-boot-input::placeholder {
-        color: #a8a29e;
+        color: var(--boot-muted);
       }
 
       #harbordeck-search-boot-input:focus {
-        box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.12);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--boot-primary) 18%, transparent);
       }
 
       .harbordeck-search-boot-status {
         min-height: 20px;
         margin: 12px 0 0;
-        color: #78716c;
+        color: var(--boot-muted);
         font-size: 12px;
         letter-spacing: 0;
         text-align: center;
@@ -115,9 +177,17 @@
 
         const params = new URLSearchParams(window.location.search)
         const handoffQuery = params.get('harbordeckQuery')?.slice(0, maxLength) ?? ''
+        let historyChanged = false
         if (handoffQuery) {
           input.value = handoffQuery
           params.delete('harbordeckQuery')
+          historyChanged = true
+        }
+        if (params.has('harbordeckSkin')) {
+          params.delete('harbordeckSkin')
+          historyChanged = true
+        }
+        if (historyChanged) {
           const query = params.toString()
           window.history.replaceState(
             null,

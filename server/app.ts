@@ -34,6 +34,7 @@ import {
   readIntegrationTokenHeader,
   searchNavigationBookmarks,
 } from './integrationApi.js'
+import { normalizeAppSkin } from '../shared/theme.js'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -402,6 +403,18 @@ export async function buildServer() {
         groups: scene.groups.map((group) => ({ id: group.id, name: group.name })),
       })),
     }
+  })
+
+  app.get('/api/integrations/theme', async (request, reply) => {
+    if (!getIntegrationTokenStatus()) {
+      return reply.code(503).send('HARBORDECK_SEARCH_TOKEN is not configured')
+    }
+    if (!isIntegrationRequestAuthorized(request)) {
+      return reply.code(401).send('Invalid integration token')
+    }
+
+    const system = await readSystemConfig()
+    return { skin: normalizeAppSkin(system.skin) }
   })
 
   app.get('/api/integrations/bookmarks/lookup', async (request, reply) => {

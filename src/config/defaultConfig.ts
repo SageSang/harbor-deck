@@ -9,6 +9,7 @@ import {
 export const bundledAppConfig = appConfigSchema.parse(configData)
 export const defaultSystemConfig = systemConfigSchema.parse({
   appName: bundledAppConfig.system.appName,
+  skin: bundledAppConfig.system.skin,
 })
 export const defaultServicesConfig = servicesConfigSchema.parse([])
 export const defaultNavigationConfig = navigationConfigSchema.parse(undefined)

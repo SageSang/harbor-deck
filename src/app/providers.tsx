@@ -2,20 +2,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { FeedbackProvider } from '@/features/feedback/FeedbackProvider'
 import { useAppStore } from '@/store/appStore'
+import { skinUsesDarkMode } from '@shared/theme'
 
 const queryClient = new QueryClient()
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const theme = useAppStore((state) => state.theme)
+  const skin = useAppStore((state) => state.skin)
   const language = useAppStore((state) => state.language)
 
   useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-  }, [theme])
+    document.documentElement.dataset.skin = skin
+    document.documentElement.classList.toggle('dark', skinUsesDarkMode(skin))
+  }, [skin])
 
   useEffect(() => {
     document.documentElement.lang = language

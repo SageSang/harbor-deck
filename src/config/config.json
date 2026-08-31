@@ -1,6 +1,7 @@
 {
   "system": {
     "appName": "HarborDeck",
+    "skin": "midnight",
     "darkMode": false,
     "clickOpenTarget": "self",
     "middleClickOpenTarget": "blank",

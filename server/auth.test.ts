@@ -196,6 +196,41 @@ describe('auth module', () => {
     expect(rejectedResponse.statusCode).toBe(400)
   })
 
+  it('serves the current skin through the token-protected integration endpoint', async () => {
+    process.env.HARBORDECK_SEARCH_TOKEN = 'integration-theme-token'
+    const server = await buildTestServer()
+    const { cookie } = await setupAdmin(server)
+    const systemResponse = await server.inject({
+      method: 'GET',
+      url: '/api/config/system',
+      headers: { cookie },
+    })
+
+    const system = systemResponse.json() as SystemConfig
+    const updateResponse = await server.inject({
+      method: 'PUT',
+      url: '/api/config/system',
+      headers: { cookie },
+      payload: { ...system, skin: 'ember' },
+    })
+
+    expect(updateResponse.statusCode).toBe(200)
+
+    const unauthorizedResponse = await server.inject({
+      method: 'GET',
+      url: '/api/integrations/theme',
+    })
+    const themeResponse = await server.inject({
+      method: 'GET',
+      url: '/api/integrations/theme',
+      headers: { 'x-harbordeck-search-token': 'integration-theme-token' },
+    })
+
+    expect(unauthorizedResponse.statusCode).toBe(401)
+    expect(themeResponse.statusCode).toBe(200)
+    expect(themeResponse.json()).toEqual({ skin: 'ember' })
+  })
+
   it('preserves stored auth when saving sanitized config payloads', async () => {
     const server = await buildTestServer()
     const { cookie } = await setupAdmin(server)

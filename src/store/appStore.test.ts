@@ -22,6 +22,18 @@ describe('useAppStore network mode preferences', () => {
     expect(state.networkMode).toBe('wan')
   })
 
+  it('hydrates and persists the web skin without waiting for React effects', async () => {
+    window.localStorage.setItem('harborDeckWebTheme', 'ember')
+
+    const { useAppStore } = await loadAppStore()
+    expect(useAppStore.getState().skin).toBe('ember')
+
+    useAppStore.getState().setSkin('frost')
+
+    expect(window.localStorage.getItem('harborDeckWebTheme')).toBe('frost')
+    expect(useAppStore.getState().theme).toBe('light')
+  })
+
   it('keeps the manual mode active when detection updates in the background', async () => {
     const { useAppStore } = await loadAppStore()
 

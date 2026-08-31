@@ -6,6 +6,7 @@
 
 const BOOT_SNAPSHOT_KEY = 'harborDeckNewTabBootSnapshot'
 const SETTINGS_KEY = 'harborDeckNewTabSettings'
+const THEME_KEY = 'harborDeckExtensionTheme'
 const BOOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const CACHED_REDIRECT_GRACE_MS = 120
 const UNCACHED_REDIRECT_GRACE_MS = 180
@@ -24,6 +25,9 @@ type ResolutionReason =
   | 'primary-unverified'
   | 'fallback-unverified'
   | 'unconfigured'
+type AppSkin = 'midnight' | 'frost' | 'ember'
+
+let activeSkin: AppSkin = readAppliedTheme()
 
 interface BootState {
   primaryUrl: string
@@ -43,6 +47,46 @@ type LoaderWindow = Window & {
 
 function getWindow(): LoaderWindow {
   return window as LoaderWindow
+}
+
+function isAppSkin(value: unknown): value is AppSkin {
+  return value === 'midnight' || value === 'frost' || value === 'ember'
+}
+
+function readAppliedTheme(): AppSkin {
+  const skin = document.documentElement.dataset.skin
+  if (isAppSkin(skin)) return skin
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'frost' : 'midnight'
+}
+
+function applyCachedTheme(value: unknown): AppSkin | null {
+  if (!isAppSkin(value)) return null
+  activeSkin = value
+  document.documentElement.dataset.skin = value
+  document.documentElement.classList.toggle('dark', value !== 'frost')
+  try {
+    window.localStorage.setItem(THEME_KEY, value)
+  } catch {
+    // Chrome storage remains the durable source when localStorage is unavailable.
+  }
+  return value
+}
+
+function restoreSynchronousTheme(): AppSkin {
+  try {
+    return applyCachedTheme(window.localStorage.getItem(THEME_KEY)) ?? activeSkin
+  } catch {
+    return activeSkin
+  }
+}
+
+async function restoreCachedTheme(): Promise<AppSkin> {
+  try {
+    const stored = await chrome.storage.local.get(THEME_KEY)
+    return applyCachedTheme(stored[THEME_KEY]) ?? activeSkin
+  } catch {
+    return activeSkin
+  }
 }
 
 function getElements() {
@@ -81,12 +125,13 @@ function setShell(options: {
   }
 }
 
-function withHandoffQuery(url: string, query: string) {
+function withHandoffState(url: string, query: string) {
   const trimmed = query.trim()
-  if (!trimmed) return url
-
   const parsed = new URL(url)
-  parsed.searchParams.set('harbordeckQuery', trimmed.slice(0, 2000))
+  parsed.searchParams.set('harbordeckSkin', activeSkin)
+  if (trimmed) {
+    parsed.searchParams.set('harbordeckQuery', trimmed.slice(0, 2000))
+  }
   return parsed.toString()
 }
 
@@ -228,7 +273,7 @@ function cancelRedirect() {
 function navigate() {
   if (redirectStarted || !targetUrl) return
   redirectStarted = true
-  window.location.replace(withHandoffQuery(targetUrl, getInputValue()))
+  window.location.replace(withHandoffState(targetUrl, getInputValue()))
 }
 
 function installShellListeners() {
@@ -273,9 +318,10 @@ function installShellListeners() {
 }
 
 async function bootstrap() {
+  restoreSynchronousTheme()
   installShellListeners()
   const loaderWindow = getWindow()
-  const state = await readBootState()
+  const [, state] = await Promise.all([restoreCachedTheme(), readBootState()])
   if (!state) {
     setShell({
       visible: false,

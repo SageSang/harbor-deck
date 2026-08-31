@@ -1,4 +1,5 @@
 import type { ResolvedTarget } from '@extension/types'
+import { isAppSkin, type AppSkin } from '@shared/theme'
 import {
   clearResolutionCache,
   normalizeProbeTimeoutMs,
@@ -55,6 +56,42 @@ async function probe(baseUrl: string, timeoutMs: number): Promise<boolean | null
     return response.ok
   } catch {
     return false
+  } finally {
+    globalThis.clearTimeout(timeoutId)
+  }
+}
+
+export async function fetchRemoteTheme(
+  baseUrl: string,
+  apiToken: string,
+  timeoutMs = 1200
+): Promise<AppSkin | null> {
+  if (!baseUrl || !apiToken) return null
+
+  const controller = new AbortController()
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(new URL('/api/integrations/theme', baseUrl), {
+      headers: { 'X-HarborDeck-Search-Token': apiToken },
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    if (!response.ok) return null
+
+    const payload: unknown = await response.json()
+    if (
+      typeof payload !== 'object' ||
+      payload === null ||
+      Array.isArray(payload) ||
+      !isAppSkin((payload as Record<string, unknown>).skin)
+    ) {
+      return null
+    }
+
+    return (payload as { skin: AppSkin }).skin
+  } catch {
+    return null
   } finally {
     globalThis.clearTimeout(timeoutId)
   }

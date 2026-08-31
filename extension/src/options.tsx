@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Eye, EyeOff } from 'lucide-react'
 import { getMessages } from '@extension/i18n'
-import { requestOriginPermissions } from '@extension/network'
+import { requestOriginPermissions, resolveAvailableTarget } from '@extension/network'
 import {
   DEFAULT_PROBE_TIMEOUT_MS,
   defaultLanguage,
@@ -15,6 +15,7 @@ import {
   writeLanguage,
   writeSettings,
 } from '@extension/storage'
+import { restoreExtensionTheme, syncExtensionTheme } from '@extension/theme'
 import type { ExtensionLanguage, ExtensionSettings, OpenMode } from '@extension/types'
 import './styles.css'
 
@@ -76,9 +77,21 @@ export function OptionsApp() {
 
     async function load() {
       const [settings, nextLanguage] = await Promise.all([readSettings(), readLanguage()])
+      await restoreExtensionTheme()
       if (!cancelled) {
         setForm(settings)
         setLanguage(nextLanguage)
+      }
+
+      if (settings.apiToken && (settings.primaryUrl || settings.fallbackUrl)) {
+        const target = await resolveAvailableTarget(
+          settings.primaryUrl,
+          settings.fallbackUrl,
+          settings.probeTimeoutMs
+        )
+        if (!cancelled && target.activeUrl) {
+          await syncExtensionTheme(target.activeUrl, settings.apiToken)
+        }
       }
     }
 
@@ -119,6 +132,17 @@ export function OptionsApp() {
         // rebuild the boot snapshot if the service worker is unavailable.
       }
       setForm(nextSettings)
+      if (nextSettings.apiToken && (nextSettings.primaryUrl || nextSettings.fallbackUrl)) {
+        const target = await resolveAvailableTarget(
+          nextSettings.primaryUrl,
+          nextSettings.fallbackUrl,
+          nextSettings.probeTimeoutMs,
+          true
+        )
+        if (target.activeUrl) {
+          await syncExtensionTheme(target.activeUrl, nextSettings.apiToken)
+        }
+      }
       setStatus(
         permissionGranted
           ? { tone: 'success', kind: 'saved' }

@@ -29,6 +29,21 @@ export function readCollapsedGroupKeys(): string[] {
   }
 }
 
+export function hasStoredCollapsedGroupKeys(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  try {
+    return (
+      window.localStorage.getItem(COLLAPSED_GROUPS_STORAGE_KEY) !== null ||
+      window.localStorage.getItem(LEGACY_COLLAPSED_GROUPS_STORAGE_KEY) !== null
+    )
+  } catch {
+    return false
+  }
+}
+
 export function persistCollapsedGroupKeys(keys: Iterable<string>) {
   if (typeof window === 'undefined') {
     return

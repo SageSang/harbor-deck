@@ -27,6 +27,23 @@ X-HarborDeck-Search-Token: your-secret-token
 
 不要把 Token 提交到 Git、公开的 uTools 源码或截图中。
 
+## 主题同步
+
+### `GET /api/integrations/theme`
+
+必须携带集成 Token。返回当前网页使用的皮肤标识，浏览器扩展可据此同步自己的设计 token。
+
+```bash
+curl "$BASE_URL/api/integrations/theme" \
+  -H "X-HarborDeck-Search-Token: $TOKEN"
+```
+
+响应示例：
+
+```json
+{"skin":"midnight"}
+```
+
 ## 错误码
 
 | 状态码 | 含义 |

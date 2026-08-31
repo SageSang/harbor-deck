@@ -42,6 +42,7 @@ describe('systemConfigSchema', () => {
 
     expect(config.defaultSearchEngine).toBe('google')
     expect(config.customSearchEngines).toEqual([])
+    expect(config.skin).toBe('midnight')
     expect(config.darkMode).toBe(false)
     expect(config.networkProbe).toEqual({
       lanProtocol: 'http',
@@ -49,6 +50,15 @@ describe('systemConfigSchema', () => {
       wanProtocol: 'https',
       wanHost: '',
     })
+  })
+
+  it('maps the legacy dark mode flag to a skin when no skin is present', () => {
+    expect(systemConfigSchema.parse({ darkMode: false }).skin).toBe('frost')
+    expect(systemConfigSchema.parse({ darkMode: true }).skin).toBe('midnight')
+  })
+
+  it('prefers an explicit skin over the legacy dark mode flag', () => {
+    expect(systemConfigSchema.parse({ darkMode: true, skin: 'frost' }).skin).toBe('frost')
   })
 
   it('rejects invalid network probe hosts', () => {

@@ -7,6 +7,7 @@ import type {
   ResolutionReason,
   NewTabBootSnapshot,
 } from '@extension/types'
+import { normalizeAppSkin, type AppSkin } from '@shared/theme'
 
 const STORAGE_KEY = 'harborDeckNewTabSettings'
 const LANGUAGE_STORAGE_KEY = 'harborDeckNewTabLanguage'
@@ -14,6 +15,7 @@ const RESOLUTION_CACHE_KEY = 'harborDeckNewTabResolutionCache'
 export const NEW_TAB_BOOT_SNAPSHOT_KEY = 'harborDeckNewTabBootSnapshot'
 const POPUP_DRAFT_KEY = 'harborDeckPopupDraft'
 const POPUP_COLLAPSED_SCENES_KEY = 'harborDeckPopupCollapsedScenes'
+export const EXTENSION_THEME_STORAGE_KEY = 'harborDeckExtensionTheme'
 const LEGACY_STORAGE_KEY = ['smart', 'Harbor', 'NewTabSettings'].join('')
 const LEGACY_LANGUAGE_STORAGE_KEY = ['smart', 'Harbor', 'NewTabLanguage'].join('')
 const LEGACY_RESOLUTION_CACHE_KEY = ['smart', 'Harbor', 'NewTabResolutionCache'].join('')
@@ -148,6 +150,17 @@ export async function readLanguage(): Promise<ExtensionLanguage> {
 export async function writeLanguage(language: ExtensionLanguage): Promise<void> {
   await chrome.storage.sync.set({
     [LANGUAGE_STORAGE_KEY]: normalizeLanguage(language),
+  })
+}
+
+export async function readExtensionTheme(): Promise<AppSkin> {
+  const stored = await chrome.storage.local.get(EXTENSION_THEME_STORAGE_KEY)
+  return normalizeAppSkin(stored[EXTENSION_THEME_STORAGE_KEY])
+}
+
+export async function writeExtensionTheme(skin: AppSkin): Promise<void> {
+  await chrome.storage.local.set({
+    [EXTENSION_THEME_STORAGE_KEY]: skin,
   })
 }
 

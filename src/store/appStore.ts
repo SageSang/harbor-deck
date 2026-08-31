@@ -11,6 +11,13 @@ import {
 } from '@/core/network/networkModePreference'
 import { persistLanguage, resolveInitialLanguage, type Language } from '@/i18n/messages'
 import {
+  DEFAULT_APP_SKIN,
+  normalizeAppSkin,
+  skinUsesDarkMode,
+  type AppSkin,
+  WEB_THEME_STORAGE_KEY,
+} from '@shared/theme'
+import {
   persistSceneState,
   readInitialActiveSceneId,
   readLastRegularSceneId,
@@ -24,6 +31,7 @@ interface AppState {
   networkModeStrategy: NetworkModeStrategy
   manualNetworkMode: ManualNetworkMode
   searchKeyword: string
+  skin: AppSkin
   theme: 'light' | 'dark'
   language: Language
   error: string | null
@@ -34,6 +42,7 @@ interface AppState {
   setNetworkModeStrategy: (strategy: NetworkModeStrategy) => void
   setManualNetworkMode: (mode: ManualNetworkMode) => void
   setSearchKeyword: (keyword: string) => void
+  setSkin: (skin: AppSkin) => void
   setTheme: (theme: 'light' | 'dark') => void
   setLanguage: (language: Language) => void
   setError: (error: string | null) => void
@@ -46,6 +55,26 @@ const initialDetectedNetworkMode: NetworkMode = 'unknown'
 const initialNetworkModeStrategy = resolveInitialNetworkModeStrategy()
 const initialManualNetworkMode = resolveInitialManualNetworkMode()
 
+function resolveInitialSkin(): AppSkin {
+  if (typeof window === 'undefined') return DEFAULT_APP_SKIN
+
+  try {
+    return normalizeAppSkin(window.localStorage.getItem(WEB_THEME_STORAGE_KEY))
+  } catch {
+    return DEFAULT_APP_SKIN
+  }
+}
+
+function persistSkin(skin: AppSkin) {
+  try {
+    window.localStorage.setItem(WEB_THEME_STORAGE_KEY, skin)
+  } catch {
+    // Theme rendering remains functional when browser storage is unavailable.
+  }
+}
+
+const initialSkin = resolveInitialSkin()
+
 export const useAppStore = create<AppState>()((set) => ({
   networkMode: resolveEffectiveNetworkMode(
     initialDetectedNetworkMode,
@@ -56,7 +85,8 @@ export const useAppStore = create<AppState>()((set) => ({
   networkModeStrategy: initialNetworkModeStrategy,
   manualNetworkMode: initialManualNetworkMode,
   searchKeyword: '',
-  theme: 'light',
+  skin: initialSkin,
+  theme: skinUsesDarkMode(initialSkin) ? 'dark' : 'light',
   language: resolveInitialLanguage(),
   error: null,
   activeSceneId: readInitialActiveSceneId(),
@@ -94,13 +124,21 @@ export const useAppStore = create<AppState>()((set) => ({
     }))
   },
   setSearchKeyword: (keyword) => set({ searchKeyword: keyword }),
+  setSkin: (skin) => {
+    persistSkin(skin)
+    set({
+      skin,
+      theme: skinUsesDarkMode(skin) ? 'dark' : 'light',
+    })
+    document.documentElement.dataset.skin = skin
+    document.documentElement.classList.toggle('dark', skinUsesDarkMode(skin))
+  },
   setTheme: (theme) => {
-    set({ theme })
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
+    const skin = theme === 'dark' ? 'midnight' : 'frost'
+    persistSkin(skin)
+    set({ theme, skin })
+    document.documentElement.dataset.skin = skin
+    document.documentElement.classList.toggle('dark', theme === 'dark')
   },
   setLanguage: (language) => {
     persistLanguage(language)

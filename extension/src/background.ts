@@ -1,8 +1,9 @@
-import { resolveAvailableTarget } from '@extension/network'
+import { fetchRemoteTheme, resolveAvailableTarget } from '@extension/network'
 import {
   clearNewTabBootSnapshot,
   clearResolutionCache,
   readSettings,
+  writeExtensionTheme,
   writeNewTabBootSnapshot,
 } from '@extension/storage'
 
@@ -32,6 +33,12 @@ async function refreshResolutionCache(force = false): Promise<void> {
         settings.probeTimeoutMs,
         true
       )
+      const skin = target.activeUrl
+        ? await fetchRemoteTheme(target.activeUrl, settings.apiToken)
+        : null
+      if (skin) {
+        await writeExtensionTheme(skin)
+      }
       await writeNewTabBootSnapshot({
         primaryUrl: settings.primaryUrl,
         fallbackUrl: settings.fallbackUrl,

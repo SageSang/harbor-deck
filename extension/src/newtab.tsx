@@ -10,6 +10,7 @@ import {
   RESOLUTION_CACHE_TTL_MS,
 } from '@extension/storage'
 import type { ExtensionLanguage, ExtensionSettings, ResolvedTarget } from '@extension/types'
+import { restoreExtensionTheme, syncExtensionTheme } from '@extension/theme'
 import './styles.css'
 
 const LOADING_UI_DELAY_MS = 240
@@ -126,10 +127,14 @@ export function App() {
         readLanguage(),
         readResolutionCache(),
       ])
+      await restoreExtensionTheme()
       const cachedTarget = getFreshResolutionTarget(cache, settings)
       const target =
         cachedTarget ??
         (await resolveAvailableTarget(settings.primaryUrl, settings.fallbackUrl, settings.probeTimeoutMs))
+      if (target.activeUrl) {
+        void syncExtensionTheme(target.activeUrl, settings.apiToken).catch(() => undefined)
+      }
 
       if (!cancelled) {
         setState({

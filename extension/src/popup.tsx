@@ -9,6 +9,7 @@ import {
   readSettings,
   writePopupDraft,
 } from '@extension/storage'
+import { restoreExtensionTheme, syncExtensionTheme } from '@extension/theme'
 import type { ExtensionLanguage, ExtensionSettings, PopupDraft } from '@extension/types'
 import './styles.css'
 
@@ -130,6 +131,7 @@ export function PopupApp() {
         chrome.tabs.query({ active: true, currentWindow: true }),
         readPopupDraft(),
       ])
+      await restoreExtensionTheme()
       const tab = tabs[0]
       const sourceTabUrl = tab?.url ?? ''
       const reusableDraft = draft?.sourceTabUrl === sourceTabUrl ? draft : null
@@ -158,6 +160,7 @@ export function PopupApp() {
         settings.probeTimeoutMs
       )
       if (cancelled || !target.activeUrl) return
+      await syncExtensionTheme(target.activeUrl, settings.apiToken)
       try {
         const response = await fetch(
           apiUrl(target.activeUrl, '/api/integrations/bookmarks/scenes'),

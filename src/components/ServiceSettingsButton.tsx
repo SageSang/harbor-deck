@@ -5,12 +5,11 @@ import {
   Globe,
   KeyRound,
   Languages,
-  MoonStar,
+  Palette,
   Plus,
   RefreshCcw,
   Save,
   Settings2,
-  Sun,
   Trash2,
   Upload,
   Wifi,
@@ -56,6 +55,7 @@ import { useAuthStatus, useLogout, useUpdateCredentials } from '@/features/auth/
 import { cloneNavigationConfig } from '@/features/navigation/navigationConfig'
 import { useNavigationConfig } from '@/features/navigation/useNavigation'
 import { useAppStore } from '@/store/appStore'
+import { APP_SKINS, skinUsesDarkMode, type AppSkin } from '@shared/theme'
 
 interface FeedbackState {
   type: 'success' | 'error'
@@ -137,7 +137,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
   const restoreWebdavBackupMutation = useRestoreWebdavBackup()
   const updateCredentialsMutation = useUpdateCredentials()
   const logoutMutation = useLogout()
-  const setTheme = useAppStore((state) => state.setTheme)
+  const setSkin = useAppStore((state) => state.setSkin)
   const setLanguage = useAppStore((state) => state.setLanguage)
   const authStatusQuery = useAuthStatus()
   const { showToast } = useFeedback()
@@ -290,7 +290,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
 
       saveAppMutation.mutate(parsed, {
         onSuccess: (savedConfig) => {
-          setTheme(savedConfig.system.darkMode ? 'dark' : 'light')
+          setSkin(savedConfig.system.skin)
           setSystemDraft(savedConfig.system)
           setBackupDraft(cloneWebdavBackupConfig(savedConfig.system.webdavBackup))
           setJsonDraft(formatAppConfig(savedConfig))
@@ -376,14 +376,14 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
 
   function saveSystemDraft(nextConfig: SystemConfig, successMessage: string) {
     setSystemDraft(nextConfig)
-    setTheme(nextConfig.darkMode ? 'dark' : 'light')
+    setSkin(nextConfig.skin)
     setSystemFeedback(null)
 
     saveSystemMutation.mutate(nextConfig, {
       onSuccess: (savedConfig) => {
         setSystemDraft(savedConfig)
         setBackupDraft(cloneWebdavBackupConfig(savedConfig.webdavBackup))
-        setTheme(savedConfig.darkMode ? 'dark' : 'light')
+        setSkin(savedConfig.skin)
         setSystemFeedback({
           type: 'success',
           message: successMessage,
@@ -393,7 +393,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
       onError: (error) => {
         setSystemDraft(activeSystemConfig)
         setBackupDraft(cloneWebdavBackupConfig(activeSystemConfig.webdavBackup))
-        setTheme(activeSystemConfig.darkMode ? 'dark' : 'light')
+        setSkin(activeSystemConfig.skin)
         const message =
           error instanceof Error ? error.message : messages.settings.systemSection.saveFailed
         setSystemFeedback({
@@ -405,18 +405,18 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
     })
   }
 
-  function handleToggleDarkMode() {
-    const nextDarkMode = !systemDraft.darkMode
-    const nextConfig: SystemConfig = {
-      ...systemDraft,
-      darkMode: nextDarkMode,
+  function handleSkinChange(skin: AppSkin) {
+    if (systemDraft.skin === skin) {
+      return
     }
 
-    const message = nextDarkMode
-      ? messages.settings.systemSection.turnedOn
-      : messages.settings.systemSection.turnedOff
+    const nextConfig: SystemConfig = {
+      ...systemDraft,
+      skin,
+      darkMode: skinUsesDarkMode(skin),
+    }
 
-    saveSystemDraft(nextConfig, message)
+    saveSystemDraft(nextConfig, messages.settings.systemSection.skinUpdated)
   }
 
   function handleOpenTargetChange(
@@ -854,7 +854,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
 
     restoreWebdavBackupMutation.mutate(versionId, {
       onSuccess: (result) => {
-        setTheme(result.restoredConfig.system.darkMode ? 'dark' : 'light')
+        setSkin(result.restoredConfig.system.skin)
         setSystemDraft(result.restoredConfig.system)
         setBackupDraft(cloneWebdavBackupConfig(result.restoredConfig.system.webdavBackup))
         setJsonDraft(formatAppConfig(result.restoredConfig))
@@ -893,7 +893,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
       key: 'system' as const,
       label: messages.settings.systemSection.label,
       description: messages.settings.systemSection.description,
-      icon: systemDraft.darkMode ? MoonStar : Sun,
+      icon: Palette,
     },
     {
       key: 'network-probe' as const,
@@ -979,31 +979,50 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
             >
               <div className="grid gap-3">
                 <div className={sectionCardClass}>
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-start gap-2">
+                    <Palette className="mt-0.5 h-4.5 w-4.5 shrink-0 text-primary" />
                     <div>
-                      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                        {systemDraft.darkMode ? (
-                          <MoonStar className="h-4.5 w-4.5 text-primary" />
-                        ) : (
-                          <Sun className="h-4.5 w-4.5 text-primary" />
-                        )}
-                        {messages.settings.systemSection.darkMode}
+                      <div className="text-sm font-semibold text-foreground">
+                        {messages.settings.systemSection.skinTitle}
                       </div>
                       <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                        {messages.settings.systemSection.darkModeHint}
+                        {messages.settings.systemSection.skinHint}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={systemDraft.darkMode}
-                      onClick={handleToggleDarkMode}
-                      disabled={saveSystemMutation.isPending}
-                      data-checked={systemDraft.darkMode}
-                      className="config-switch"
-                    >
-                      <span className="config-switch-thumb" />
-                    </button>
+                  </div>
+                  <div
+                    className="skin-picker"
+                    role="group"
+                    aria-label={messages.settings.systemSection.skinTitle}
+                  >
+                    {APP_SKINS.map((skin) => (
+                      <button
+                        key={skin}
+                        type="button"
+                        aria-pressed={systemDraft.skin === skin}
+                        disabled={saveSystemMutation.isPending}
+                        className={`skin-option skin-option-${skin} ${systemDraft.skin === skin ? 'is-active' : ''}`}
+                        onClick={() => handleSkinChange(skin)}
+                      >
+                        <span className="skin-preview" aria-hidden="true">
+                          <span className="skin-preview-bar" />
+                          <span className="skin-preview-grid">
+                            <span />
+                            <span />
+                            <span />
+                          </span>
+                        </span>
+                        <span className="skin-option-copy">
+                          <span className="skin-option-name">
+                            {messages.settings.systemSection.skinNames[skin]}
+                          </span>
+                          <span className="skin-option-meta">
+                            {messages.settings.systemSection.skinModes[skin]}
+                          </span>
+                        </span>
+                        <span className="skin-option-check" aria-hidden="true" />
+                      </button>
+                    ))}
                   </div>
                 </div>
 
