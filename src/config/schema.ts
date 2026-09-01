@@ -235,6 +235,15 @@ export const navigationConfigSchema = z
   })
   .default(defaultNavigationConfigValue)
 
+export const groupExpansionPreferenceSchema = z.object({
+  version: z.literal(1),
+  expandedGroupKeys: z.array(z.string().trim().min(1)).max(10_000).default([]),
+})
+
+export const uiPreferencesSchema = z.object({
+  groupExpansion: groupExpansionPreferenceSchema.optional(),
+})
+
 export const storedNavigationConfigSchema = navigationConfigSchema.superRefine((config, ctx) => {
   config.scenes.forEach((scene, sceneIndex) => {
     if (scene.protected && !scene.passwordHash) {
@@ -418,6 +427,7 @@ export const appConfigSchema = z
   .object({
     system: systemConfigSchema,
     navigation: navigationConfigSchema,
+    uiPreferences: uiPreferencesSchema.optional(),
   })
   .default({})
 
@@ -435,4 +445,6 @@ export type AuthConfig = z.infer<typeof authConfigSchema>
 export type NetworkProbeConfig = z.infer<typeof networkProbeConfigSchema>
 export type WebdavBackupConfig = z.infer<typeof webdavBackupConfigSchema>
 export type SystemConfig = z.infer<typeof systemConfigSchema>
+export type GroupExpansionPreference = z.infer<typeof groupExpansionPreferenceSchema>
+export type UiPreferences = z.infer<typeof uiPreferencesSchema>
 export type AppConfig = z.infer<typeof appConfigSchema>

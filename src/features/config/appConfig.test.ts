@@ -47,4 +47,24 @@ describe('appConfig helpers', () => {
   it('treats blank config text as defaults', () => {
     expect(parseAppConfigText('   ')).toEqual(parseAppConfig({}))
   })
+
+  it('preserves optional UI preferences while accepting legacy configs without them', () => {
+    expect(parseAppConfig({}).uiPreferences).toBeUndefined()
+
+    expect(
+      parseAppConfig({
+        uiPreferences: {
+          groupExpansion: {
+            version: 1,
+            expandedGroupKeys: ['default:tools'],
+          },
+        },
+      }).uiPreferences
+    ).toEqual({
+      groupExpansion: {
+        version: 1,
+        expandedGroupKeys: ['default:tools'],
+      },
+    })
+  })
 })

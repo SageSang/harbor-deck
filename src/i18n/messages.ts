@@ -91,6 +91,10 @@ const zhCN = {
       tooManyAttempts: '尝试过于频繁，请稍后再试。',
       endProtectedScene: '结束当前场景',
       noResults: '没有匹配的场景',
+      expandAllGroups: '全部展开',
+      collapseAllGroups: '全部折叠',
+      allGroupsExpanded: '当前场景的分组已全部展开。',
+      allGroupsCollapsed: '当前场景的分组已全部折叠。',
     },
   },
   home: {
@@ -315,6 +319,9 @@ const zhCN = {
     batchAdded: (count: number) => `已处理并添加 ${count} 个书签的分组引用。`,
     collapseGroup: '折叠分组',
     expandGroup: '展开分组',
+    groupPreferenceLoadFailed: '读取分组展开状态失败，请重新聚焦页面重试。',
+    groupPreferenceInitializeFailed: '初始化分组展开状态失败，请重新聚焦页面重试。',
+    groupPreferenceSaveFailed: '保存分组展开状态失败，已恢复之前的状态。',
   },
   settings: {
     buttonAria: '设置',
@@ -606,6 +613,10 @@ const en: typeof zhCN = {
       tooManyAttempts: 'Too many attempts. Please try again later.',
       endProtectedScene: 'End current scene',
       noResults: 'No matching scenes',
+      expandAllGroups: 'Expand All',
+      collapseAllGroups: 'Collapse All',
+      allGroupsExpanded: 'All groups in this scene are expanded.',
+      allGroupsCollapsed: 'All groups in this scene are collapsed.',
     },
   },
   home: {
@@ -849,6 +860,11 @@ const en: typeof zhCN = {
     batchAdded: (count: number) => `Added group references for ${count} bookmark(s).`,
     collapseGroup: 'Collapse group',
     expandGroup: 'Expand group',
+    groupPreferenceLoadFailed: 'Failed to load group expansion state. Refocus the page to retry.',
+    groupPreferenceInitializeFailed:
+      'Failed to initialize group expansion state. Refocus the page to retry.',
+    groupPreferenceSaveFailed:
+      'Failed to save group expansion state. The previous state was restored.',
   },
   settings: {
     buttonAria: 'Settings',

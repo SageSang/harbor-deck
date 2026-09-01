@@ -8,6 +8,7 @@ import { useSystemConfig } from '@/features/config/useSystemConfig'
 import { detectNetworkMode } from '@/core/network/detectNetworkMode'
 import { hasCompleteNetworkProbeConfig } from '@/config/networkProbe'
 import { useNavigationConfig } from '@/features/navigation/useNavigation'
+import { GroupExpansionProvider } from '@/features/navigation/GroupExpansionProvider'
 
 const ServiceGrid = lazy(() =>
   import('@/features/services/ServiceGrid').then(({ ServiceGrid: Grid }) => ({ default: Grid }))
@@ -20,12 +21,12 @@ export function HomePage() {
   const { data: systemConfig } = useSystemConfig()
   const { messages } = useI18n()
   const navigationQuery = useNavigationConfig({
-    enabled: systemConfig !== undefined && !hasCompleteNetworkProbeConfig(systemConfig.networkProbe),
+    enabled:
+      systemConfig !== undefined && !hasCompleteNetworkProbeConfig(systemConfig.networkProbe),
   })
   const networkProbeServices = useMemo(
     () =>
-      navigationQuery.data?.bookmarks.map((bookmark) => ({ ...bookmark, category: 'all' })) ??
-      [],
+      navigationQuery.data?.bookmarks.map((bookmark) => ({ ...bookmark, category: 'all' })) ?? [],
     [navigationQuery.data]
   )
 
@@ -47,39 +48,46 @@ export function HomePage() {
     return () => {
       cancelled = true
     }
-  }, [networkModeStrategy, networkProbeServices, setDetectedNetworkMode, systemConfig?.networkProbe])
+  }, [
+    networkModeStrategy,
+    networkProbeServices,
+    setDetectedNetworkMode,
+    systemConfig?.networkProbe,
+  ])
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-background">
-      <TopBar />
-      <main className="relative z-10 container mx-auto max-w-[92rem] px-2.5 pt-3 pb-5 sm:px-4 md:px-5 md:pt-4 md:pb-7 lg:px-6">
-        <section className="mx-auto flex w-full max-w-[46rem] flex-col items-center py-1 text-center md:py-1.5">
-          <HeroClock />
-          <div className="mt-2 w-full animate-slide-up [animation-delay:220ms] md:mt-2.5">
-            <SearchBox />
-          </div>
-        </section>
+    <GroupExpansionProvider>
+      <div className="relative min-h-screen overflow-x-hidden bg-background">
+        <TopBar />
+        <main className="relative z-10 container mx-auto max-w-[92rem] px-2.5 pt-3 pb-5 sm:px-4 md:px-5 md:pt-4 md:pb-7 lg:px-6">
+          <section className="mx-auto flex w-full max-w-[46rem] flex-col items-center py-1 text-center md:py-1.5">
+            <HeroClock />
+            <div className="mt-2 w-full animate-slide-up [animation-delay:220ms] md:mt-2.5">
+              <SearchBox />
+            </div>
+          </section>
 
-        {error && (
-          <div className="mx-auto mb-5 max-w-2xl rounded-[1.35rem] border border-red-200/80 bg-red-50/96 p-5 shadow-[0_16px_36px_rgba(220,38,38,0.08)] backdrop-blur-sm md:p-6">
-            <p className="text-lg font-semibold text-red-900">{messages.home.errorTitle}</p>
-            <p className="mt-1 text-sm leading-relaxed text-red-700">{error}</p>
-          </div>
-        )}
+          {error && (
+            <div className="mx-auto mb-5 max-w-2xl rounded-[1.35rem] border border-red-200/80 bg-red-50/96 p-5 shadow-[0_16px_36px_rgba(220,38,38,0.08)] backdrop-blur-sm md:p-6">
+              <p className="text-lg font-semibold text-red-900">{messages.home.errorTitle}</p>
+              <p className="mt-1 text-sm leading-relaxed text-red-700">{error}</p>
+            </div>
+          )}
 
-        <div className="mt-1.5 md:mt-2">
-          <Suspense
-            fallback={
-              <div
-                aria-label={messages.common.loading}
-                className="min-h-[16rem] rounded-[1.6rem] border border-border/60 bg-card/45 shadow-[0_14px_36px_rgba(52,45,39,0.04)]"
-              />
-            }
-          >
-            <ServiceGrid />
-          </Suspense>
-        </div>
-      </main>
-    </div>
+          <div className="mt-1.5 md:mt-2">
+            <Suspense
+              fallback={
+                <div
+                  aria-label={messages.common.loading}
+                  className="min-h-[16rem] rounded-[1.6rem] border border-border/60 bg-card/45 shadow-[0_14px_36px_rgba(52,45,39,0.04)]"
+                />
+              }
+            >
+              <ServiceGrid />
+            </Suspense>
+          </div>
+        </main>
+      </div>
+    </GroupExpansionProvider>
   )
 }

@@ -195,7 +195,23 @@ function createAppConfig(baseUrl: string, webdavBackup: Partial<WebdavBackupConf
         ...webdavBackup,
       },
     },
-    services: [],
+    navigation: {
+      defaultSceneId: 'default',
+      bookmarks: [],
+      scenes: [
+        {
+          id: 'default',
+          name: 'Default',
+          groups: [{ id: 'tools', name: 'Tools', bookmarkIds: [] }],
+        },
+      ],
+    },
+    uiPreferences: {
+      groupExpansion: {
+        version: 1,
+        expandedGroupKeys: ['default:tools'],
+      },
+    },
   })
 }
 
@@ -254,6 +270,7 @@ describe('webdav backup helpers', () => {
     })
 
     expect(restored).toEqual(config)
+    expect(restored.uiPreferences?.groupExpansion?.expandedGroupKeys).toEqual(['default:tools'])
   })
 
   it('aborts a WebDAV request that never responds', async () => {

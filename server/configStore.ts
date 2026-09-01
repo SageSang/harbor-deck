@@ -9,6 +9,7 @@ import {
   type AppConfig,
   type NavigationConfig,
 } from '../src/config/schema.js'
+import { cleanAppGroupExpansionPreference } from '../src/features/navigation/groupExpansion.js'
 
 const configDir = path.resolve(process.env.CONFIG_DIR ?? path.join(process.cwd(), 'config'))
 const configFilename = 'config.json'
@@ -106,7 +107,7 @@ export async function readAppConfig() {
   const filePath = await ensureAppConfigFile()
   const config = await readJsonFile(filePath, configFilename, appConfigSchema)
   storedNavigationConfigSchema.parse(config.navigation)
-  return config
+  return cleanAppGroupExpansionPreference(config)
 }
 
 export async function writeAppConfig(value: unknown) {
@@ -114,7 +115,7 @@ export async function writeAppConfig(value: unknown) {
     throw new Error('整站配置格式错误')
   }
 
-  const parsed = appConfigSchema.parse(value)
+  const parsed = cleanAppGroupExpansionPreference(appConfigSchema.parse(value))
   storedNavigationConfigSchema.parse(parsed.navigation)
 
   return withWriteLock(async () => {
@@ -138,10 +139,10 @@ export async function writeNavigationConfig(value: unknown) {
 
   return withWriteLock(async () => {
     const currentConfig = await readAppConfig()
-    const nextConfig: AppConfig = {
+    const nextConfig = cleanAppGroupExpansionPreference({
       ...currentConfig,
       navigation,
-    }
+    })
 
     const filePath = await ensureAppConfigFile()
     await writeJsonFile(filePath, nextConfig)
@@ -156,15 +157,35 @@ export async function mutateNavigationConfig<TResult>(
     const currentConfig = await readAppConfig()
     const mutationResult = mutation(currentConfig.navigation)
     const navigation = storedNavigationConfigSchema.parse(mutationResult.navigation)
-    const nextConfig: AppConfig = {
+    const nextConfig = cleanAppGroupExpansionPreference({
       ...currentConfig,
       navigation,
-    }
+    })
 
     const filePath = await ensureAppConfigFile()
     await writeJsonFile(filePath, nextConfig)
     return {
       navigation: nextConfig.navigation,
+      result: mutationResult.result,
+    }
+  })
+}
+
+export async function mutateAppConfig<TResult>(
+  mutation: (current: AppConfig) => { appConfig: unknown; result: TResult }
+) {
+  return withWriteLock(async () => {
+    const currentConfig = await readAppConfig()
+    const mutationResult = mutation(currentConfig)
+    const appConfig = cleanAppGroupExpansionPreference(
+      appConfigSchema.parse(mutationResult.appConfig)
+    )
+    storedNavigationConfigSchema.parse(appConfig.navigation)
+
+    const filePath = await ensureAppConfigFile()
+    await writeJsonFile(filePath, appConfig)
+    return {
+      appConfig,
       result: mutationResult.result,
     }
   })

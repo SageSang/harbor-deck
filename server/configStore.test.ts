@@ -60,9 +60,7 @@ describe('configStore', () => {
 
     await configStore.writeSystemConfig(nextSystem)
     await configStore.writeNavigationConfig(nextNavigation)
-    const storedConfig = JSON.parse(
-      await readFile(path.join(tempConfigDir, 'config.json'), 'utf8')
-    )
+    const storedConfig = JSON.parse(await readFile(path.join(tempConfigDir, 'config.json'), 'utf8'))
 
     expect(storedConfig.system).toEqual(nextSystem)
     expect(storedConfig.navigation).toEqual(nextNavigation)
@@ -84,6 +82,37 @@ describe('configStore', () => {
     await writeFile(path.join(tempConfigDir, 'config.json'), '   \n', 'utf8')
     const configStore = await loadConfigStore()
     expect(await configStore.readAppConfig()).toEqual(appConfigSchema.parse({}))
+  })
+
+  it('cleans duplicate and unknown preference keys when reading a stored config', async () => {
+    await writeFile(
+      path.join(tempConfigDir, 'config.json'),
+      JSON.stringify({
+        navigation: {
+          defaultSceneId: 'default',
+          bookmarks: [],
+          scenes: [
+            {
+              id: 'default',
+              name: 'Default',
+              groups: [{ id: 'tools', name: 'Tools', bookmarkIds: [] }],
+            },
+          ],
+        },
+        uiPreferences: {
+          groupExpansion: {
+            version: 1,
+            expandedGroupKeys: ['default:tools', 'missing:group', 'default:tools'],
+          },
+        },
+      }),
+      'utf8'
+    )
+    const configStore = await loadConfigStore()
+
+    expect(
+      (await configStore.readAppConfig()).uiPreferences?.groupExpansion?.expandedGroupKeys
+    ).toEqual(['default:tools'])
   })
 
   it('serializes read-modify-write navigation mutations', async () => {
@@ -122,5 +151,62 @@ describe('configStore', () => {
       'first',
       'second',
     ])
+  })
+
+  it('serializes app preference mutations and removes deleted group keys', async () => {
+    const configStore = await loadConfigStore()
+    const base = appConfigSchema.parse({
+      navigation: {
+        defaultSceneId: 'default',
+        bookmarks: [],
+        scenes: [
+          {
+            id: 'default',
+            name: 'Default',
+            groups: [
+              { id: 'first', name: 'First', bookmarkIds: [] },
+              { id: 'second', name: 'Second', bookmarkIds: [] },
+            ],
+          },
+        ],
+      },
+    })
+    await configStore.writeAppConfig(base)
+
+    await Promise.all(
+      ['default:first', 'default:second'].map((key) =>
+        configStore.mutateAppConfig((current) => ({
+          appConfig: {
+            ...current,
+            uiPreferences: {
+              groupExpansion: {
+                version: 1,
+                expandedGroupKeys: [
+                  ...(current.uiPreferences?.groupExpansion?.expandedGroupKeys ?? []),
+                  key,
+                ],
+              },
+            },
+          },
+          result: key,
+        }))
+      )
+    )
+
+    expect(
+      (await configStore.readAppConfig()).uiPreferences?.groupExpansion?.expandedGroupKeys
+    ).toEqual(['default:first', 'default:second'])
+
+    await configStore.writeNavigationConfig({
+      ...base.navigation,
+      scenes: base.navigation.scenes.map((scene) => ({
+        ...scene,
+        groups: scene.groups.filter((group) => group.id !== 'first'),
+      })),
+    })
+
+    expect(
+      (await configStore.readAppConfig()).uiPreferences?.groupExpansion?.expandedGroupKeys
+    ).toEqual(['default:second'])
   })
 })

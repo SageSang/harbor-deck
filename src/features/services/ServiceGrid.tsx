@@ -44,12 +44,8 @@ import {
   type BookmarkNavigationDirection,
   type BookmarkNavigationEntry,
 } from './bookmarkNavigation'
-import {
-  getGroupKey,
-  hasStoredCollapsedGroupKeys,
-  persistCollapsedGroupKeys,
-  readCollapsedGroupKeys,
-} from '@/features/navigation/groupPreference'
+import { isGroupCollapsedForView } from '@/features/navigation/groupExpansionState'
+import { useGroupExpansion } from '@/features/navigation/useGroupExpansion'
 import { preloadServiceIcons } from './iconRegistry'
 import { quickRecordMatchesSearch } from './quickRecordSearch'
 import { getPreferredBookmarkCopyUrl } from './bookmarkUrl'
@@ -155,20 +151,6 @@ function getCompactGroupWidth(cardCount: number, desktopCardWidth: number) {
   )
 }
 
-function isGroupCollapsedForView(
-  activeSceneId: string | null,
-  groupId: string,
-  collapsedGroupKeys: ReadonlySet<string>,
-  isSearchActive: boolean
-) {
-  return Boolean(
-    !isSearchActive &&
-    activeSceneId &&
-    groupId &&
-    collapsedGroupKeys.has(getGroupKey(activeSceneId, groupId))
-  )
-}
-
 function isEditableTarget(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&
@@ -213,6 +195,12 @@ export function ServiceGrid() {
   const activeSceneId = useAppStore((state) => state.activeSceneId)
   const sceneTokens = useAppStore((state) => state.sceneTokens)
   const saveMutation = useSaveNavigationConfig()
+  const {
+    expandedGroupKeys,
+    isReady: isGroupExpansionReady,
+    isGroupPending,
+    setGroupExpanded,
+  } = useGroupExpansion()
   const { showToast, confirm } = useFeedback()
   const { messages } = useI18n()
   const [draggingSlugs, setDraggingSlugs] = useState<string[]>([])
@@ -225,12 +213,6 @@ export function ServiceGrid() {
   const [bookmarkDialog, setBookmarkDialog] = useState<BookmarkDialogState | null>(null)
   const [quickRecordDialog, setQuickRecordDialog] = useState<QuickRecordDialogState | null>(null)
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(
-    () => new Set(readCollapsedGroupKeys())
-  )
-  const [collapsedGroupPreferenceInitialized, setCollapsedGroupPreferenceInitialized] = useState(
-    hasStoredCollapsedGroupKeys
-  )
   const [renamingGroup, setRenamingGroup] = useState<GroupRenameState | null>(null)
   const [gridWidth, setGridWidth] = useState(0)
   const [desktopColumnCount, setDesktopColumnCount] = useState(() => {
@@ -321,7 +303,7 @@ export function ServiceGrid() {
     () =>
       renderGroups.flatMap((group, groupIndex) => {
         if (
-          isGroupCollapsedForView(activeSceneId, group.groupId, collapsedGroupKeys, isSearchActive)
+          isGroupCollapsedForView(activeSceneId, group.groupId, expandedGroupKeys, isSearchActive)
         ) {
           return []
         }
@@ -332,7 +314,7 @@ export function ServiceGrid() {
           serviceIndex,
         }))
       }),
-    [activeSceneId, collapsedGroupKeys, isSearchActive, renderGroups]
+    [activeSceneId, expandedGroupKeys, isSearchActive, renderGroups]
   )
   const firstVisibleBookmarkSlug = visibleBookmarkEntries[0]?.slug ?? null
   const lastVisibleBookmarkSlug =
@@ -346,7 +328,7 @@ export function ServiceGrid() {
               isGroupCollapsedForView(
                 activeSceneId,
                 group.groupId,
-                collapsedGroupKeys,
+                expandedGroupKeys,
                 isSearchActive
               )
             ) {
@@ -356,7 +338,7 @@ export function ServiceGrid() {
           })
         )
       ),
-    [activeSceneId, collapsedGroupKeys, isSearchActive, renderGroups]
+    [activeSceneId, expandedGroupKeys, isSearchActive, renderGroups]
   )
 
   useEffect(() => {
@@ -452,30 +434,6 @@ export function ServiceGrid() {
     document.addEventListener('keydown', handleKeyDown, true)
     return () => document.removeEventListener('keydown', handleKeyDown, true)
   }, [firstVisibleBookmarkSlug, lastVisibleBookmarkSlug])
-
-  useEffect(() => {
-    if (collapsedGroupPreferenceInitialized || !activeSceneId || !navigationQuery.data) {
-      return
-    }
-
-    const scene = findScene(navigationQuery.data, activeSceneId)
-    if (!scene) {
-      return
-    }
-
-    setCollapsedGroupKeys(
-      new Set(scene.groups.map((group) => getGroupKey(scene.id, group.id)))
-    )
-    setCollapsedGroupPreferenceInitialized(true)
-  }, [activeSceneId, collapsedGroupPreferenceInitialized, navigationQuery.data])
-
-  useEffect(() => {
-    if (!collapsedGroupPreferenceInitialized) {
-      return
-    }
-
-    persistCollapsedGroupKeys(collapsedGroupKeys)
-  }, [collapsedGroupKeys, collapsedGroupPreferenceInitialized])
 
   useEffect(() => {
     if (selectionMode && selectedSlugs.size === 0) {
@@ -637,17 +595,11 @@ export function ServiceGrid() {
     // Search results temporarily expand their matching groups. Keep the
     // persisted preference untouched while searching so clearing the query
     // restores exactly the state the user had before searching.
-    if (!activeSceneId || isSearchActive) return
-    const key = getGroupKey(activeSceneId, groupId)
-    setCollapsedGroupKeys((current) => {
-      const next = new Set(current)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
-      }
-      return next
-    })
+    if (!activeSceneId || isSearchActive || isGroupPending(activeSceneId, groupId)) {
+      return
+    }
+    const isCollapsed = isGroupCollapsedForView(activeSceneId, groupId, expandedGroupKeys, false)
+    setGroupExpanded(activeSceneId, groupId, isCollapsed)
   }
 
   function handleGroupDragOver(event: DragEvent<HTMLElement>, targetGroupIndex: number) {
@@ -1030,7 +982,7 @@ export function ServiceGrid() {
     }
   }
 
-  if (isLoading) {
+  if (isLoading || !isGroupExpansionReady) {
     return (
       <div className="flex min-h-[420px] items-center justify-center">
         <div className="rounded-[1.75rem] border border-border/75 bg-card/72 px-8 py-6 text-center shadow-[0_20px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:bg-card/70 dark:shadow-[0_24px_56px_rgba(0,0,0,0.28)]">
@@ -1111,7 +1063,7 @@ export function ServiceGrid() {
           const isCollapsed = isGroupCollapsedForView(
             activeSceneId,
             group.groupId,
-            collapsedGroupKeys,
+            expandedGroupKeys,
             isSearchActive
           )
           const isGroupDropTarget =

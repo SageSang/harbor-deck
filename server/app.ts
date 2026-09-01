@@ -8,6 +8,7 @@ import { ZodError, z } from 'zod'
 import {
   appConfigSchema,
   storedNavigationConfigSchema,
+  type AppConfig,
   type NavigationConfig,
   type NavigationSceneConfig,
 } from '../src/config/schema.js'
@@ -15,6 +16,7 @@ import {
   readAppConfig,
   readNavigationConfig,
   readSystemConfig,
+  mutateAppConfig,
   mutateNavigationConfig,
   writeAppConfig,
   writeNavigationConfig,
@@ -35,6 +37,10 @@ import {
   searchNavigationBookmarks,
 } from './integrationApi.js'
 import { normalizeAppSkin } from '../shared/theme.js'
+import {
+  createGroupExpansionPreference,
+  getGroupKey,
+} from '../src/features/navigation/groupExpansion.js'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -84,11 +90,13 @@ function sanitizeSystemConfig(system: Awaited<ReturnType<typeof readSystemConfig
 }
 
 function sanitizeAppConfig(config: Awaited<ReturnType<typeof readAppConfig>>) {
-  return {
+  const sanitized = {
     ...config,
     system: sanitizeSystemConfig(config.system),
     navigation: sanitizeNavigationConfig(config.navigation),
   }
+  delete sanitized.uiPreferences
+  return sanitized
 }
 
 function sanitizeNavigationConfig(navigation: Awaited<ReturnType<typeof readNavigationConfig>>) {
@@ -183,9 +191,15 @@ function mergeAppSecrets(
   if (!isRecord(withAuth)) {
     return withAuth
   }
+  const withPreferences = { ...withAuth }
+  if (currentConfig.uiPreferences) {
+    withPreferences.uiPreferences = currentConfig.uiPreferences
+  } else {
+    delete withPreferences.uiPreferences
+  }
   return {
-    ...withAuth,
-    navigation: mergeNavigationPasswords(withAuth.navigation, currentConfig.navigation),
+    ...withPreferences,
+    navigation: mergeNavigationPasswords(withPreferences.navigation, currentConfig.navigation),
   }
 }
 
@@ -274,6 +288,14 @@ const sceneUnlockBodySchema = z.object({ password: z.string().min(1).max(128) })
 const scenePasswordBodySchema = z.object({
   password: z.string().min(6).max(128).nullable(),
 })
+const groupIdParamsSchema = z.object({
+  sceneId: z.string().trim().min(1),
+  groupId: z.string().trim().min(1),
+})
+const groupExpandedBodySchema = z.object({ expanded: z.boolean() })
+const groupExpansionInitializeBodySchema = z.object({
+  expandedGroupKeys: z.array(z.string().trim().min(1)).max(10_000),
+})
 const integrationSearchQuerySchema = z.object({
   q: z.string().trim().min(1).max(200),
   sceneId: z.string().trim().min(1).optional(),
@@ -281,6 +303,15 @@ const integrationSearchQuerySchema = z.object({
 
 function isIntegrationRequestAuthorized(request: FastifyRequest) {
   return isIntegrationTokenValid(readIntegrationTokenHeader(request.headers))
+}
+
+function getGroupExpansionResponse(config: AppConfig) {
+  const preference = config.uiPreferences?.groupExpansion
+  return {
+    initialized: Boolean(preference),
+    version: 1 as const,
+    expandedGroupKeys: preference?.expandedGroupKeys ?? [],
+  }
 }
 
 export async function buildServer() {
@@ -467,6 +498,120 @@ export async function buildServer() {
     authService.handleUpdateCredentials(request, reply)
   )
 
+  app.get('/api/preferences/navigation/groups', async (request, reply) => {
+    if (!(await authService.requireAuthenticated(request, reply))) {
+      return reply
+    }
+
+    return getGroupExpansionResponse(await readAppConfig())
+  })
+
+  app.post('/api/preferences/navigation/groups/initialize', async (request, reply) => {
+    if (!(await authService.requireAuthenticated(request, reply))) {
+      return reply
+    }
+
+    const { expandedGroupKeys } = groupExpansionInitializeBodySchema.parse(request.body)
+    const { appConfig: savedConfig } = await mutateAppConfig((current) => {
+      if (current.uiPreferences?.groupExpansion) {
+        return { appConfig: current, result: false }
+      }
+
+      return {
+        appConfig: {
+          ...current,
+          uiPreferences: {
+            ...current.uiPreferences,
+            groupExpansion: createGroupExpansionPreference(current.navigation, expandedGroupKeys),
+          },
+        },
+        result: true,
+      }
+    })
+
+    return getGroupExpansionResponse(savedConfig)
+  })
+
+  app.put('/api/preferences/navigation/scenes/:sceneId/groups/:groupId', async (request, reply) => {
+    if (!(await authService.requireAuthenticated(request, reply))) {
+      return reply
+    }
+
+    const { sceneId, groupId } = groupIdParamsSchema.parse(request.params)
+    const { expanded } = groupExpandedBodySchema.parse(request.body)
+    const { appConfig: savedConfig, result: found } = await mutateAppConfig((current) => {
+      const scene = current.navigation.scenes.find((item) => item.id === sceneId)
+      if (!scene?.groups.some((group) => group.id === groupId)) {
+        return { appConfig: current, result: false }
+      }
+
+      const key = getGroupKey(sceneId, groupId)
+      const expandedKeys = new Set(current.uiPreferences?.groupExpansion?.expandedGroupKeys ?? [])
+      if (expanded) {
+        expandedKeys.add(key)
+      } else {
+        expandedKeys.delete(key)
+      }
+
+      return {
+        appConfig: {
+          ...current,
+          uiPreferences: {
+            ...current.uiPreferences,
+            groupExpansion: createGroupExpansionPreference(current.navigation, expandedKeys),
+          },
+        },
+        result: true,
+      }
+    })
+
+    if (!found) {
+      return reply.code(404).send('场景或分组不存在')
+    }
+    return getGroupExpansionResponse(savedConfig)
+  })
+
+  app.put('/api/preferences/navigation/scenes/:sceneId/groups', async (request, reply) => {
+    if (!(await authService.requireAuthenticated(request, reply))) {
+      return reply
+    }
+
+    const { sceneId } = sceneIdParamsSchema.parse(request.params)
+    const { expanded } = groupExpandedBodySchema.parse(request.body)
+    const { appConfig: savedConfig, result: found } = await mutateAppConfig((current) => {
+      const scene = current.navigation.scenes.find((item) => item.id === sceneId)
+      if (!scene) {
+        return { appConfig: current, result: false }
+      }
+
+      const expandedKeys = new Set(current.uiPreferences?.groupExpansion?.expandedGroupKeys ?? [])
+      scene.groups.forEach((group) => {
+        const key = getGroupKey(scene.id, group.id)
+        if (expanded) {
+          expandedKeys.add(key)
+        } else {
+          expandedKeys.delete(key)
+        }
+      })
+
+      return {
+        appConfig: {
+          ...current,
+          uiPreferences: {
+            ...current.uiPreferences,
+            groupExpansion: createGroupExpansionPreference(current.navigation, expandedKeys),
+          },
+        },
+        result: true,
+      }
+    })
+
+    if (!found) {
+      return reply.code(404).send('场景不存在')
+    }
+    return getGroupExpansionResponse(savedConfig)
+  })
+
   app.get('/api/config/app', async (request, reply) => {
     if (!(await authService.requireAuthenticated(request, reply))) {
       return reply
@@ -481,22 +626,34 @@ export async function buildServer() {
     }
 
     try {
-      const currentConfig = await readAppConfig()
-      const nextConfig = mergeAppSecrets(request.body, currentConfig)
-      const parsedNextConfig = appConfigSchema.parse(nextConfig)
-      const nextNavigation = storedNavigationConfigSchema.parse(parsedNextConfig.navigation)
-      const unauthorizedScene = findUnauthorizedProtectedScene(
-        request,
-        currentConfig.navigation,
-        nextNavigation
-      )
-      if (unauthorizedScene) {
-        return reply.code(403).send(`请先解锁场景“${unauthorizedScene.name}”`)
-      }
-      const savedConfig = await writeAppConfig({
-        ...parsedNextConfig,
-        navigation: nextNavigation,
+      const { appConfig: savedConfig, result } = await mutateAppConfig<{
+        unauthorizedSceneName: string | null
+      }>((currentConfig) => {
+        const nextConfig = mergeAppSecrets(request.body, currentConfig)
+        const parsedNextConfig = appConfigSchema.parse(nextConfig)
+        const nextNavigation = storedNavigationConfigSchema.parse(parsedNextConfig.navigation)
+        const unauthorizedScene = findUnauthorizedProtectedScene(
+          request,
+          currentConfig.navigation,
+          nextNavigation
+        )
+
+        return unauthorizedScene
+          ? {
+              appConfig: currentConfig,
+              result: { unauthorizedSceneName: unauthorizedScene.name },
+            }
+          : {
+              appConfig: {
+                ...parsedNextConfig,
+                navigation: nextNavigation,
+              },
+              result: { unauthorizedSceneName: null },
+            }
       })
+      if (result.unauthorizedSceneName) {
+        return reply.code(403).send(`请先解锁场景“${result.unauthorizedSceneName}”`)
+      }
       await webdavBackupManager.reloadSchedule()
       return sanitizeAppConfig(savedConfig)
     } catch (error) {

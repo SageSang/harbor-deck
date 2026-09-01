@@ -31,6 +31,7 @@ export function parseAppConfig(input: unknown): AppConfig {
   return {
     system: systemConfigSchema.parse(validated.system),
     navigation: parseNavigationConfig(validated.navigation),
+    ...(validated.uiPreferences ? { uiPreferences: validated.uiPreferences } : {}),
   }
 }
 
@@ -62,6 +63,21 @@ export function cloneAppConfig(config: AppConfig): AppConfig {
       customSearchEngines: config.system.customSearchEngines.map((engine) => ({ ...engine })),
     },
     navigation: cloneNavigationConfig(config.navigation),
+    ...(config.uiPreferences
+      ? {
+          uiPreferences: {
+            ...config.uiPreferences,
+            ...(config.uiPreferences.groupExpansion
+              ? {
+                  groupExpansion: {
+                    ...config.uiPreferences.groupExpansion,
+                    expandedGroupKeys: [...config.uiPreferences.groupExpansion.expandedGroupKeys],
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
   }
 }
 

@@ -16,6 +16,7 @@ import {
   type LoginPayload,
   type UpdateCredentialsPayload,
 } from './api'
+import { groupExpansionQueryKey } from '@/features/navigation/groupExpansionApi'
 
 function clearProtectedQueries(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.removeQueries({ queryKey: appConfigQueryKey })
@@ -23,6 +24,7 @@ function clearProtectedQueries(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.removeQueries({ queryKey: navigationConfigQueryKey })
   queryClient.removeQueries({ queryKey: sceneListQueryKey })
   queryClient.removeQueries({ queryKey: ['navigation', 'services'] })
+  queryClient.removeQueries({ queryKey: groupExpansionQueryKey })
 }
 
 export function useAuthStatus() {

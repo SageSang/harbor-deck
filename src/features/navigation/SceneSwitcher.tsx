@@ -1,18 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Layers3, Search } from 'lucide-react'
+import { ChevronsDownUp, ChevronsUpDown, Layers3, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ModalShell } from '@/components/ModalShell'
 import { focusSearchInputSoon } from '@/components/searchFocus'
 import { ApiError } from '@/features/config/api'
-import { useActiveScene, useLockScene, useUnlockScene } from '@/features/navigation/useNavigation'
+import {
+  useActiveScene,
+  useLockScene,
+  useNavigationConfig,
+  useUnlockScene,
+} from '@/features/navigation/useNavigation'
+import { useGroupExpansion } from '@/features/navigation/useGroupExpansion'
+import { useFeedback } from '@/features/feedback/useFeedback'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 
 export function SceneSwitcher() {
   const { messages } = useI18n()
   const { sceneListQuery, activeSceneId, activeScene } = useActiveScene()
+  const navigationQuery = useNavigationConfig()
+  const {
+    isReady: isGroupExpansionReady,
+    isScenePending,
+    setSceneGroupsExpanded,
+  } = useGroupExpansion()
+  const { showToast } = useFeedback()
   const setActiveScene = useAppStore((state) => state.setActiveScene)
+  const searchKeyword = useAppStore((state) => state.searchKeyword)
   const clearSceneToken = useAppStore((state) => state.clearSceneToken)
   const lastRegularSceneId = useAppStore((state) => state.lastRegularSceneId)
   const sceneTokens = useAppStore((state) => state.sceneTokens)
@@ -31,6 +46,33 @@ export function SceneSwitcher() {
     return keyword ? scenes.filter((scene) => scene.name.toLowerCase().includes(keyword)) : scenes
   }, [query, scenes])
   const pendingScene = scenes.find((scene) => scene.id === pendingSceneId)
+  const activeNavigationScene = navigationQuery.data?.scenes.find(
+    (scene) => scene.id === activeSceneId
+  )
+  const isSearchActive = searchKeyword.trim().length > 0
+  const isBulkActionDisabled =
+    !activeSceneId ||
+    !isGroupExpansionReady ||
+    isSearchActive ||
+    !activeNavigationScene?.groups.length ||
+    isScenePending(activeSceneId)
+
+  async function updateAllGroups(expanded: boolean) {
+    if (!activeSceneId || isBulkActionDisabled) {
+      return
+    }
+    const saved = await setSceneGroupsExpanded(activeSceneId, expanded)
+    if (!saved) {
+      return
+    }
+    showToast({
+      type: 'success',
+      message: expanded
+        ? messages.topBar.scene.allGroupsExpanded
+        : messages.topBar.scene.allGroupsCollapsed,
+    })
+    setOpen(false)
+  }
 
   const chooseScene = useCallback(
     (sceneId: string) => {
@@ -210,6 +252,26 @@ export function SceneSwitcher() {
                   {messages.topBar.scene.endProtectedScene}
                 </button>
               ) : null}
+              <div className="mt-2 grid grid-cols-2 gap-1 border-t border-border/70 pt-2">
+                <button
+                  type="button"
+                  disabled={isBulkActionDisabled}
+                  onClick={() => void updateAllGroups(true)}
+                  className="flex min-h-10 items-center justify-center gap-2 rounded-lg px-2 text-xs font-medium text-muted-foreground transition hover:bg-accent/70 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <ChevronsUpDown className="h-4 w-4" aria-hidden="true" />
+                  <span>{messages.topBar.scene.expandAllGroups}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isBulkActionDisabled}
+                  onClick={() => void updateAllGroups(false)}
+                  className="flex min-h-10 items-center justify-center gap-2 rounded-lg px-2 text-xs font-medium text-muted-foreground transition hover:bg-accent/70 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <ChevronsDownUp className="h-4 w-4" aria-hidden="true" />
+                  <span>{messages.topBar.scene.collapseAllGroups}</span>
+                </button>
+              </div>
             </div>
           </>
         ) : null}
