@@ -21,6 +21,7 @@ HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家
 - 搜索框支持 Google 和自定义搜索引擎。无论本地是否匹配到书签，按 Enter 都会执行搜索；也可以直接点击匹配到的书签。
 - 场景可以单独设置密码，解锁状态只保留在当前浏览器会话中。
 - 提供带 Token 的搜索接口，方便接入 uTools 等快捷工具；有密码的场景永远不会被接口返回。
+- 提供独立管理 Token 的书签管理 API，供 AI 读取并整理全部场景中的分组、书签、顺序和快速记录。
 - 可选的 Chrome/Chromium 扩展：新标签页打开导航首页，并把当前网页添加到一个或多个场景分组。
 - 支持通过 WebDAV 备份、恢复和保留多个配置版本。
 
@@ -55,7 +56,7 @@ HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.13
+    image: ghcr.io/sagesang/harbor-deck:1.4.17
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -67,6 +68,8 @@ services:
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
       HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
+      # 留空时书签管理 API 关闭；启用时直接填写至少 32 位随机 Token。
+      HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN: ''
       HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
     volumes:
       - ./config:/app/config
@@ -93,7 +96,8 @@ docker run -d \
   -v ./config:/app/config \
   -e TZ=Asia/Shanghai \
   -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
-  ghcr.io/sagesang/harbor-deck:1.4.13
+  -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
+  ghcr.io/sagesang/harbor-deck:1.4.17
 ```
 
 HTTPS 可以支持。应用容器内部监听 HTTP，可使用任意反向代理（包括群晖反向代理、Caddy 或 Nginx Proxy Manager）终止 TLS，再把 HTTPS 域名转发到宿主机 `127.0.0.1:8080`。默认只信任回环、链路本地和私有网络代理；代理不在这些网段时，用 `HARBORDECK_TRUST_PROXY` 明确填写其 IP 或 CIDR。只有确实需要绕过反向代理从局域网直连时，才把端口绑定改回 `8080:80`。
@@ -130,6 +134,12 @@ curl \
 
 - `GET /api/integrations/bookmarks/scenes`：只列出可以接收书签的场景及分组。
 - `POST /api/integrations/bookmarks`：请求体为 `{ name, primaryUrl, secondaryUrl?, note?, placements: [{ sceneId, groupId }] }`，可一次添加到多个场景，每个场景选择一个分组。
+
+## AI 书签管理接口
+
+需要让 AI 或自动化脚本整理全部书签时，在部署 YAML 中直接填写独立的 `HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN`，请求使用 `X-HarborDeck-Management-Token`。这个 Token 可以绕过管理员登录和场景密码，读取及修改受保护场景内的全部书签隐私数据；它不能管理场景本身、密码、WebDAV、备份或系统设置。
+
+管理接口基础路径为 `/api/management/v1`。所有写入都必须携带上次查询得到的 `If-Match` revision，并支持 `X-HarborDeck-Dry-Run: true` 预演。完整端点、请求体、响应、错误码、curl 示例和安全边界见 [书签管理 API 技术文档](docs/bookmark-management-api.md)，机器可读定义见 [OpenAPI 3.1](docs/bookmark-management-openapi.yaml)。
 
 ## 浏览器扩展
 

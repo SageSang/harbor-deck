@@ -246,7 +246,7 @@ describe('auth module', () => {
     const saveAppResponse = await server.inject({
       method: 'PUT',
       url: '/api/config/app',
-      headers: { cookie },
+      headers: { cookie, 'if-match': String(appResponse.headers.etag) },
       payload: {
         ...publicApp,
         system: {
@@ -298,7 +298,7 @@ describe('auth module', () => {
     const saveResponse = await server.inject({
       method: 'PUT',
       url: '/api/config/navigation',
-      headers: { cookie },
+      headers: { cookie, 'if-match': String(navigationResponse.headers.etag) },
       payload: {
         ...navigation,
         scenes: [
@@ -317,7 +317,7 @@ describe('auth module', () => {
     const passwordResponse = await server.inject({
       method: 'PUT',
       url: '/api/config/navigation/scenes/work/password',
-      headers: { cookie },
+      headers: { cookie, 'if-match': String(saveResponse.headers.etag) },
       payload: { password: 'work-secret' },
     })
     expect(passwordResponse.statusCode).toBe(200)
@@ -336,7 +336,7 @@ describe('auth module', () => {
     const unauthorizedConfigSave = await server.inject({
       method: 'PUT',
       url: '/api/config/navigation',
-      headers: { cookie },
+      headers: { cookie, 'if-match': String(passwordResponse.headers.etag) },
       payload: {
         ...protectedConfig,
         scenes: protectedConfig.scenes.map((scene) =>
@@ -349,7 +349,7 @@ describe('auth module', () => {
     const unauthorizedPasswordChange = await server.inject({
       method: 'PUT',
       url: '/api/config/navigation/scenes/work/password',
-      headers: { cookie },
+      headers: { cookie, 'if-match': String(passwordResponse.headers.etag) },
       payload: { password: null },
     })
     expect(unauthorizedPasswordChange.statusCode).toBe(403)
@@ -387,7 +387,11 @@ describe('auth module', () => {
     const saveAfterUnlockResponse = await server.inject({
       method: 'PUT',
       url: '/api/config/navigation',
-      headers: { cookie, 'x-scene-tokens': JSON.stringify({ work: token }) },
+      headers: {
+        cookie,
+        'if-match': String(publicConfigResponse.headers.etag),
+        'x-scene-tokens': JSON.stringify({ work: token }),
+      },
       payload: {
         ...publicConfig,
         scenes: publicConfig.scenes.map((scene) =>

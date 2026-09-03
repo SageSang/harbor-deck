@@ -1,6 +1,6 @@
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.16
+    image: ghcr.io/sagesang/harbor-deck:1.4.17
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -12,6 +12,8 @@ services:
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
       HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
+      # AI 书签管理接口。留空时接口关闭；启用时请直接填写至少 32 位随机 Token。
+      HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN: ''
       HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
     volumes:
       - /volume1/docker/harbor-deck/config:/app/config

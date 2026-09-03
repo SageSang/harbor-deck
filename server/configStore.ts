@@ -171,6 +171,21 @@ export async function mutateNavigationConfig<TResult>(
   })
 }
 
+export async function previewNavigationConfig<TResult>(
+  mutation: (current: NavigationConfig) => { navigation: unknown; result: TResult }
+) {
+  return withWriteLock(async () => {
+    const currentConfig = await readAppConfig()
+    const mutationResult = mutation(currentConfig.navigation)
+    const navigation = storedNavigationConfigSchema.parse(mutationResult.navigation)
+
+    return {
+      navigation,
+      result: mutationResult.result,
+    }
+  })
+}
+
 export async function mutateAppConfig<TResult>(
   mutation: (current: AppConfig) => { appConfig: unknown; result: TResult }
 ) {

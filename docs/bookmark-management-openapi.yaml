@@ -1,0 +1,1181 @@
+openapi: 3.1.0
+info:
+  title: HarborDeck Bookmark Management API
+  version: 1.0.0
+  description: >-
+    AI-oriented API for managing HarborDeck groups, bookmarks, placements,
+    ordering, and quick records. The management token can access protected
+    scenes but cannot manage scenes, passwords, WebDAV, backups, or system settings.
+servers:
+  - url: /
+security:
+  - managementToken: []
+tags:
+  - name: Status
+  - name: Groups
+  - name: Bookmarks
+  - name: Placements
+  - name: Quick records
+  - name: Icons
+
+paths:
+  /api/management/v1/status:
+    get:
+      tags: [Status]
+      operationId: getManagementStatus
+      summary: Validate the token and return counts and the current revision
+      responses:
+        '200':
+          description: Management API status
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Disabled'
+
+  /api/management/v1/state:
+    get:
+      tags: [Status]
+      operationId: getManagementState
+      summary: Return all bookmark-management state, including protected scenes
+      responses:
+        '200':
+          description: Complete managed state
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Disabled'
+
+  /api/management/v1/search:
+    get:
+      tags: [Bookmarks, Quick records]
+      operationId: searchManagedItems
+      summary: Search bookmarks and quick records, including protected scenes
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+        - name: sceneId
+          in: query
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/Slug'
+              - const: all
+            default: all
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [bookmark, quick-record, all]
+            default: all
+      responses:
+        '200':
+          description: Matching items
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/icons:
+    get:
+      tags: [Icons]
+      operationId: listManagedIcons
+      summary: Search supported icon IDs
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+            default: ''
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        '200':
+          description: Icon IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Icon'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/scenes/{sceneId}/groups:
+    post:
+      tags: [Groups]
+      operationId: createManagedGroup
+      summary: Create a group in an existing scene
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupCreate'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '200':
+          $ref: '#/components/responses/DryRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/scenes/{sceneId}/groups/order:
+    put:
+      tags: [Groups]
+      operationId: reorderManagedGroups
+      summary: Replace the complete group order of a scene
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [groupIds]
+              properties:
+                groupIds:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Slug'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/scenes/{sceneId}/groups/{groupId}:
+    patch:
+      tags: [Groups]
+      operationId: renameManagedGroup
+      summary: Rename a group without changing its ID
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  $ref: '#/components/schemas/Name'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Groups]
+      operationId: deleteManagedGroup
+      summary: Delete a group with an explicit bookmark disposition
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+        - name: bookmarkDisposition
+          in: query
+          schema:
+            type: string
+            enum: [reject, remove, move]
+            default: reject
+        - name: targetGroupId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Slug'
+        - name: targetPosition
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/bookmarks:
+    post:
+      tags: [Bookmarks]
+      operationId: createManagedBookmark
+      summary: Create a bookmark and at least one placement
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookmarkCreate'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '200':
+          $ref: '#/components/responses/DryRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/bookmarks/{slug}:
+    get:
+      tags: [Bookmarks]
+      operationId: getManagedBookmark
+      summary: Return one bookmark and all placements
+      parameters:
+        - $ref: '#/components/parameters/BookmarkSlug'
+      responses:
+        '200':
+          description: Bookmark details
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [revision, bookmark]
+                properties:
+                  revision:
+                    $ref: '#/components/schemas/Revision'
+                  bookmark:
+                    $ref: '#/components/schemas/ManagedBookmark'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [Bookmarks]
+      operationId: updateManagedBookmark
+      summary: Partially update a bookmark; null clears optional fields
+      parameters:
+        - $ref: '#/components/parameters/BookmarkSlug'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookmarkPatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Bookmarks]
+      operationId: deleteManagedBookmark
+      summary: Delete a bookmark definition and all placements
+      parameters:
+        - $ref: '#/components/parameters/BookmarkSlug'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/bookmarks/{slug}/duplicate:
+    post:
+      tags: [Bookmarks]
+      operationId: duplicateManagedBookmark
+      summary: Duplicate a bookmark, by default immediately after each source placement
+      parameters:
+        - $ref: '#/components/parameters/BookmarkSlug'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookmarkDuplicate'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '200':
+          $ref: '#/components/responses/DryRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/scenes/{sceneId}/bookmarks/{slug}/placement:
+    put:
+      tags: [Placements]
+      operationId: setManagedBookmarkPlacement
+      summary: Add, move, or reorder one bookmark in one scene
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/BookmarkSlug'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [groupId]
+              properties:
+                groupId:
+                  $ref: '#/components/schemas/Slug'
+                position:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Placements]
+      operationId: removeManagedBookmarkPlacement
+      summary: Remove one bookmark from one scene
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/BookmarkSlug'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+        - name: orphanPolicy
+          in: query
+          schema:
+            type: string
+            enum: [reject, delete]
+            default: reject
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/scenes/{sceneId}/bookmarks/batch-move:
+    post:
+      tags: [Placements]
+      operationId: batchMoveManagedBookmarks
+      summary: Atomically move bookmarks while preserving their prior relative order
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchMove'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/bookmarks/batch-place:
+    post:
+      tags: [Placements]
+      operationId: batchPlaceManagedBookmarks
+      summary: Atomically place bookmarks into one or more scenes
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchPlace'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/scenes/{sceneId}/bookmarks/batch-remove:
+    post:
+      tags: [Placements]
+      operationId: batchRemoveManagedBookmarks
+      summary: Atomically remove bookmarks from one scene
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchRemove'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/scenes/{sceneId}/groups/{groupId}/bookmarks/order:
+    put:
+      tags: [Placements]
+      operationId: reorderManagedBookmarks
+      summary: Replace the complete bookmark order of a group
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [bookmarkIds]
+              properties:
+                bookmarkIds:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Slug'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/scenes/{sceneId}/quick-records:
+    post:
+      tags: [Quick records]
+      operationId: createManagedQuickRecord
+      summary: Create a quick record in a scene
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickRecordCreate'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '200':
+          $ref: '#/components/responses/DryRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/scenes/{sceneId}/quick-records/{recordId}:
+    patch:
+      tags: [Quick records]
+      operationId: updateManagedQuickRecord
+      summary: Partially update a quick record
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickRecordPatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Quick records]
+      operationId: deleteManagedQuickRecord
+      summary: Delete a quick record
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/scenes/{sceneId}/quick-records/{recordId}/promote:
+    post:
+      tags: [Quick records, Bookmarks]
+      operationId: promoteManagedQuickRecord
+      summary: Atomically promote a quick record to a new or matching bookmark
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickRecordPromote'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/icons/fill-missing:
+    post:
+      tags: [Icons]
+      operationId: fillMissingManagedIcons
+      summary: Fill missing bookmark and quick-record icons
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                sceneIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    $ref: '#/components/schemas/Slug'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    managementToken:
+      type: apiKey
+      in: header
+      name: X-HarborDeck-Management-Token
+
+  headers:
+    ETag:
+      description: Quoted current navigation revision for a subsequent If-Match header
+      schema:
+        type: string
+        pattern: '^"sha256:[a-f0-9]{64}"$'
+
+  parameters:
+    SceneId:
+      name: sceneId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Slug'
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Slug'
+    BookmarkSlug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Slug'
+    RecordId:
+      name: recordId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Quoted or unquoted revision obtained from the latest state read
+      schema:
+        type: string
+        examples:
+          - '"sha256:4e9b000000000000000000000000000000000000000000000000000000000000"'
+    DryRun:
+      name: X-HarborDeck-Dry-Run
+      in: header
+      required: false
+      schema:
+        type: string
+        enum: ['true']
+
+  responses:
+    Mutation:
+      description: Mutation committed, or fully validated without committing when dry-run is true
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/MutationResponse'
+              - $ref: '#/components/schemas/DryRunResponse'
+    Created:
+      description: Resource created and mutation committed
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MutationResponse'
+    DryRun:
+      description: Creation fully validated but not committed
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/DryRunResponse'
+    Error:
+      description: Request rejected; inspect error.code
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Management token missing or incorrect
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Disabled:
+      description: Management token missing, empty, or shorter than 32 characters in the server environment
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    Slug:
+      type: string
+      pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+    Name:
+      type: string
+      minLength: 1
+      maxLength: 200
+    HttpUrl:
+      type: string
+      format: uri
+      pattern: '^https?://'
+    Revision:
+      type: string
+      pattern: '^sha256:[a-f0-9]{64}$'
+    Position:
+      type: integer
+      minimum: 0
+    NullableNote:
+      type: [string, 'null']
+      maxLength: 5000
+    NullableIcon:
+      type: [string, 'null']
+      minLength: 1
+    NullableHttpUrl:
+      oneOf:
+        - $ref: '#/components/schemas/HttpUrl'
+        - type: 'null'
+
+    BookmarkPlacement:
+      type: object
+      additionalProperties: false
+      required: [sceneId, groupId]
+      properties:
+        sceneId:
+          $ref: '#/components/schemas/Slug'
+        groupId:
+          $ref: '#/components/schemas/Slug'
+        position:
+          $ref: '#/components/schemas/Position'
+    StoredPlacement:
+      allOf:
+        - $ref: '#/components/schemas/BookmarkPlacement'
+        - type: object
+          required: [position]
+
+    ManagedBookmark:
+      type: object
+      additionalProperties: false
+      required: [slug, name, primaryUrl, placements]
+      properties:
+        slug:
+          $ref: '#/components/schemas/Slug'
+        name:
+          $ref: '#/components/schemas/Name'
+        note:
+          type: string
+          maxLength: 5000
+        icon:
+          type: string
+          minLength: 1
+        primaryUrl:
+          $ref: '#/components/schemas/HttpUrl'
+        secondaryUrl:
+          $ref: '#/components/schemas/HttpUrl'
+        probes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/HttpUrl'
+        forceNewTab:
+          type: boolean
+        type:
+          const: bookmark
+        placements:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoredPlacement'
+
+    ManagedGroup:
+      type: object
+      additionalProperties: false
+      required: [id, name, position, bookmarkIds]
+      properties:
+        id:
+          $ref: '#/components/schemas/Slug'
+        name:
+          $ref: '#/components/schemas/Name'
+        position:
+          $ref: '#/components/schemas/Position'
+        bookmarkIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Slug'
+
+    ManagedQuickRecord:
+      type: object
+      additionalProperties: false
+      required: [id, name, primaryUrl, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          $ref: '#/components/schemas/Name'
+        note:
+          type: string
+          maxLength: 5000
+        icon:
+          type: string
+        primaryUrl:
+          $ref: '#/components/schemas/HttpUrl'
+        secondaryUrl:
+          $ref: '#/components/schemas/HttpUrl'
+        createdAt:
+          type: integer
+          minimum: 1
+        updatedAt:
+          type: integer
+          minimum: 1
+        type:
+          const: quick-record
+        sceneId:
+          $ref: '#/components/schemas/Slug'
+
+    ManagedScene:
+      type: object
+      additionalProperties: false
+      required: [id, name, protected, groups, quickRecords]
+      properties:
+        id:
+          $ref: '#/components/schemas/Slug'
+        name:
+          $ref: '#/components/schemas/Name'
+        protected:
+          type: boolean
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedGroup'
+        quickRecords:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedQuickRecord'
+
+    ManagedState:
+      type: object
+      additionalProperties: false
+      required: [revision, defaultSceneId, scenes, bookmarks]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        defaultSceneId:
+          $ref: '#/components/schemas/Slug'
+        scenes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedScene'
+        bookmarks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedBookmark'
+
+    StatusResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, apiVersion, revision, counts]
+      properties:
+        ok:
+          const: true
+        apiVersion:
+          const: 1
+        revision:
+          $ref: '#/components/schemas/Revision'
+        counts:
+          type: object
+          additionalProperties: false
+          required: [scenes, groups, bookmarks, quickRecords]
+          properties:
+            scenes: { type: integer, minimum: 0 }
+            groups: { type: integer, minimum: 0 }
+            bookmarks: { type: integer, minimum: 0 }
+            quickRecords: { type: integer, minimum: 0 }
+
+    SearchResponse:
+      type: object
+      additionalProperties: false
+      required: [revision, query, sceneId, type, items]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        query:
+          type: string
+        sceneId:
+          type: string
+        type:
+          type: string
+          enum: [bookmark, quick-record, all]
+        items:
+          type: array
+          items:
+            oneOf:
+              - allOf:
+                  - $ref: '#/components/schemas/ManagedBookmark'
+                  - type: object
+                    required: [type]
+                    properties:
+                      type:
+                        const: bookmark
+              - allOf:
+                  - $ref: '#/components/schemas/ManagedQuickRecord'
+                  - type: object
+                    required: [type, sceneId]
+                    properties:
+                      type:
+                        const: quick-record
+                      sceneId:
+                        $ref: '#/components/schemas/Slug'
+
+    Icon:
+      type: object
+      additionalProperties: false
+      required: [id, label]
+      properties:
+        id: { type: string }
+        label: { type: string }
+
+    GroupCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        id:
+          $ref: '#/components/schemas/Slug'
+        name:
+          $ref: '#/components/schemas/Name'
+        position:
+          $ref: '#/components/schemas/Position'
+
+    BookmarkCreate:
+      type: object
+      additionalProperties: false
+      required: [name, primaryUrl, placements]
+      properties:
+        slug:
+          $ref: '#/components/schemas/Slug'
+        name:
+          $ref: '#/components/schemas/Name'
+        note:
+          $ref: '#/components/schemas/NullableNote'
+        icon:
+          $ref: '#/components/schemas/NullableIcon'
+        primaryUrl:
+          $ref: '#/components/schemas/HttpUrl'
+        secondaryUrl:
+          $ref: '#/components/schemas/NullableHttpUrl'
+        probes:
+          oneOf:
+            - type: array
+              minItems: 1
+              maxItems: 100
+              items:
+                $ref: '#/components/schemas/HttpUrl'
+            - type: 'null'
+        forceNewTab:
+          type: boolean
+        placements:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/BookmarkPlacement'
+
+    BookmarkPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        slug:
+          $ref: '#/components/schemas/Slug'
+        name:
+          $ref: '#/components/schemas/Name'
+        note:
+          $ref: '#/components/schemas/NullableNote'
+        icon:
+          $ref: '#/components/schemas/NullableIcon'
+        primaryUrl:
+          $ref: '#/components/schemas/HttpUrl'
+        secondaryUrl:
+          $ref: '#/components/schemas/NullableHttpUrl'
+        probes:
+          oneOf:
+            - type: array
+              minItems: 1
+              maxItems: 100
+              items:
+                $ref: '#/components/schemas/HttpUrl'
+            - type: 'null'
+        forceNewTab:
+          type: [boolean, 'null']
+
+    BookmarkDuplicate:
+      type: object
+      additionalProperties: false
+      properties:
+        slug:
+          $ref: '#/components/schemas/Slug'
+        name:
+          $ref: '#/components/schemas/Name'
+        placements:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/BookmarkPlacement'
+
+    BatchMove:
+      type: object
+      additionalProperties: false
+      required: [bookmarkIds, targetGroupId]
+      properties:
+        bookmarkIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Slug'
+        targetGroupId:
+          $ref: '#/components/schemas/Slug'
+        position:
+          $ref: '#/components/schemas/Position'
+
+    BatchPlace:
+      type: object
+      additionalProperties: false
+      required: [bookmarkIds, placements, conflictPolicy]
+      properties:
+        bookmarkIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Slug'
+        placements:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [sceneId, groupId]
+            properties:
+              sceneId:
+                $ref: '#/components/schemas/Slug'
+              groupId:
+                $ref: '#/components/schemas/Slug'
+        conflictPolicy:
+          type: string
+          enum: [move, skip, reject]
+
+    BatchRemove:
+      type: object
+      additionalProperties: false
+      required: [bookmarkIds, orphanPolicy]
+      properties:
+        bookmarkIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Slug'
+        orphanPolicy:
+          type: string
+          enum: [reject, delete]
+
+    QuickRecordCreate:
+      type: object
+      additionalProperties: false
+      required: [name, primaryUrl]
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        note:
+          $ref: '#/components/schemas/NullableNote'
+        icon:
+          $ref: '#/components/schemas/NullableIcon'
+        primaryUrl:
+          $ref: '#/components/schemas/HttpUrl'
+        secondaryUrl:
+          $ref: '#/components/schemas/NullableHttpUrl'
+
+    QuickRecordPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        note:
+          $ref: '#/components/schemas/NullableNote'
+        icon:
+          $ref: '#/components/schemas/NullableIcon'
+        primaryUrl:
+          $ref: '#/components/schemas/HttpUrl'
+        secondaryUrl:
+          $ref: '#/components/schemas/NullableHttpUrl'
+
+    QuickRecordPromote:
+      type: object
+      additionalProperties: false
+      required: [placements]
+      properties:
+        slug:
+          $ref: '#/components/schemas/Slug'
+        placements:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/BookmarkPlacement'
+        reuseExistingByUrl:
+          type: boolean
+          default: true
+
+    MutationResponse:
+      type: object
+      required: [ok, revision, result]
+      properties:
+        ok:
+          const: true
+        revision:
+          $ref: '#/components/schemas/Revision'
+        result:
+          type: object
+
+    DryRunResponse:
+      type: object
+      required: [ok, committed, baseRevision, proposedRevision, result]
+      properties:
+        ok:
+          const: true
+        committed:
+          const: false
+        baseRevision:
+          $ref: '#/components/schemas/Revision'
+        proposedRevision:
+          $ref: '#/components/schemas/Revision'
+        result:
+          type: object
+          required: [summary]
+          properties:
+            summary:
+              type: object
+              additionalProperties: false
+              required: [groups, bookmarks, quickRecords]
+              properties:
+                groups: { type: integer }
+                bookmarks: { type: integer }
+                quickRecords: { type: integer }
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, error]
+      properties:
+        ok:
+          const: false
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, requestId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            requestId: { type: string }

@@ -19,7 +19,6 @@ import {
   mutateAppConfig,
   mutateNavigationConfig,
   writeAppConfig,
-  writeNavigationConfig,
   writeSystemConfig,
 } from './configStore.js'
 import { createAuthService } from './auth.js'
@@ -41,6 +40,23 @@ import {
   createGroupExpansionPreference,
   getGroupKey,
 } from '../src/features/navigation/groupExpansion.js'
+import { registerBookmarkManagementApi } from './bookmarkManagementApi.js'
+import {
+  BookmarkManagementError,
+  getNavigationRevision,
+} from './bookmarkManagementService.js'
+
+class NavigationRevisionMismatchError extends Error {}
+
+function getIfMatchRevision(request: FastifyRequest) {
+  const value = request.headers['if-match']
+  const header = Array.isArray(value) ? value[0] : value
+  return header?.trim().replace(/^W\//, '').replace(/^"|"$/g, '')
+}
+
+function navigationEtag(navigation: NavigationConfig) {
+  return `"${getNavigationRevision(navigation)}"`
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -275,6 +291,10 @@ function applySecurityHeaders(
   if (request.url.startsWith('/api/integrations/')) {
     reply.header('Vary', 'X-HarborDeck-Search-Token')
   }
+
+  if (request.url.startsWith('/api/management/')) {
+    reply.header('Vary', 'X-HarborDeck-Management-Token')
+  }
 }
 
 const isProduction = process.env.NODE_ENV === 'production'
@@ -316,7 +336,12 @@ function getGroupExpansionResponse(config: AppConfig) {
 
 export async function buildServer() {
   const contentSecurityPolicy = await buildContentSecurityPolicy()
-  const app = Fastify({ logger: true, trustProxy: getTrustProxySetting() })
+  const app = Fastify({
+    logger: {
+      redact: ['req.headers.x-harbordeck-management-token'],
+    },
+    trustProxy: getTrustProxySetting(),
+  })
   const authService = createAuthService()
   const sceneAccessService = createSceneAccessService()
 
@@ -386,6 +411,8 @@ export async function buildServer() {
     reply.code(500)
     return reply.send(request.url.startsWith('/api/') ? '服务器内部错误' : 'Internal Server Error')
   })
+
+  await registerBookmarkManagementApi(app)
 
   app.get('/api/health', async () => ({ ok: true }))
 
@@ -617,7 +644,9 @@ export async function buildServer() {
       return reply
     }
 
-    return sanitizeAppConfig(await readAppConfig())
+    const config = await readAppConfig()
+    reply.header('ETag', navigationEtag(config.navigation))
+    return sanitizeAppConfig(config)
   })
 
   app.put('/api/config/app', async (request, reply) => {
@@ -625,10 +654,18 @@ export async function buildServer() {
       return reply
     }
 
+    const expectedRevision = getIfMatchRevision(request)
+    if (!expectedRevision) {
+      return reply.code(428).send('配置已启用并发保护，请重新加载后再保存')
+    }
+
     try {
       const { appConfig: savedConfig, result } = await mutateAppConfig<{
         unauthorizedSceneName: string | null
       }>((currentConfig) => {
+        if (getNavigationRevision(currentConfig.navigation) !== expectedRevision) {
+          throw new NavigationRevisionMismatchError('导航状态已变化，请重新加载后再保存')
+        }
         const nextConfig = mergeAppSecrets(request.body, currentConfig)
         const parsedNextConfig = appConfigSchema.parse(nextConfig)
         const nextNavigation = storedNavigationConfigSchema.parse(parsedNextConfig.navigation)
@@ -655,8 +692,12 @@ export async function buildServer() {
         return reply.code(403).send(`请先解锁场景“${result.unauthorizedSceneName}”`)
       }
       await webdavBackupManager.reloadSchedule()
+      reply.header('ETag', navigationEtag(savedConfig.navigation))
       return sanitizeAppConfig(savedConfig)
     } catch (error) {
+      if (error instanceof NavigationRevisionMismatchError) {
+        return reply.code(412).send(error.message)
+      }
       const message = error instanceof Error ? error.message : '保存整站配置失败'
       reply.code(400)
       return message
@@ -668,7 +709,9 @@ export async function buildServer() {
       return reply
     }
 
-    return sanitizeNavigationConfig(await readNavigationConfig())
+    const navigation = await readNavigationConfig()
+    reply.header('ETag', navigationEtag(navigation))
+    return sanitizeNavigationConfig(navigation)
   })
 
   app.put('/api/config/navigation', async (request, reply) => {
@@ -676,21 +719,41 @@ export async function buildServer() {
       return reply
     }
 
+    const expectedRevision = getIfMatchRevision(request)
+    if (!expectedRevision) {
+      return reply.code(428).send('配置已启用并发保护，请重新加载后再保存')
+    }
+
     try {
-      const currentNavigation = await readNavigationConfig()
-      const nextNavigation = mergeNavigationPasswords(request.body, currentNavigation)
-      const parsedNextNavigation = storedNavigationConfigSchema.parse(nextNavigation)
-      const unauthorizedScene = findUnauthorizedProtectedScene(
-        request,
-        currentNavigation,
-        parsedNextNavigation
-      )
-      if (unauthorizedScene) {
-        return reply.code(403).send(`请先解锁场景“${unauthorizedScene.name}”`)
-      }
-      const savedNavigation = await writeNavigationConfig(parsedNextNavigation)
+      const { navigation: savedNavigation } = await mutateNavigationConfig((currentNavigation) => {
+        if (getNavigationRevision(currentNavigation) !== expectedRevision) {
+          throw new NavigationRevisionMismatchError('导航状态已变化，请重新加载后再保存')
+        }
+        const nextNavigation = mergeNavigationPasswords(request.body, currentNavigation)
+        const parsedNextNavigation = storedNavigationConfigSchema.parse(nextNavigation)
+        const unauthorizedScene = findUnauthorizedProtectedScene(
+          request,
+          currentNavigation,
+          parsedNextNavigation
+        )
+        if (unauthorizedScene) {
+          throw new BookmarkManagementError(
+            403,
+            'PROTECTED_SCENE_LOCKED',
+            `请先解锁场景“${unauthorizedScene.name}”`
+          )
+        }
+        return { navigation: parsedNextNavigation, result: null }
+      })
+      reply.header('ETag', navigationEtag(savedNavigation))
       return sanitizeNavigationConfig(savedNavigation)
     } catch (error) {
+      if (error instanceof NavigationRevisionMismatchError) {
+        return reply.code(412).send(error.message)
+      }
+      if (error instanceof BookmarkManagementError && error.statusCode === 403) {
+        return reply.code(403).send(error.message)
+      }
       const message = error instanceof Error ? error.message : '保存导航配置失败'
       reply.code(400)
       return message
@@ -702,30 +765,49 @@ export async function buildServer() {
       return reply
     }
 
+    const expectedRevision = getIfMatchRevision(request)
+    if (!expectedRevision) {
+      return reply.code(428).send('配置已启用并发保护，请重新加载后再保存')
+    }
     const { sceneId } = sceneIdParamsSchema.parse(request.params)
     const { password } = scenePasswordBodySchema.parse(request.body)
-    const navigation = await readNavigationConfig()
-    const sceneIndex = navigation.scenes.findIndex((scene) => scene.id === sceneId)
-    if (sceneIndex < 0) {
-      return reply.code(404).send('场景不存在')
-    }
-    const currentScene = navigation.scenes[sceneIndex]
-    if (currentScene.protected && !hasProtectedSceneAccess(request, currentScene.id)) {
-      return reply.code(403).send(`请先解锁场景“${currentScene.name}”`)
-    }
-
     const passwordHash = password ? await hashPassword(password) : undefined
-    const scenes = navigation.scenes.map((scene, index) =>
-      index === sceneIndex
-        ? {
-            ...scene,
-            protected: Boolean(password),
-            passwordHash,
-          }
-        : scene
-    )
-    const savedNavigation = await writeNavigationConfig({ ...navigation, scenes })
+    let savedNavigation: NavigationConfig
+    try {
+      ;({ navigation: savedNavigation } = await mutateNavigationConfig((navigation) => {
+        if (getNavigationRevision(navigation) !== expectedRevision) {
+          throw new NavigationRevisionMismatchError('导航状态已变化，请重新加载后再保存')
+        }
+        const sceneIndex = navigation.scenes.findIndex((scene) => scene.id === sceneId)
+        if (sceneIndex < 0) {
+          throw new BookmarkManagementError(404, 'SCENE_NOT_FOUND', '场景不存在')
+        }
+        const currentScene = navigation.scenes[sceneIndex]
+        if (currentScene.protected && !hasProtectedSceneAccess(request, currentScene.id)) {
+          throw new BookmarkManagementError(
+            403,
+            'PROTECTED_SCENE_LOCKED',
+            `请先解锁场景“${currentScene.name}”`
+          )
+        }
+        const scenes = navigation.scenes.map((scene, index) =>
+          index === sceneIndex
+            ? { ...scene, protected: Boolean(password), passwordHash }
+            : scene
+        )
+        return { navigation: { ...navigation, scenes }, result: null }
+      }))
+    } catch (error) {
+      if (error instanceof NavigationRevisionMismatchError) {
+        return reply.code(412).send(error.message)
+      }
+      if (error instanceof BookmarkManagementError) {
+        return reply.code(error.statusCode).send(error.message)
+      }
+      throw error
+    }
     sceneAccessService.clear()
+    reply.header('ETag', navigationEtag(savedNavigation))
     return sanitizeNavigationConfig(savedNavigation)
   })
 

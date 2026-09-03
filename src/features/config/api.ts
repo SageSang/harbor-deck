@@ -24,6 +24,7 @@ export const systemConfigQueryKey = ['config', 'system'] as const
 
 export interface ApiRequestOptions extends RequestInit {
   fallbackMessage?: string
+  onResponse?: (response: Response) => void
 }
 
 export class ApiError extends Error {
@@ -37,7 +38,7 @@ export class ApiError extends Error {
 
 export async function requestJson<T>(url: string, options?: ApiRequestOptions): Promise<T> {
   const messages = getCurrentMessages()
-  const { fallbackMessage, headers: optionHeaders, ...requestOptions } = options ?? {}
+  const { fallbackMessage, onResponse, headers: optionHeaders, ...requestOptions } = options ?? {}
   const sceneTokens = readSceneTokens()
   const headers = new Headers(optionHeaders)
   if (!headers.has('Content-Type')) {
@@ -50,6 +51,7 @@ export async function requestJson<T>(url: string, options?: ApiRequestOptions): 
     ...requestOptions,
     headers,
   })
+  onResponse?.(response)
 
   if (!response.ok) {
     const message = await response.text()
@@ -62,10 +64,23 @@ export async function requestJson<T>(url: string, options?: ApiRequestOptions): 
   return response.json() as Promise<T>
 }
 
+let navigationRevision: string | null = null
+
+function captureNavigationRevision(response: Response) {
+  if (response.ok) {
+    navigationRevision = response.headers.get('ETag')
+  }
+}
+
+function navigationWriteHeaders() {
+  return navigationRevision ? { 'If-Match': navigationRevision } : undefined
+}
+
 export async function fetchAppConfig(): Promise<AppConfig> {
   const messages = getCurrentMessages()
   const data = await requestJson<unknown>('/api/config/app', {
     fallbackMessage: messages.errors.loadAppConfigFailed,
+    onResponse: captureNavigationRevision,
   })
   return parseAppConfig(data)
 }
@@ -74,8 +89,10 @@ export async function saveAppConfig(config: AppConfig): Promise<AppConfig> {
   const messages = getCurrentMessages()
   const data = await requestJson<unknown>('/api/config/app', {
     method: 'PUT',
+    headers: navigationWriteHeaders(),
     body: JSON.stringify(config),
     fallbackMessage: messages.errors.saveAppConfigFailed,
+    onResponse: captureNavigationRevision,
   })
   return appConfigSchema.parse(parseAppConfig(data))
 }
@@ -84,6 +101,7 @@ export async function fetchNavigationConfig(): Promise<NavigationConfig> {
   const messages = getCurrentMessages()
   const data = await requestJson<unknown>('/api/config/navigation', {
     fallbackMessage: messages.errors.loadServicesConfigFailed,
+    onResponse: captureNavigationRevision,
   })
   return navigationConfigSchema.parse(data)
 }
@@ -92,8 +110,10 @@ export async function saveNavigationConfig(config: NavigationConfig): Promise<Na
   const messages = getCurrentMessages()
   const data = await requestJson<unknown>('/api/config/navigation', {
     method: 'PUT',
+    headers: navigationWriteHeaders(),
     body: JSON.stringify(config),
     fallbackMessage: messages.errors.saveServicesConfigFailed,
+    onResponse: captureNavigationRevision,
   })
   return navigationConfigSchema.parse(data)
 }
@@ -147,7 +167,9 @@ export async function setScenePassword(sceneId: string, password: string | null)
     `/api/config/navigation/scenes/${encodeURIComponent(sceneId)}/password`,
     {
       method: 'PUT',
+      headers: navigationWriteHeaders(),
       body: JSON.stringify({ password }),
+      onResponse: captureNavigationRevision,
     }
   )
   return navigationConfigSchema.parse(data)

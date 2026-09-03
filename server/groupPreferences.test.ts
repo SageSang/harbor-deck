@@ -44,10 +44,15 @@ async function setupAdmin(server: NonNullable<typeof app>) {
 }
 
 async function configureNavigation(server: NonNullable<typeof app>, cookie: string) {
+  const current = await server.inject({
+    method: 'GET',
+    url: '/api/config/navigation',
+    headers: { cookie },
+  })
   const response = await server.inject({
     method: 'PUT',
     url: '/api/config/navigation',
-    headers: { cookie },
+    headers: { cookie, 'if-match': String(current.headers.etag) },
     payload: {
       defaultSceneId: 'personal',
       bookmarks: [],
@@ -259,7 +264,7 @@ describe('navigation group preferences API', () => {
     const savedNavigation = await server.inject({
       method: 'PUT',
       url: '/api/config/navigation',
-      headers: { cookie },
+      headers: { cookie, 'if-match': String(navigationResponse.headers.etag) },
       payload: navigation,
     })
     expect(savedNavigation.statusCode).toBe(200)
@@ -296,7 +301,7 @@ describe('navigation group preferences API', () => {
       server.inject({
         method: 'PUT',
         url: '/api/config/app',
-        headers: { cookie },
+        headers: { cookie, 'if-match': String(appConfigResponse.headers.etag) },
         payload: appConfig,
       }),
       server.inject({

@@ -21,6 +21,7 @@ HarborDeck grew from [Goalonez/smart-harbor](https://github.com/Goalonez/smart-h
 - Search the current scene, choose Google or another configured search engine, and always send Enter to the selected search engine even when local matches exist.
 - Protect scenes with a separate password and keep the unlock only for the current browser session.
 - Use the integration API from uTools or another shortcut launcher. A token is required and protected scenes are never returned.
+- Use an independent management token to let an AI organize groups, bookmarks, ordering, and quick records across every scene.
 - Use the optional Chrome/Chromium extension to open the navigation page on every new tab and add the current page to one or more scene groups.
 - Back up and restore the JSON configuration through WebDAV.
 
@@ -55,7 +56,7 @@ The repository includes a generic Docker Compose configuration for Docker Compos
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.13
+    image: ghcr.io/sagesang/harbor-deck:1.4.17
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -67,6 +68,8 @@ services:
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
       HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
+      # Leave empty to disable the management API; otherwise use a random token of 32+ characters.
+      HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN: ''
       HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
     volumes:
       - ./config:/app/config
@@ -81,7 +84,7 @@ Deployment steps:
 3. Point an HTTPS reverse proxy at `127.0.0.1:8080`, then open the HTTPS domain and create the administrator account.
 4. Create scenes and groups in Bookmark Management, then add or import bookmarks.
 
-The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.9` with `latest` only when you intentionally want automatic image updates.
+The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.17` with `latest` only when you intentionally want automatic image updates.
 
 For a direct Docker command:
 
@@ -93,7 +96,8 @@ docker run -d \
   -v ./config:/app/config \
   -e TZ=Asia/Shanghai \
   -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
-  ghcr.io/sagesang/harbor-deck:1.4.13
+  -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
+  ghcr.io/sagesang/harbor-deck:1.4.17
 ```
 
 HTTPS is supported by putting the container behind any reverse proxy, including Synology Reverse Proxy, Caddy, or Nginx Proxy Manager. The application listens on HTTP inside the container; point the proxy at host `127.0.0.1:8080`. By default it trusts forwarded headers only from loopback, link-local, and private-network proxies. Set `HARBORDECK_TRUST_PROXY` to an explicit IP or CIDR when the proxy is elsewhere. Change the port binding back to `8080:80` only when direct LAN access is intentionally required.
@@ -130,6 +134,12 @@ The extension popup uses two additional token-protected endpoints:
 
 - `GET /api/integrations/bookmarks/scenes` lists only scenes that can receive a bookmark.
 - `POST /api/integrations/bookmarks` accepts `{ name, primaryUrl, secondaryUrl?, note?, placements: [{ sceneId, groupId }] }` and adds the current page to one group per selected scene.
+
+## AI bookmark management API
+
+To let an AI or automation script organize all bookmarks, set the independent `HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN` directly in the deployment YAML and send it as `X-HarborDeck-Management-Token`. The token bypasses administrator login and scene passwords and can read or mutate private bookmark data. It cannot manage scenes, passwords, WebDAV, backups, or system settings.
+
+The base path is `/api/management/v1`. Every write requires the latest revision in `If-Match` and supports `X-HarborDeck-Dry-Run: true`. See the [bookmark management API reference](docs/bookmark-management-api.md) for endpoint contracts, examples, error codes, and the security boundary. A machine-readable [OpenAPI 3.1 document](docs/bookmark-management-openapi.yaml) is also included.
 
 ## Browser extension
 
