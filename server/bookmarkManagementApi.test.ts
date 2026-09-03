@@ -525,6 +525,38 @@ describe('bookmark management API', () => {
     expect(state.scenes.find((scene: { id: string }) => scene.id === 'private').quickRecords[0].icon).toBeTruthy()
   })
 
+  it('accepts legacy long bookmark slugs for management updates', async () => {
+    const server = await buildTestServer()
+    let { state } = await getState(server)
+    const longSlug = `legacy-${'x'.repeat(110)}`
+
+    const created = await managementWrite(server, {
+      method: 'POST',
+      url: '/api/management/v1/bookmarks',
+      revision: state.revision,
+      payload: {
+        slug: longSlug,
+        name: 'Legacy bookmark',
+        icon: 'server',
+        primaryUrl: 'https://legacy-long-slug.example.com',
+        placements: [{ sceneId: 'public', groupId: 'main' }],
+      },
+    })
+    expect(created.statusCode).toBe(201)
+    state = (await getState(server)).state
+
+    const renamed = await managementWrite(server, {
+      method: 'PATCH',
+      url: `/api/management/v1/bookmarks/${longSlug}`,
+      revision: state.revision,
+      payload: { name: 'Legacy bookmark｜已整理' },
+    })
+    expect(renamed.statusCode).toBe(200)
+    expect((await getState(server)).state.bookmarks).toContainEqual(
+      expect.objectContaining({ slug: longSlug, name: 'Legacy bookmark｜已整理' })
+    )
+  })
+
   it('requires current revisions, keeps dry-runs side-effect free, and protects web saves', async () => {
     const server = await buildTestServer()
     const { state } = await getState(server)

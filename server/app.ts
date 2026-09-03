@@ -337,6 +337,9 @@ function getGroupExpansionResponse(config: AppConfig) {
 export async function buildServer() {
   const contentSecurityPolicy = await buildContentSecurityPolicy()
   const app = Fastify({
+    // Legacy bookmark slugs can be longer than find-my-way's 100-character default.
+    // Keep route-based management operations usable without changing the slug format.
+    routerOptions: { maxParamLength: 256 },
     logger: {
       redact: ['req.headers.x-harbordeck-management-token'],
     },

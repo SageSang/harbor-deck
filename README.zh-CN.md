@@ -56,7 +56,7 @@ HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.17
+    image: ghcr.io/sagesang/harbor-deck:1.4.18
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -97,7 +97,7 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
   -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
-  ghcr.io/sagesang/harbor-deck:1.4.17
+  ghcr.io/sagesang/harbor-deck:1.4.18
 ```
 
 HTTPS 可以支持。应用容器内部监听 HTTP，可使用任意反向代理（包括群晖反向代理、Caddy 或 Nginx Proxy Manager）终止 TLS，再把 HTTPS 域名转发到宿主机 `127.0.0.1:8080`。默认只信任回环、链路本地和私有网络代理；代理不在这些网段时，用 `HARBORDECK_TRUST_PROXY` 明确填写其 IP 或 CIDR。只有确实需要绕过反向代理从局域网直连时，才把端口绑定改回 `8080:80`。
