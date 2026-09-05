@@ -10,7 +10,7 @@ export type NetworkMode = 'lan' | 'wan' | 'unknown'
  * @returns 网络模式
  */
 export async function detectNetworkMode(
-  services: Service[],
+  _services: Service[],
   networkProbe?: NetworkProbeConfig | null
 ): Promise<NetworkMode> {
   if (networkProbe && hasCompleteNetworkProbeConfig(networkProbe)) {
@@ -28,15 +28,6 @@ export async function detectNetworkMode(
     return 'unknown'
   }
 
-  // 没有服务时无法判断网络类型
-  if (services.length === 0) {
-    return 'unknown'
-  }
-
-  // 回退到第一个服务，优先使用其第一个自定义探针，否则直接探测主地址
-  const firstService = services[0]
-  const probeUrl = firstService.probes?.[0] ?? firstService.primaryUrl
-  const reachable = await probe(probeUrl, 1200)
-
-  return reachable ? 'lan' : 'wan'
+  // An arbitrary bookmark's availability does not establish the network mode.
+  return 'unknown'
 }

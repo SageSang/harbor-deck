@@ -17,7 +17,7 @@ export function useSaveAppConfig() {
     onSuccess: (savedConfig) => {
       queryClient.setQueryData(appConfigQueryKey, savedConfig)
       queryClient.setQueryData(systemConfigQueryKey, savedConfig.system)
-      queryClient.setQueryData(navigationConfigQueryKey, savedConfig.navigation)
+      void queryClient.invalidateQueries({ queryKey: navigationConfigQueryKey })
       void queryClient.invalidateQueries({ queryKey: sceneListQueryKey })
       void queryClient.invalidateQueries({ queryKey: ['navigation', 'services'] })
     },

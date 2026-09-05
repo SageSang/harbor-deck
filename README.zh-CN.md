@@ -14,10 +14,12 @@ HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家
 
 - 场景完全由后台创建、重命名、排序、设为默认、加密和删除，不写死为三个场景。
 - 每个场景拥有独立的分组和顺序；同一个书签可以被多个场景引用，并在不同场景归属于不同分组。
-- 每个书签支持主地址和可选备用地址，系统按照网络可达性选择实际打开的地址。
+- 每个书签支持主地址和可选备用地址，系统按已配置的网络探针选择地址；未配置时显示未知，可手动选择内外网，或从书签菜单直接打开主地址、备用地址。
 - 浏览器导入时先选择目标场景；多层文件夹会按完整路径折叠成可读的一级分组，不会把所有书签无序铺平。
 - 支持新增、编辑、复制、拖动、多选、批量移动和删除书签。删除某个场景中的引用不会影响其他场景；只有完全没有场景引用的孤立书签才会被清理。
-- 每个书签有可选的多行备注栏。
+- 每个书签有可选的多行备注栏，首页搜索支持名称、标识、分组、主地址、备用地址及备注。
+- 顶栏“快速记录”显示当前场景的未归组记录数量，可查看全部、编辑或批量归入分组。
+- Web 主题独立保存在当前浏览器中；首次访问可使用服务端默认主题，扩展跳转不会覆盖已有本机选择。
 - 搜索框支持 Google 和自定义搜索引擎。无论本地是否匹配到书签，按 Enter 都会执行搜索；也可以直接点击匹配到的书签。
 - 场景可以单独设置密码，解锁状态只保留在当前浏览器会话中。
 - 提供带 Token 的搜索接口，方便接入 uTools 等快捷工具；有密码的场景永远不会被接口返回。
@@ -56,7 +58,7 @@ HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.18
+    image: ghcr.io/sagesang/harbor-deck:1.4.19
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -97,7 +99,7 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
   -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
-  ghcr.io/sagesang/harbor-deck:1.4.18
+  ghcr.io/sagesang/harbor-deck:1.4.19
 ```
 
 HTTPS 可以支持。应用容器内部监听 HTTP，可使用任意反向代理（包括群晖反向代理、Caddy 或 Nginx Proxy Manager）终止 TLS，再把 HTTPS 域名转发到宿主机 `127.0.0.1:8080`。默认只信任回环、链路本地和私有网络代理；代理不在这些网段时，用 `HARBORDECK_TRUST_PROXY` 明确填写其 IP 或 CIDR。只有确实需要绕过反向代理从局域网直连时，才把端口绑定改回 `8080:80`。
@@ -174,6 +176,8 @@ npm run package:extension
 | `system`                 | 主题、应用名称、点击行为、搜索引擎和 WebDAV 备份 |
 | `navigation.scenes[]`    | 场景名称、密码、分组及有序书签引用               |
 | `navigation.bookmarks[]` | 共享书签定义、URL、图标、备注和打开方式          |
+
+Web 配置读取只返回公开和已解锁场景的内容；锁定场景保留名称及锁定标记。保存公开内容时，服务端保留锁定场景的数据。未解锁时导出的 JSON 不包含私密内容，需要完整备份时使用 WebDAV 备份。
 
 密码只保存哈希值。项目只有一个管理员账号，没有匿名模式。场景密码独立于管理员密码，只对当前浏览器会话有效；关闭浏览器、修改场景密码、恢复备份或重启服务后需要重新解锁。管理员连续登录失败 5 次会触发临时锁定。
 

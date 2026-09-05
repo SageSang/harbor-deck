@@ -1,4 +1,5 @@
-import { useEffect, type ReactNode } from 'react'
+import { useDialogFocus } from './useDialogFocus'
+import { useId, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -26,27 +27,8 @@ export function ModalShell({
 }: ModalShellProps) {
   const { messages } = useI18n()
 
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-
-    const originalOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose()
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-
-    return () => {
-      document.body.style.overflow = originalOverflow
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [onClose, open])
+  const dialogRef = useDialogFocus(open, onClose)
+  const titleId = useId()
 
   if (!open) {
     return null
@@ -70,6 +52,11 @@ export function ModalShell({
         }}
       >
         <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
           className={cn(
             'pointer-events-auto relative mx-auto flex max-h-[calc(100dvh-1rem)] min-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[1.65rem] border border-border/80 bg-[linear-gradient(180deg,hsl(var(--background)/0.98),hsl(var(--card)/0.9))] shadow-[0_34px_90px_rgba(109,74,49,0.18)] backdrop-blur-2xl sm:max-h-[calc(100dvh-2rem)] sm:min-h-[calc(100dvh-2rem)] sm:rounded-[1.9rem] md:min-h-0 dark:shadow-[0_34px_86px_rgba(0,0,0,0.4)]',
             widthClassName
@@ -88,7 +75,10 @@ export function ModalShell({
                   <Icon className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="truncate text-[15px] font-semibold tracking-tight text-foreground sm:text-base">
+                  <h2
+                    id={titleId}
+                    className="truncate text-[15px] font-semibold tracking-tight text-foreground sm:text-base"
+                  >
                     {title}
                   </h2>
                   {description && (
@@ -112,9 +102,7 @@ export function ModalShell({
             </Button>
           </div>
 
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            {children}
-          </div>
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
         </div>
       </div>
     </div>,

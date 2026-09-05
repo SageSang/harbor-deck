@@ -58,6 +58,14 @@ async function readJsonFile<TSchema extends z.ZodTypeAny>(
 }
 
 async function writeJsonFile(filePath: string, value: unknown) {
+  // Revisions belong to client snapshots, never to the durable configuration.
+  if (isRecord(value) && isRecord(value.system) && isRecord(value.navigation)) {
+    const system = { ...value.system }
+    const navigation = { ...value.navigation }
+    delete system._revision
+    delete navigation._revision
+    value = { ...value, system, navigation }
+  }
   const tempPath = `${filePath}.${randomUUID()}.tmp`
 
   try {

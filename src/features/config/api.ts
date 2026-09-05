@@ -55,32 +55,28 @@ export async function requestJson<T>(url: string, options?: ApiRequestOptions): 
 
   if (!response.ok) {
     const message = await response.text()
-    throw new ApiError(
-      message || fallbackMessage || messages.common.requestFailed,
-      response.status
-    )
+    throw new ApiError(message || fallbackMessage || messages.common.requestFailed, response.status)
   }
 
   return response.json() as Promise<T>
 }
 
-let navigationRevision: string | null = null
-
-function captureNavigationRevision(response: Response) {
-  if (response.ok) {
-    navigationRevision = response.headers.get('ETag')
-  }
+function revisionHeaders(revision?: string) {
+  if (!revision)
+    throw new ApiError('请重新加载配置后再保存 / Reload configuration before saving', 428)
+  return { 'If-Match': `"${revision}"` }
 }
 
-function navigationWriteHeaders() {
-  return navigationRevision ? { 'If-Match': navigationRevision } : undefined
+export function appRevision(config: AppConfig) {
+  return config.navigation._revision && config.system._revision
+    ? `${config.navigation._revision}/${config.system._revision}`
+    : undefined
 }
 
 export async function fetchAppConfig(): Promise<AppConfig> {
   const messages = getCurrentMessages()
   const data = await requestJson<unknown>('/api/config/app', {
     fallbackMessage: messages.errors.loadAppConfigFailed,
-    onResponse: captureNavigationRevision,
   })
   return parseAppConfig(data)
 }
@@ -89,19 +85,18 @@ export async function saveAppConfig(config: AppConfig): Promise<AppConfig> {
   const messages = getCurrentMessages()
   const data = await requestJson<unknown>('/api/config/app', {
     method: 'PUT',
-    headers: navigationWriteHeaders(),
+    headers: revisionHeaders(appRevision(config)),
     body: JSON.stringify(config),
     fallbackMessage: messages.errors.saveAppConfigFailed,
-    onResponse: captureNavigationRevision,
   })
   return appConfigSchema.parse(parseAppConfig(data))
 }
 
-export async function fetchNavigationConfig(): Promise<NavigationConfig> {
+export async function fetchNavigationConfig(signal?: AbortSignal): Promise<NavigationConfig> {
   const messages = getCurrentMessages()
   const data = await requestJson<unknown>('/api/config/navigation', {
+    signal,
     fallbackMessage: messages.errors.loadServicesConfigFailed,
-    onResponse: captureNavigationRevision,
   })
   return navigationConfigSchema.parse(data)
 }
@@ -110,10 +105,9 @@ export async function saveNavigationConfig(config: NavigationConfig): Promise<Na
   const messages = getCurrentMessages()
   const data = await requestJson<unknown>('/api/config/navigation', {
     method: 'PUT',
-    headers: navigationWriteHeaders(),
+    headers: revisionHeaders(config._revision),
     body: JSON.stringify(config),
     fallbackMessage: messages.errors.saveServicesConfigFailed,
-    onResponse: captureNavigationRevision,
   })
   return navigationConfigSchema.parse(data)
 }
@@ -133,10 +127,14 @@ export async function fetchSceneList(): Promise<SceneListResponse> {
   return requestJson<SceneListResponse>('/api/navigation/scenes')
 }
 
-export async function fetchSceneServices(sceneId: string, token?: string): Promise<ServicesConfig> {
+export async function fetchSceneServices(
+  sceneId: string,
+  token?: string,
+  signal?: AbortSignal
+): Promise<ServicesConfig> {
   const data = await requestJson<unknown>(
     `/api/navigation?sceneId=${encodeURIComponent(sceneId)}`,
-    token ? { headers: { 'X-Scene-Token': token } } : undefined
+    { signal, ...(token ? { headers: { 'X-Scene-Token': token } } : {}) }
   )
   return servicesConfigSchema.parse(data)
 }
@@ -152,24 +150,24 @@ export async function unlockScene(sceneId: string, password: string) {
 }
 
 export async function lockScene(sceneId: string, token?: string) {
-  return requestJson<{ ok: true }>(
-    `/api/navigation/scenes/${encodeURIComponent(sceneId)}/lock`,
-    {
-      method: 'POST',
-      body: JSON.stringify({}),
-      ...(token ? { headers: { 'X-Scene-Token': token } } : {}),
-    }
-  )
+  return requestJson<{ ok: true }>(`/api/navigation/scenes/${encodeURIComponent(sceneId)}/lock`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+    ...(token ? { headers: { 'X-Scene-Token': token } } : {}),
+  })
 }
 
-export async function setScenePassword(sceneId: string, password: string | null) {
+export async function setScenePassword(
+  sceneId: string,
+  password: string | null,
+  revision?: string
+) {
   const data = await requestJson<unknown>(
     `/api/config/navigation/scenes/${encodeURIComponent(sceneId)}/password`,
     {
       method: 'PUT',
-      headers: navigationWriteHeaders(),
+      headers: revisionHeaders(revision),
       body: JSON.stringify({ password }),
-      onResponse: captureNavigationRevision,
     }
   )
   return navigationConfigSchema.parse(data)
@@ -187,6 +185,7 @@ export async function saveSystemConfig(config: SystemConfig): Promise<SystemConf
   const messages = getCurrentMessages()
   const data = await requestJson<unknown>('/api/config/system', {
     method: 'PUT',
+    headers: revisionHeaders(config._revision),
     body: JSON.stringify(config),
     fallbackMessage: messages.errors.saveSystemConfigFailed,
   })

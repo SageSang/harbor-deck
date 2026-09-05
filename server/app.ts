@@ -19,7 +19,6 @@ import {
   mutateAppConfig,
   mutateNavigationConfig,
   writeAppConfig,
-  writeSystemConfig,
 } from './configStore.js'
 import { createAuthService } from './auth.js'
 import { createWebdavBackupManager } from './webdavBackupManager.js'
@@ -41,10 +40,7 @@ import {
   getGroupKey,
 } from '../src/features/navigation/groupExpansion.js'
 import { registerBookmarkManagementApi } from './bookmarkManagementApi.js'
-import {
-  BookmarkManagementError,
-  getNavigationRevision,
-} from './bookmarkManagementService.js'
+import { BookmarkManagementError, getNavigationRevision } from './bookmarkManagementService.js'
 
 class NavigationRevisionMismatchError extends Error {}
 
@@ -99,30 +95,58 @@ function protectedSceneChanged(
   )
 }
 
+function systemRevision(system: Awaited<ReturnType<typeof readSystemConfig>>) {
+  const value = { ...system }
+  delete value._revision
+  return `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`
+}
+
+function appRevision(config: AppConfig) {
+  return `${getNavigationRevision(config.navigation)}/${systemRevision(config.system)}`
+}
+
 function sanitizeSystemConfig(system: Awaited<ReturnType<typeof readSystemConfig>>) {
   const sanitized = { ...system }
   delete sanitized.auth
+  sanitized._revision = systemRevision(system)
   return sanitized
 }
 
-function sanitizeAppConfig(config: Awaited<ReturnType<typeof readAppConfig>>) {
+function sanitizeAppConfig(
+  config: Awaited<ReturnType<typeof readAppConfig>>,
+  canRead: (sceneId: string) => boolean
+) {
   const sanitized = {
     ...config,
     system: sanitizeSystemConfig(config.system),
-    navigation: sanitizeNavigationConfig(config.navigation),
+    navigation: sanitizeNavigationConfig(config.navigation, canRead),
   }
   delete sanitized.uiPreferences
   return sanitized
 }
 
-function sanitizeNavigationConfig(navigation: Awaited<ReturnType<typeof readNavigationConfig>>) {
+function sanitizeNavigationConfig(
+  navigation: NavigationConfig,
+  canRead: (sceneId: string) => boolean
+) {
+  const hiddenIds = new Set<string>()
+  const visibleIds = new Set<string>()
+  const scenes = navigation.scenes.map((scene) => {
+    const hidden = scene.protected && !canRead(scene.id)
+    scene.groups.forEach((group) =>
+      group.bookmarkIds.forEach((id) => (hidden ? hiddenIds : visibleIds).add(id))
+    )
+    return hidden
+      ? { id: scene.id, name: scene.name, protected: true, groups: [], quickRecords: [] }
+      : getSceneWithoutPassword(scene)
+  })
   return {
     ...navigation,
-    scenes: navigation.scenes.map((scene) => {
-      const sanitizedScene = { ...scene }
-      delete sanitizedScene.passwordHash
-      return sanitizedScene
-    }),
+    _revision: getNavigationRevision(navigation),
+    scenes,
+    bookmarks: navigation.bookmarks.filter(
+      (bookmark) => !hiddenIds.has(bookmark.slug) || visibleIds.has(bookmark.slug)
+    ),
   }
 }
 
@@ -174,11 +198,59 @@ function mergeAppAuth(
 
 function mergeNavigationPasswords(
   navigationPayload: unknown,
-  currentNavigation: Awaited<ReturnType<typeof readNavigationConfig>>
+  currentNavigation: Awaited<ReturnType<typeof readNavigationConfig>>,
+  canRead: (sceneId: string) => boolean
 ) {
   if (!isRecord(navigationPayload)) {
     return navigationPayload
   }
+
+  // The Web snapshot contains placeholders for locked scenes. Preserve their
+  // server-owned content while rejecting attempts to change those placeholders.
+  const visible = sanitizeNavigationConfig(currentNavigation, canRead)
+  const visibleIds = new Set(visible.bookmarks.map((bookmark) => bookmark.slug))
+  const hiddenBookmarks = currentNavigation.bookmarks.filter(
+    (bookmark) => !visibleIds.has(bookmark.slug)
+  )
+  const hiddenIds = new Set(hiddenBookmarks.map((bookmark) => bookmark.slug))
+  const incomingScenes = Array.isArray(navigationPayload.scenes)
+    ? [...navigationPayload.scenes]
+    : []
+  currentNavigation.scenes.forEach((scene) => {
+    if (!scene.protected || canRead(scene.id)) return
+    const index = incomingScenes.findIndex((item) => isRecord(item) && item.id === scene.id)
+    const incoming = incomingScenes[index]
+    if (
+      !isRecord(incoming) ||
+      incoming.name !== scene.name ||
+      incoming.protected !== true ||
+      !Array.isArray(incoming.groups) ||
+      incoming.groups.length !== 0 ||
+      (Array.isArray(incoming.quickRecords) && incoming.quickRecords.length !== 0) ||
+      incoming.passwordHash !== undefined
+    ) {
+      throw new BookmarkManagementError(
+        403,
+        'PROTECTED_SCENE_LOCKED',
+        `请先解锁场景“${scene.name}”`
+      )
+    }
+    incomingScenes[index] = scene
+  })
+  const incomingBookmarks = Array.isArray(navigationPayload.bookmarks)
+    ? navigationPayload.bookmarks
+    : []
+  if (
+    incomingBookmarks.some((bookmark) => isRecord(bookmark) && hiddenIds.has(String(bookmark.slug)))
+  ) {
+    throw new BookmarkManagementError(403, 'PROTECTED_SCENE_LOCKED', '书签属于锁定场景，请先解锁')
+  }
+  navigationPayload = {
+    ...navigationPayload,
+    scenes: incomingScenes,
+    bookmarks: [...incomingBookmarks, ...hiddenBookmarks],
+  }
+  if (!isRecord(navigationPayload)) return navigationPayload
 
   const passwordHashes = new Map(
     currentNavigation.scenes.map((scene) => [scene.id, scene.passwordHash])
@@ -201,7 +273,8 @@ function mergeNavigationPasswords(
 
 function mergeAppSecrets(
   appPayload: unknown,
-  currentConfig: Awaited<ReturnType<typeof readAppConfig>>
+  currentConfig: Awaited<ReturnType<typeof readAppConfig>>,
+  canRead: (sceneId: string) => boolean
 ) {
   const withAuth = mergeAppAuth(appPayload, currentConfig.system.auth)
   if (!isRecord(withAuth)) {
@@ -215,7 +288,11 @@ function mergeAppSecrets(
   }
   return {
     ...withPreferences,
-    navigation: mergeNavigationPasswords(withPreferences.navigation, currentConfig.navigation),
+    navigation: mergeNavigationPasswords(
+      withPreferences.navigation,
+      currentConfig.navigation,
+      canRead
+    ),
   }
 }
 
@@ -648,8 +725,8 @@ export async function buildServer() {
     }
 
     const config = await readAppConfig()
-    reply.header('ETag', navigationEtag(config.navigation))
-    return sanitizeAppConfig(config)
+    reply.header('ETag', `"${appRevision(config)}"`)
+    return sanitizeAppConfig(config, (id) => hasProtectedSceneAccess(request, id))
   })
 
   app.put('/api/config/app', async (request, reply) => {
@@ -666,10 +743,12 @@ export async function buildServer() {
       const { appConfig: savedConfig, result } = await mutateAppConfig<{
         unauthorizedSceneName: string | null
       }>((currentConfig) => {
-        if (getNavigationRevision(currentConfig.navigation) !== expectedRevision) {
+        if (appRevision(currentConfig) !== expectedRevision) {
           throw new NavigationRevisionMismatchError('导航状态已变化，请重新加载后再保存')
         }
-        const nextConfig = mergeAppSecrets(request.body, currentConfig)
+        const nextConfig = mergeAppSecrets(request.body, currentConfig, (id) =>
+          hasProtectedSceneAccess(request, id)
+        )
         const parsedNextConfig = appConfigSchema.parse(nextConfig)
         const nextNavigation = storedNavigationConfigSchema.parse(parsedNextConfig.navigation)
         const unauthorizedScene = findUnauthorizedProtectedScene(
@@ -694,13 +773,15 @@ export async function buildServer() {
       if (result.unauthorizedSceneName) {
         return reply.code(403).send(`请先解锁场景“${result.unauthorizedSceneName}”`)
       }
-      await webdavBackupManager.reloadSchedule()
-      reply.header('ETag', navigationEtag(savedConfig.navigation))
-      return sanitizeAppConfig(savedConfig)
+      void webdavBackupManager.reloadSchedule().catch((error) => app.log.error(error))
+      reply.header('ETag', `"${appRevision(savedConfig)}"`)
+      return sanitizeAppConfig(savedConfig, (id) => hasProtectedSceneAccess(request, id))
     } catch (error) {
       if (error instanceof NavigationRevisionMismatchError) {
         return reply.code(412).send(error.message)
       }
+      if (error instanceof BookmarkManagementError)
+        return reply.code(error.statusCode).send(error.message)
       const message = error instanceof Error ? error.message : '保存整站配置失败'
       reply.code(400)
       return message
@@ -714,7 +795,7 @@ export async function buildServer() {
 
     const navigation = await readNavigationConfig()
     reply.header('ETag', navigationEtag(navigation))
-    return sanitizeNavigationConfig(navigation)
+    return sanitizeNavigationConfig(navigation, (id) => hasProtectedSceneAccess(request, id))
   })
 
   app.put('/api/config/navigation', async (request, reply) => {
@@ -732,7 +813,9 @@ export async function buildServer() {
         if (getNavigationRevision(currentNavigation) !== expectedRevision) {
           throw new NavigationRevisionMismatchError('导航状态已变化，请重新加载后再保存')
         }
-        const nextNavigation = mergeNavigationPasswords(request.body, currentNavigation)
+        const nextNavigation = mergeNavigationPasswords(request.body, currentNavigation, (id) =>
+          hasProtectedSceneAccess(request, id)
+        )
         const parsedNextNavigation = storedNavigationConfigSchema.parse(nextNavigation)
         const unauthorizedScene = findUnauthorizedProtectedScene(
           request,
@@ -749,7 +832,7 @@ export async function buildServer() {
         return { navigation: parsedNextNavigation, result: null }
       })
       reply.header('ETag', navigationEtag(savedNavigation))
-      return sanitizeNavigationConfig(savedNavigation)
+      return sanitizeNavigationConfig(savedNavigation, (id) => hasProtectedSceneAccess(request, id))
     } catch (error) {
       if (error instanceof NavigationRevisionMismatchError) {
         return reply.code(412).send(error.message)
@@ -794,9 +877,7 @@ export async function buildServer() {
           )
         }
         const scenes = navigation.scenes.map((scene, index) =>
-          index === sceneIndex
-            ? { ...scene, protected: Boolean(password), passwordHash }
-            : scene
+          index === sceneIndex ? { ...scene, protected: Boolean(password), passwordHash } : scene
         )
         return { navigation: { ...navigation, scenes }, result: null }
       }))
@@ -811,7 +892,7 @@ export async function buildServer() {
     }
     sceneAccessService.clear()
     reply.header('ETag', navigationEtag(savedNavigation))
-    return sanitizeNavigationConfig(savedNavigation)
+    return sanitizeNavigationConfig(savedNavigation, (id) => hasProtectedSceneAccess(request, id))
   })
 
   app.get('/api/navigation/scenes', async (request, reply) => {
@@ -903,7 +984,9 @@ export async function buildServer() {
       return reply
     }
 
-    return sanitizeSystemConfig(await readSystemConfig())
+    const system = await readSystemConfig()
+    reply.header('ETag', `"${systemRevision(system)}"`)
+    return sanitizeSystemConfig(system)
   })
 
   app.put('/api/config/system', async (request, reply) => {
@@ -912,12 +995,23 @@ export async function buildServer() {
     }
 
     try {
-      const currentSystem = await readSystemConfig()
-      const nextSystem = mergeSystemAuth(request.body, currentSystem.auth)
-      const savedSystem = await writeSystemConfig(nextSystem)
-      await webdavBackupManager.reloadSchedule()
-      return sanitizeSystemConfig(savedSystem)
+      const expectedRevision = getIfMatchRevision(request)
+      if (!expectedRevision) return reply.code(428).send('请重新加载配置后再保存')
+      const { appConfig: saved } = await mutateAppConfig((current) => {
+        if (systemRevision(current.system) !== expectedRevision) {
+          throw new NavigationRevisionMismatchError('系统设置已变化，请重新加载后再保存')
+        }
+        return {
+          appConfig: { ...current, system: mergeSystemAuth(request.body, current.system.auth) },
+          result: null,
+        }
+      })
+      void webdavBackupManager.reloadSchedule().catch((error) => app.log.error(error))
+      reply.header('ETag', `"${systemRevision(saved.system)}"`)
+      return sanitizeSystemConfig(saved.system)
     } catch (error) {
+      if (error instanceof NavigationRevisionMismatchError)
+        return reply.code(412).send(error.message)
       const message = error instanceof Error ? error.message : '保存系统配置失败'
       reply.code(400)
       return message
@@ -968,7 +1062,7 @@ export async function buildServer() {
 
       return {
         requiresReauth: result.requiresReauth,
-        restoredConfig: sanitizeAppConfig(result.restoredConfig),
+        restoredConfig: sanitizeAppConfig(result.restoredConfig, () => false),
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '恢复 WebDAV 备份版本失败'

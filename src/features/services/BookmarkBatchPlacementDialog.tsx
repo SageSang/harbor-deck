@@ -1,3 +1,5 @@
+import { useEditSnapshot } from '@/features/config/useEditSnapshot'
+import { useDiscardDraft } from '@/features/config/useDiscardDraft'
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Layers3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -27,10 +29,13 @@ export function BookmarkBatchPlacementDialog({
   onConfirm,
 }: BookmarkBatchPlacementDialogProps) {
   const { messages } = useI18n()
+  const editor = useEditSnapshot(open, JSON.stringify([selectedSlugs, sceneTokens]), navigation)
   const availableScenes = useMemo(
     () =>
-      navigation?.scenes.filter((scene) => !scene.protected || Boolean(sceneTokens[scene.id])) ?? [],
-    [navigation, sceneTokens]
+      editor.snapshot?.scenes.filter(
+        (scene) => !scene.protected || Boolean(sceneTokens[scene.id])
+      ) ?? [],
+    [editor.snapshot, sceneTokens]
   )
   const [selectedGroups, setSelectedGroups] = useState<Record<string, string>>({})
   const [collapsedSceneIds, setCollapsedSceneIds] = useState<Set<string>>(new Set())
@@ -61,10 +66,11 @@ export function BookmarkBatchPlacementDialog({
     groupId,
   }))
 
+  const close = useDiscardDraft(open && placements.length > 0, Boolean(saving), onClose)
   return (
     <ModalShell
       open={open}
-      onClose={onClose}
+      onClose={close}
       title={messages.serviceGrid.batchAddTitle}
       description={messages.serviceGrid.batchAddDescription}
       icon={Layers3}
@@ -78,7 +84,10 @@ export function BookmarkBatchPlacementDialog({
             </p>
           ) : (
             availableScenes.map((scene) => (
-              <section key={scene.id} className="rounded-2xl border border-border/70 bg-card/60 p-3">
+              <section
+                key={scene.id}
+                className="rounded-2xl border border-border/70 bg-card/60 p-3"
+              >
                 <button
                   type="button"
                   aria-expanded={!collapsedSceneIds.has(scene.id)}
@@ -95,7 +104,9 @@ export function BookmarkBatchPlacementDialog({
                   }
                   className="mb-2 flex w-full items-center justify-between gap-3 rounded-xl px-1 py-1 text-left transition hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
                 >
-                  <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">{scene.name}</h3>
+                  <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">
+                    {scene.name}
+                  </h3>
                   {selectedGroups[scene.id] ? (
                     <span className="text-xs text-primary">{messages.common.itemCount(1)}</span>
                   ) : null}
@@ -135,7 +146,7 @@ export function BookmarkBatchPlacementDialog({
           )}
         </div>
         <div className="flex flex-col gap-2 border-t border-border/65 bg-background/80 px-3.5 py-3 sm:flex-row sm:justify-end sm:px-5">
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" onClick={close}>
             {messages.common.cancel}
           </Button>
           <Button

@@ -1,3 +1,4 @@
+import { useAppStore } from '@/store/appStore'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   appConfigQueryKey,
@@ -15,7 +16,8 @@ export function useRestoreWebdavBackup() {
     onSuccess: async (result) => {
       queryClient.setQueryData(appConfigQueryKey, result.restoredConfig)
       queryClient.setQueryData(systemConfigQueryKey, result.restoredConfig.system)
-      queryClient.setQueryData(navigationConfigQueryKey, result.restoredConfig.navigation)
+      useAppStore.getState().clearSceneTokens()
+      await queryClient.invalidateQueries({ queryKey: navigationConfigQueryKey })
       await queryClient.invalidateQueries({ queryKey: sceneListQueryKey })
       await queryClient.invalidateQueries({ queryKey: ['navigation', 'services'] })
       await queryClient.invalidateQueries({

@@ -1,3 +1,4 @@
+import { useAppStore } from '@/store/appStore'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   appConfigQueryKey,
@@ -19,6 +20,7 @@ import {
 import { groupExpansionQueryKey } from '@/features/navigation/groupExpansionApi'
 
 function clearProtectedQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  useAppStore.getState().clearSceneTokens()
   queryClient.removeQueries({ queryKey: appConfigQueryKey })
   queryClient.removeQueries({ queryKey: systemConfigQueryKey })
   queryClient.removeQueries({ queryKey: navigationConfigQueryKey })

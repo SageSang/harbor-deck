@@ -140,6 +140,7 @@ const defaultNavigationConfigValue = {
 
 export const navigationConfigSchema = z
   .object({
+    _revision: z.string().optional(),
     defaultSceneId: slugSchema,
     bookmarks: z.array(serviceConfigSchema).default([]),
     scenes: z.array(navigationSceneConfigSchema).min(1),
@@ -371,6 +372,7 @@ function migrateLegacySystemSkin(input: unknown) {
 
 const systemConfigObjectSchema = z
   .object({
+    _revision: z.string().optional(),
     appName: trimmedString.default('HarborDeck'),
     skin: z.enum(APP_SKINS).default(DEFAULT_APP_SKIN),
     // Kept for config compatibility with versions before multi-skin support.

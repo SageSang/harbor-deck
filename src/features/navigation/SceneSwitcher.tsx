@@ -98,6 +98,7 @@ export function SceneSwitcher() {
 
   useEffect(() => {
     function handleShortcut(event: globalThis.KeyboardEvent) {
+      if (document.querySelector('[aria-modal="true"]')) return
       if (
         !event.altKey ||
         !event.shiftKey ||

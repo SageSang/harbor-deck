@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { HeroClock } from '@/components/HeroClock'
 import { SearchBox } from '@/components/SearchBox'
 import { TopBar } from '@/components/TopBar'
@@ -6,8 +6,6 @@ import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
 import { useSystemConfig } from '@/features/config/useSystemConfig'
 import { detectNetworkMode } from '@/core/network/detectNetworkMode'
-import { hasCompleteNetworkProbeConfig } from '@/config/networkProbe'
-import { useNavigationConfig } from '@/features/navigation/useNavigation'
 import { GroupExpansionProvider } from '@/features/navigation/GroupExpansionProvider'
 
 const ServiceGrid = lazy(() =>
@@ -20,15 +18,13 @@ export function HomePage() {
   const error = useAppStore((state) => state.error)
   const { data: systemConfig } = useSystemConfig()
   const { messages } = useI18n()
-  const navigationQuery = useNavigationConfig({
-    enabled:
-      systemConfig !== undefined && !hasCompleteNetworkProbeConfig(systemConfig.networkProbe),
-  })
-  const networkProbeServices = useMemo(
-    () =>
-      navigationQuery.data?.bookmarks.map((bookmark) => ({ ...bookmark, category: 'all' })) ?? [],
-    [navigationQuery.data]
-  )
+  const probeVersion = useAppStore((state) => state.networkProbeVersion)
+  const requestDetection = useAppStore((state) => state.requestNetworkDetection)
+  useEffect(() => {
+    const refresh = () => requestDetection()
+    window.addEventListener('online', refresh)
+    return () => window.removeEventListener('online', refresh)
+  }, [requestDetection])
 
   useEffect(() => {
     let cancelled = false
@@ -39,7 +35,7 @@ export function HomePage() {
       }
     }
 
-    void detectNetworkMode(networkProbeServices, systemConfig?.networkProbe).then((mode) => {
+    void detectNetworkMode([], systemConfig?.networkProbe).then((mode) => {
       if (!cancelled) {
         setDetectedNetworkMode(mode)
       }
@@ -48,12 +44,7 @@ export function HomePage() {
     return () => {
       cancelled = true
     }
-  }, [
-    networkModeStrategy,
-    networkProbeServices,
-    setDetectedNetworkMode,
-    systemConfig?.networkProbe,
-  ])
+  }, [networkModeStrategy, probeVersion, setDetectedNetworkMode, systemConfig?.networkProbe])
 
   return (
     <GroupExpansionProvider>

@@ -82,5 +82,8 @@ export function cloneAppConfig(config: AppConfig): AppConfig {
 }
 
 export function formatAppConfig(config: AppConfig) {
-  return JSON.stringify(cloneAppConfig(parseAppConfig(config)), null, 2)
+  const exportConfig = cloneAppConfig(parseAppConfig(config))
+  delete exportConfig.navigation._revision
+  delete exportConfig.system._revision
+  return JSON.stringify(exportConfig, null, 2)
 }

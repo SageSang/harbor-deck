@@ -1,3 +1,6 @@
+import { useEditSnapshot } from '@/features/config/useEditSnapshot'
+import { DraftNotice } from '@/features/config/DraftNotice'
+import { useDiscardDraft } from '@/features/config/useDiscardDraft'
 import { useEffect, useMemo, useState } from 'react'
 import { Copy, Pencil, Plus } from 'lucide-react'
 import { ModalShell } from '@/components/ModalShell'
@@ -53,9 +56,17 @@ export function BookmarkEditDialog({
   const { messages } = useI18n()
   const sceneTokens = useAppStore((state) => state.sceneTokens)
   const [draft, setDraft] = useState<BookmarkFormValues | null>(null)
+  const [initialDraft, setInitialDraft] = useState<BookmarkFormValues | null>(null)
   const [slugTouched, setSlugTouched] = useState(true)
   const [feedback, setFeedback] = useState<FeedbackState | null>(null)
-  const navigation = config ?? navigationQuery.data
+  const accessVersion = useAppStore((state) => state.sceneAccessVersion)
+  const latestNavigation = config ?? navigationQuery.data
+  const editor = useEditSnapshot(
+    open,
+    `${mode}:${serviceSlug}:${initialSceneId}:${initialGroupId}:${accessVersion}`,
+    latestNavigation
+  )
+  const navigation = editor.snapshot
   const editableNavigation = useMemo(() => {
     if (!navigation) return undefined
     const scenes = navigation.scenes.filter(
@@ -73,14 +84,17 @@ export function BookmarkEditDialog({
   const activeService = navigation?.bookmarks.find((bookmark) => bookmark.slug === serviceSlug)
 
   useEffect(() => {
-    if (!open || !editableNavigation) return
+    if (!open || !editableNavigation) {
+      setInitialDraft(null)
+      return
+    }
     if (mode === 'create') {
-      setDraft(
+      setInitialDraft(
         createEmptyBookmarkForm(editableNavigation, initialSceneId, initialGroupId, { blank: true })
       )
       setSlugTouched(false)
     } else if (activeService) {
-      setDraft(
+      setInitialDraft(
         mode === 'duplicate'
           ? createDuplicateBookmarkForm(editableNavigation, activeService)
           : createBookmarkFormFromService(editableNavigation, activeService)
@@ -89,6 +103,15 @@ export function BookmarkEditDialog({
     }
     setFeedback(null)
   }, [activeService, editableNavigation, initialGroupId, initialSceneId, mode, open])
+
+  useEffect(() => {
+    setDraft(initialDraft)
+  }, [initialDraft])
+  const close = useDiscardDraft(
+    open && JSON.stringify(draft) !== JSON.stringify(initialDraft),
+    saveMutation.isPending,
+    onClose
+  )
 
   function handleFieldChange<K extends keyof BookmarkFormValues>(
     field: K,
@@ -179,7 +202,7 @@ export function BookmarkEditDialog({
   return (
     <ModalShell
       open={open}
-      onClose={onClose}
+      onClose={close}
       title={
         isCreate
           ? messages.bookmarkEdit.createTitle
@@ -197,6 +220,12 @@ export function BookmarkEditDialog({
       icon={isCreate ? Plus : isDuplicate ? Copy : Pencil}
       widthClassName="max-w-3xl"
     >
+      <DraftNotice
+        changed={editor.changed}
+        current={draft}
+        latest={latestNavigation?.bookmarks.find((bookmark) => bookmark.slug === serviceSlug)}
+        onReload={editor.reload}
+      />
       <div className="flex min-h-0 flex-1 overflow-hidden md:min-h-[520px]">
         <BookmarkForm
           config={editableNavigation}
@@ -211,7 +240,7 @@ export function BookmarkEditDialog({
           }
           submitDisabled={saveMutation.isPending}
           onSubmit={handleSubmit}
-          onCancel={onClose}
+          onCancel={close}
           onFieldChange={handleFieldChange}
         />
       </div>

@@ -56,9 +56,11 @@ export function createWebdavBackupManager(options: CreateWebdavBackupManagerOpti
     timer = setTimeout(
       () => {
         timer = null
-        void triggerScheduledBackup()
+        // Long waits are split; waking up is not permission to run a backup.
+        if (delayMs > DAY_MS) void reloadSchedule()
+        else void triggerScheduledBackup()
       },
-      Math.max(0, delayMs)
+      Math.min(DAY_MS, Math.max(0, delayMs))
     )
     timer.unref?.()
   }

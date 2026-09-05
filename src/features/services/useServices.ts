@@ -46,7 +46,10 @@ export function useServices() {
 
               return (
                 service.name.toLowerCase().includes(keyword) ||
-                service.slug.toLowerCase().includes(keyword)
+                service.slug.toLowerCase().includes(keyword) ||
+                service.primaryUrl.toLowerCase().includes(keyword) ||
+                (service.secondaryUrl ?? '').toLowerCase().includes(keyword) ||
+                (service.note ?? '').toLowerCase().includes(keyword)
               )
             })
           : group.services

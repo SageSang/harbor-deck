@@ -210,7 +210,7 @@ describe('auth module', () => {
     const updateResponse = await server.inject({
       method: 'PUT',
       url: '/api/config/system',
-      headers: { cookie },
+      headers: { cookie, 'if-match': String(systemResponse.headers.etag) },
       payload: { ...system, skin: 'ember' },
     })
 
@@ -269,7 +269,7 @@ describe('auth module', () => {
     const saveSystemResponse = await server.inject({
       method: 'PUT',
       url: '/api/config/system',
-      headers: { cookie },
+      headers: { cookie, 'if-match': String(systemResponse.headers.etag) },
       payload: {
         ...publicSystem,
         darkMode: !publicSystem.darkMode,

@@ -1,3 +1,4 @@
+import { useDialogFocus } from '@/components/useDialogFocus'
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -8,6 +9,7 @@ import {
   Copy,
   GripVertical,
   Link2,
+  MoreHorizontal,
   Pencil,
   Plus,
   Trash2,
@@ -187,7 +189,7 @@ async function copyTextToClipboard(value: string) {
 }
 
 export function ServiceGrid() {
-  const { groupedServices, isLoading, config } = useServices()
+  const { groupedServices, isLoading, config, error, refetch } = useServices()
   const searchKeyword = useAppStore((state) => state.searchKeyword)
   const networkMode = useAppStore((state) => state.networkMode)
   const { data: systemConfig } = useSystemConfig()
@@ -198,6 +200,7 @@ export function ServiceGrid() {
   const {
     expandedGroupKeys,
     isReady: isGroupExpansionReady,
+    retry: retryGroupExpansion,
     isGroupPending,
     setGroupExpanded,
   } = useGroupExpansion()
@@ -208,6 +211,7 @@ export function ServiceGrid() {
   const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null)
   const [groupDragOver, setGroupDragOver] = useState<GroupDragOverState | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const contextMenuRef = useDialogFocus(Boolean(contextMenu), () => setContextMenu(null), 95)
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
   const [bookmarkDialog, setBookmarkDialog] = useState<BookmarkDialogState | null>(null)
@@ -232,7 +236,7 @@ export function ServiceGrid() {
   })
   const [, setIconRenderVersion] = useState(0)
   const gridRef = useRef<HTMLDivElement | null>(null)
-  const bookmarkRefs = useRef(new Map<string, HTMLDivElement>())
+  const bookmarkRefs = useRef(new Map<string, HTMLAnchorElement>())
   const longPressTimerRef = useRef<number | null>(null)
   const longPressPointerRef = useRef<{ slug: string; x: number; y: number } | null>(null)
   const justLongPressedRef = useRef(false)
@@ -404,6 +408,7 @@ export function ServiceGrid() {
     }
 
     function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (document.querySelector('[aria-modal="true"]')) return
       if (event.key === '/' && !isEditableTarget(event.target)) {
         event.preventDefault()
         setContextMenu(null)
@@ -533,7 +538,7 @@ export function ServiceGrid() {
     element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
   }
 
-  function beginBookmarkLongPress(slug: string, event: MouseEvent<HTMLDivElement>) {
+  function beginBookmarkLongPress(slug: string, event: MouseEvent<HTMLAnchorElement>) {
     if (selectionMode || event.button !== 0 || !canDrag) {
       return
     }
@@ -550,7 +555,7 @@ export function ServiceGrid() {
     }, LONG_PRESS_DELAY_MS)
   }
 
-  function trackBookmarkLongPress(event: MouseEvent<HTMLDivElement>) {
+  function trackBookmarkLongPress(event: MouseEvent<HTMLAnchorElement>) {
     const pointer = longPressPointerRef.current
     if (!pointer) {
       return
@@ -982,7 +987,7 @@ export function ServiceGrid() {
     }
   }
 
-  if (isLoading || !isGroupExpansionReady) {
+  if (isLoading || navigationQuery.isLoading) {
     return (
       <div className="flex min-h-[420px] items-center justify-center">
         <div className="rounded-[1.75rem] border border-border/75 bg-card/72 px-8 py-6 text-center shadow-[0_20px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:bg-card/70 dark:shadow-[0_24px_56px_rgba(0,0,0,0.28)]">
@@ -993,6 +998,23 @@ export function ServiceGrid() {
       </div>
     )
   }
+
+  if (error || navigationQuery.error)
+    return (
+      <div role="alert" className="p-5 text-center">
+        <p>{messages.common.requestFailed}</p>
+        <button
+          type="button"
+          className="mt-3 underline"
+          onClick={() => {
+            void refetch()
+            void navigationQuery.refetch()
+          }}
+        >
+          {messages.common.refresh}
+        </button>
+      </div>
+    )
 
   if (renderGroups.length === 0) {
     const hasAnyBookmarks = activeConfig.some((group) => group.items.length > 0)
@@ -1012,7 +1034,11 @@ export function ServiceGrid() {
   }
 
   const menuLeft = contextMenu ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 208)) : 0
-  const menuTop = contextMenu ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - 184)) : 0
+  const menuTop = contextMenu ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - 360)) : 0
+  const menuBookmark =
+    contextMenu?.kind === 'bookmark'
+      ? navigationQuery.data?.bookmarks.find((bookmark) => bookmark.slug === contextMenu.slug)
+      : undefined
   const desktopCardWidth =
     desktopColumnCount > 0 && gridWidth > 0
       ? getDesktopCardWidth(gridWidth, desktopColumnCount)
@@ -1024,6 +1050,14 @@ export function ServiceGrid() {
 
   return (
     <>
+      {!isGroupExpansionReady && (
+        <div role="status" className="mb-3 rounded-xl border border-amber-500/30 p-3 text-sm">
+          {messages.serviceGrid.groupPreferenceLoadFailed}
+          <button type="button" className="ml-3 underline" onClick={retryGroupExpansion}>
+            {messages.common.refresh}
+          </button>
+        </div>
+      )}
       {selectionMode ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[90] flex justify-center px-4 [padding-bottom:env(safe-area-inset-bottom)]">
           <div className="pointer-events-auto flex min-h-10 items-center gap-3 rounded-full border border-primary/25 bg-popover/96 px-4 py-1.5 text-sm text-muted-foreground shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl dark:shadow-[0_18px_44px_rgba(0,0,0,0.4)]">
@@ -1102,7 +1136,7 @@ export function ServiceGrid() {
             >
               <div className="flex flex-1 flex-col gap-2.5 md:h-full md:flex-row md:items-stretch md:gap-3">
                 <div
-                  className="relative flex w-full shrink-0 cursor-pointer items-center justify-center rounded-[1.15rem] border border-border/70 bg-[linear-gradient(180deg,hsl(var(--background)/0.96),hsl(var(--background)/0.84))] px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:min-h-[76px] md:w-[11rem] md:flex-col md:justify-center md:self-stretch"
+                  className="relative flex w-full shrink-0 cursor-pointer flex-col items-center justify-center rounded-[1.15rem] border border-border/70 bg-[linear-gradient(180deg,hsl(var(--background)/0.96),hsl(var(--background)/0.84))] px-4 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:min-h-[76px] md:w-[11rem] md:flex-col md:justify-center md:self-stretch"
                   title={
                     isCollapsed
                       ? messages.serviceGrid.expandGroup
@@ -1132,7 +1166,17 @@ export function ServiceGrid() {
                       aria-label={messages.serviceGrid.dragGroup(group.category)}
                       title={messages.serviceGrid.dragGroup(group.category)}
                       className="absolute left-2 top-2 inline-flex h-7 w-7 cursor-grab items-center justify-center rounded-full text-muted-foreground/65 transition hover:bg-primary/10 hover:text-primary active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
-                      onClick={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setContextMenu({
+                          kind: 'group',
+                          groupId: group.groupId,
+                          groupName: group.category,
+                          x: rect.left,
+                          y: rect.bottom,
+                        })
+                      }}
                       onDragStart={(event) => {
                         if (!canDragGroups) {
                           event.preventDefault()
@@ -1250,13 +1294,23 @@ export function ServiceGrid() {
                             }
                             role="link"
                             aria-label={service.name}
-                            tabIndex={focusedBookmarkSlug === service.slug ? 0 : -1}
+                            tabIndex={
+                              (focusedBookmarkSlug ?? firstVisibleBookmarkSlug) === service.slug
+                                ? 0
+                                : -1
+                            }
                             onFocus={() => setFocusedBookmarkSlug(service.slug)}
                             onKeyDown={(event) => {
                               if (selectionMode) {
                                 return
                               }
-                              if (event.key === 'Enter') {
+                              if (
+                                event.key === 'Enter' &&
+                                !event.ctrlKey &&
+                                !event.metaKey &&
+                                !event.shiftKey &&
+                                !event.altKey
+                              ) {
                                 event.preventDefault()
                                 event.currentTarget.click()
                                 return
@@ -1385,6 +1439,35 @@ export function ServiceGrid() {
                               })
                             }}
                           />
+                          {!selectionMode && (
+                            <button
+                              type="button"
+                              aria-label={`${service.name} · ${messages.serviceGrid.editAction}`}
+                              aria-haspopup="menu"
+                              className="absolute right-0 top-0 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary"
+                              onClick={(event) => {
+                                const rect = event.currentTarget.getBoundingClientRect()
+                                setContextMenu(
+                                  group.isQuickRecordGroup && activeSceneId
+                                    ? {
+                                        kind: 'quick-record',
+                                        recordId: service.slug.replace(/^quick-/, ''),
+                                        sceneId: activeSceneId,
+                                        x: rect.right,
+                                        y: rect.bottom,
+                                      }
+                                    : {
+                                        kind: 'bookmark',
+                                        slug: service.slug,
+                                        x: rect.right,
+                                        y: rect.bottom,
+                                      }
+                                )
+                              }}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                          )}
                           {selectionMode ? (
                             <button
                               type="button"
@@ -1470,10 +1553,38 @@ export function ServiceGrid() {
         createPortal(
           <div className="fixed inset-0 z-[95]" onClick={() => setContextMenu(null)}>
             <div
-              className="absolute w-48 overflow-hidden rounded-[1rem] border border-border/80 bg-popover/96 p-1.5 shadow-[0_24px_56px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:shadow-[0_24px_60px_rgba(0,0,0,0.42)]"
+              ref={contextMenuRef}
+              role="menu"
+              tabIndex={-1}
+              aria-label={messages.serviceGrid.editAction}
+              className="absolute max-h-[calc(100dvh-1rem)] w-48 overflow-auto rounded-[1rem] border border-border/80 bg-popover/96 p-1.5 shadow-[0_24px_56px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:shadow-[0_24px_60px_rgba(0,0,0,0.42)]"
               style={{ left: menuLeft, top: menuTop }}
               onClick={(event) => event.stopPropagation()}
             >
+              {menuBookmark?.secondaryUrl && (
+                <>
+                  <a
+                    role="menuitem"
+                    href={menuBookmark.primaryUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-xl px-3 py-2.5 text-sm hover:bg-accent"
+                    onClick={() => setContextMenu(null)}
+                  >
+                    主地址 / Primary
+                  </a>
+                  <a
+                    role="menuitem"
+                    href={menuBookmark.secondaryUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-xl px-3 py-2.5 text-sm hover:bg-accent"
+                    onClick={() => setContextMenu(null)}
+                  >
+                    备用地址 / Alternate
+                  </a>
+                </>
+              )}
               {contextMenu.kind === 'bookmark' ? (
                 <>
                   <button

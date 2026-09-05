@@ -1,3 +1,6 @@
+import { useFieldDraft } from '@/features/config/useFieldDraft'
+import { useDiscardDraft } from '@/features/config/useDiscardDraft'
+import { DraftNotice } from '@/features/config/DraftNotice'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import {
   ArrowDown,
@@ -76,6 +79,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   const saveMutation = useSaveNavigationConfig()
   const passwordMutation = useSetScenePassword()
   const activeSceneId = useAppStore((state) => state.activeSceneId)
+  const accessVersion = useAppStore((state) => state.sceneAccessVersion)
   const sceneTokens = useAppStore((state) => state.sceneTokens)
   const { showToast, clearToasts, confirm } = useFeedback()
   const { messages } = useI18n()
@@ -84,10 +88,8 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   const [activeSection, setActiveSection] = useState<SectionKey>('groups')
   const [selectedSceneId, setSelectedSceneId] = useState<string>('')
   const [newSceneName, setNewSceneName] = useState('')
-  const [sceneNameDraft, setSceneNameDraft] = useState('')
   const [scenePassword, setScenePassword] = useState('')
   const [newGroupName, setNewGroupName] = useState('')
-  const [groupDrafts, setGroupDrafts] = useState<Record<string, string>>({})
   const [bookmarkDraft, setBookmarkDraft] = useState<BookmarkFormValues | null>(null)
   const [bookmarkSlugTouched, setBookmarkSlugTouched] = useState(false)
   const [feedback, setFeedback] = useState<FeedbackState | null>(null)
@@ -115,6 +117,20 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     }
   }, [navigation, sceneTokens])
   const selectedScene = manageableNavigation?.scenes.find((scene) => scene.id === selectedSceneId)
+  const sceneNameEditor = useFieldDraft(
+    selectedScene?.name ?? '',
+    `${selectedSceneId}:${accessVersion}`
+  )
+  const sceneNameDraft = sceneNameEditor.value
+  const setSceneNameDraft = sceneNameEditor.setValue
+  const groupNames = useMemo(
+    () => Object.fromEntries(selectedScene?.groups.map((group) => [group.id, group.name]) ?? []),
+    [selectedScene]
+  )
+  const groupEditor = useFieldDraft(groupNames, `${selectedSceneId}:${accessVersion}`)
+  const groupDrafts = groupEditor.value
+  const setGroupDrafts = groupEditor.setValue
+  const [bookmarkDirty, setBookmarkDirty] = useState(false)
   const editableSceneIds = useMemo(
     () => new Set(manageableNavigation?.scenes.map((scene) => scene.id) ?? []),
     [manageableNavigation]
@@ -130,10 +146,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       ? selectedSceneId
       : (manageableNavigation.scenes.find((scene) => scene.id === activeSceneId)?.id ??
         manageableNavigation.defaultSceneId)
-    const scene = manageableNavigation.scenes.find((item) => item.id === nextSceneId)!
     setSelectedSceneId(nextSceneId)
-    setSceneNameDraft(scene.name)
-    setGroupDrafts(Object.fromEntries(scene.groups.map((group) => [group.id, group.name])))
     setBookmarkDraft(
       (current) =>
         current ??
@@ -142,11 +155,8 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   }, [activeSceneId, manageableNavigation, selectedSceneId])
 
   useEffect(() => {
-    if (!isOpen || !manageableNavigation || !activeSceneId) return
-    if (manageableNavigation.scenes.some((scene) => scene.id === activeSceneId)) {
-      setSelectedSceneId(activeSceneId)
-    }
-  }, [activeSceneId, isOpen, manageableNavigation])
+    if (isOpen && activeSceneId) setSelectedSceneId(activeSceneId)
+  }, [activeSceneId, isOpen])
 
   useEffect(() => {
     saveOperationRef.current += 1
@@ -155,12 +165,6 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       clearToasts()
     }
   }, [clearToasts, isOpen])
-
-  useEffect(() => {
-    if (!selectedScene) return
-    setSceneNameDraft(selectedScene.name)
-    setGroupDrafts(Object.fromEntries(selectedScene.groups.map((group) => [group.id, group.name])))
-  }, [selectedScene])
 
   function notify(type: FeedbackState['type'], message: string) {
     setFeedback({ type, message })
@@ -228,7 +232,11 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     }
     const next = cloneNavigationConfig(navigation)
     next.scenes.find((scene) => scene.id === selectedScene.id)!.name = sceneNameDraft.trim()
-    saveNavigation(next, '场景名称已更新。')
+    if (selectedScene.name !== sceneNameEditor.base) {
+      notify('error', '场景名称已变化，请比较并重新加载后再保存')
+      return
+    }
+    saveNavigation(next, '场景名称已更新。', () => sceneNameEditor.accept(sceneNameDraft.trim()))
   }
 
   function handleDuplicateScene() {
@@ -298,7 +306,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   function saveScenePassword(password: string | null) {
     if (!selectedScene) return
     passwordMutation.mutate(
-      { sceneId: selectedScene.id, password },
+      { sceneId: selectedScene.id, password, revision: navigation?._revision },
       {
         onSuccess: () => {
           setScenePassword('')
@@ -331,7 +339,15 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       return
     }
     const next = renameGroupInScene(navigation, selectedScene.id, groupId, name)
-    saveNavigation(next, '分组名称已更新。')
+    if (
+      selectedScene.groups.find((group) => group.id === groupId)?.name !== groupEditor.base[groupId]
+    ) {
+      notify('error', '分组名称已变化，请比较并重新加载后再保存')
+      return
+    }
+    saveNavigation(next, '分组名称已更新。', () =>
+      groupEditor.accept({ ...groupEditor.base, [groupId]: name })
+    )
   }
 
   async function handleDeleteGroup(groupId: string) {
@@ -461,6 +477,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     value: BookmarkFormValues[K]
   ) {
     if (!navigation) return
+    setBookmarkDirty(true)
     setBookmarkDraft((current) => {
       if (!current) return current
       const next = { ...current, [field]: value }
@@ -645,6 +662,34 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     [messages]
   )
 
+  const closeManage = useDiscardDraft(
+    isOpen &&
+      Boolean(
+        sceneNameEditor.dirty ||
+        groupEditor.dirty ||
+        newSceneName ||
+        newGroupName ||
+        scenePassword ||
+        bookmarkDirty
+      ),
+    saveMutation.isPending || passwordMutation.isPending,
+    () => {
+      setIsOpen(false)
+      sceneNameEditor.reset()
+      groupEditor.reset()
+      setNewSceneName('')
+      setNewGroupName('')
+      setScenePassword('')
+      setBookmarkDirty(false)
+      if (manageableNavigation)
+        setBookmarkDraft(
+          createEmptyBookmarkForm(manageableNavigation, selectedSceneId, null, {
+            withoutPlacement: true,
+          })
+        )
+    }
+  )
+
   if (!navigation || !manageableNavigation || !selectedScene || !bookmarkDraft) {
     return (
       <Button type="button" variant="outline" size="icon" className="h-10 w-10 rounded-full">
@@ -682,12 +727,24 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
 
       <ModalShell
         open={isOpen}
-        onClose={() => setIsOpen(false)}
+        onClose={closeManage}
         title={messages.bookmarkManage.title}
         description="按场景维护分组和共享书签。"
         icon={Plus}
         widthClassName="max-w-6xl"
       >
+        <DraftNotice
+          changed={
+            (sceneNameEditor.dirty && selectedScene.name !== sceneNameEditor.base) ||
+            (groupEditor.dirty && JSON.stringify(groupNames) !== JSON.stringify(groupEditor.base))
+          }
+          current={{ name: sceneNameDraft, groups: groupDrafts }}
+          latest={{ name: selectedScene.name, groups: groupNames }}
+          onReload={() => {
+            sceneNameEditor.reset()
+            groupEditor.reset()
+          }}
+        />
         <ConfigPanelLayout
           panelTitle={messages.bookmarkManage.panelTitle}
           tabs={panelTabs}
@@ -936,7 +993,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                 submitLabel={messages.bookmarkManage.bookmarkSection.submitButton}
                 submitDisabled={saveMutation.isPending}
                 onSubmit={handleAddBookmark}
-                onCancel={() => setIsOpen(false)}
+                onCancel={closeManage}
                 onFieldChange={handleBookmarkFieldChange}
               />
             </ConfigPanelSection>

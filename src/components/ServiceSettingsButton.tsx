@@ -1,3 +1,6 @@
+import { useEditSnapshot } from '@/features/config/useEditSnapshot'
+import { DraftNotice } from '@/features/config/DraftNotice'
+import { useDiscardDraft } from '@/features/config/useDiscardDraft'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
   Download,
@@ -55,7 +58,7 @@ import { useAuthStatus, useLogout, useUpdateCredentials } from '@/features/auth/
 import { cloneNavigationConfig } from '@/features/navigation/navigationConfig'
 import { useNavigationConfig } from '@/features/navigation/useNavigation'
 import { useAppStore } from '@/store/appStore'
-import { APP_SKINS, skinUsesDarkMode, type AppSkin } from '@shared/theme'
+import { APP_SKINS, type AppSkin } from '@shared/theme'
 
 interface FeedbackState {
   type: 'success' | 'error'
@@ -137,9 +140,13 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
   const restoreWebdavBackupMutation = useRestoreWebdavBackup()
   const updateCredentialsMutation = useUpdateCredentials()
   const logoutMutation = useLogout()
+  const currentSkin = useAppStore((state) => state.skin)
+  const accessVersion = useAppStore((state) => state.sceneAccessVersion)
   const setSkin = useAppStore((state) => state.setSkin)
   const setLanguage = useAppStore((state) => state.setLanguage)
   const authStatusQuery = useAuthStatus()
+  const usernameRef = useRef(authStatusQuery.data?.username)
+  usernameRef.current = authStatusQuery.data?.username
   const { showToast } = useFeedback()
   const { language, messages } = useI18n()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -178,6 +185,11 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
     () => buildAppConfig(activeSystemConfig, activeNavigation),
     [activeNavigation, activeSystemConfig]
   )
+  const editor = useEditSnapshot(
+    isOpen,
+    `settings:${accessVersion}`,
+    systemConfig && navigationConfig ? activeAppConfig : undefined
+  )
   const availableSearchEngines = useMemo(
     () => getSearchEngines(systemDraft.customSearchEngines),
     [systemDraft.customSearchEngines]
@@ -203,20 +215,17 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
     !restoreWebdavBackupMutation.isPending
 
   useEffect(() => {
-    if (!isOpen) {
-      return
-    }
-
-    setJsonDraft(formatAppConfig(activeAppConfig))
-    setSystemDraft(activeSystemConfig)
-    setBackupDraft(cloneWebdavBackupConfig(activeSystemConfig.webdavBackup))
+    if (!isOpen || !editor.snapshot) return
+    setJsonDraft(formatAppConfig(editor.snapshot))
+    setSystemDraft(editor.snapshot.system)
+    setBackupDraft(cloneWebdavBackupConfig(editor.snapshot.system.webdavBackup))
     setCredentialsDraft({
-      nextUsername: authStatusQuery.data?.username ?? '',
+      nextUsername: usernameRef.current ?? '',
       currentPassword: '',
       nextPassword: '',
       confirmPassword: '',
     })
-  }, [activeAppConfig, activeSystemConfig, authStatusQuery.data?.username, isOpen])
+  }, [editor.snapshot, isOpen])
 
   function openSettings() {
     setActiveSection('system')
@@ -232,7 +241,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
     setSearchFeedback(null)
     setBackupFeedback(null)
     setCredentialsDraft({
-      nextUsername: authStatusQuery.data?.username ?? '',
+      nextUsername: usernameRef.current ?? '',
       currentPassword: '',
       nextPassword: '',
       confirmPassword: '',
@@ -243,10 +252,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
   async function handleReload() {
     setJsonFeedback(null)
     try {
-      const [navigationResult, systemResult] = await Promise.all([
-        refetch(),
-        refetchSystemConfig(),
-      ])
+      const [navigationResult, systemResult] = await Promise.all([refetch(), refetchSystemConfig()])
       const reloadError = navigationResult.error ?? systemResult.error
       if (reloadError) {
         throw reloadError
@@ -256,6 +262,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
       }
 
       const nextAppConfig = buildAppConfig(systemResult.data, navigationResult.data)
+      editor.reload(nextAppConfig)
       setJsonDraft(formatAppConfig(nextAppConfig))
       setSystemDraft(nextAppConfig.system)
       setBackupDraft(cloneWebdavBackupConfig(nextAppConfig.system.webdavBackup))
@@ -287,10 +294,11 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
   function handleSaveJson() {
     try {
       const parsed = parseAppConfigText(jsonDraft)
+      parsed.navigation._revision = editor.snapshot?.navigation._revision
+      parsed.system._revision = editor.snapshot?.system._revision
 
       saveAppMutation.mutate(parsed, {
         onSuccess: (savedConfig) => {
-          setSkin(savedConfig.system.skin)
           setSystemDraft(savedConfig.system)
           setBackupDraft(cloneWebdavBackupConfig(savedConfig.system.webdavBackup))
           setJsonDraft(formatAppConfig(savedConfig))
@@ -375,15 +383,12 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
   }
 
   function saveSystemDraft(nextConfig: SystemConfig, successMessage: string) {
-    setSystemDraft(nextConfig)
-    setSkin(nextConfig.skin)
+    setSystemDraft((current) => ({ ...nextConfig, networkProbe: current.networkProbe }))
     setSystemFeedback(null)
 
     saveSystemMutation.mutate(nextConfig, {
       onSuccess: (savedConfig) => {
-        setSystemDraft(savedConfig)
-        setBackupDraft(cloneWebdavBackupConfig(savedConfig.webdavBackup))
-        setSkin(savedConfig.skin)
+        setSystemDraft((current) => ({ ...savedConfig, networkProbe: current.networkProbe }))
         setSystemFeedback({
           type: 'success',
           message: successMessage,
@@ -391,9 +396,6 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
         showToast({ type: 'success', message: successMessage })
       },
       onError: (error) => {
-        setSystemDraft(activeSystemConfig)
-        setBackupDraft(cloneWebdavBackupConfig(activeSystemConfig.webdavBackup))
-        setSkin(activeSystemConfig.skin)
         const message =
           error instanceof Error ? error.message : messages.settings.systemSection.saveFailed
         setSystemFeedback({
@@ -405,18 +407,9 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
     })
   }
 
-  function handleSkinChange(skin: AppSkin) {
-    if (systemDraft.skin === skin) {
-      return
-    }
-
-    const nextConfig: SystemConfig = {
-      ...systemDraft,
-      skin,
-      darkMode: skinUsesDarkMode(skin),
-    }
-
-    saveSystemDraft(nextConfig, messages.settings.systemSection.skinUpdated)
+  function handleSkinChange(nextSkin: AppSkin) {
+    setSkin(nextSkin)
+    showToast({ type: 'success', message: messages.settings.systemSection.skinUpdated })
   }
 
   function handleOpenTargetChange(
@@ -428,7 +421,8 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
     }
 
     const nextConfig: SystemConfig = {
-      ...systemDraft,
+      ...activeSystemConfig,
+      _revision: systemDraft._revision,
       [field]: target,
     }
 
@@ -550,9 +544,9 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
   }
 
   function handleSaveNetworkProbeConfig() {
-    const previousConfig = activeSystemConfig
     const nextConfig: SystemConfig = {
-      ...systemDraft,
+      ...activeSystemConfig,
+      _revision: systemDraft._revision,
       networkProbe: {
         ...systemDraft.networkProbe,
         lanHost: systemDraft.networkProbe.lanHost.trim(),
@@ -566,7 +560,6 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
     saveSystemMutation.mutate(nextConfig, {
       onSuccess: (savedConfig) => {
         setSystemDraft(savedConfig)
-        setBackupDraft(cloneWebdavBackupConfig(savedConfig.webdavBackup))
         setNetworkFeedback({
           type: 'success',
           message: messages.settings.networkSection.saved,
@@ -574,8 +567,6 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
         showToast({ type: 'success', message: messages.settings.networkSection.saved })
       },
       onError: (error) => {
-        setSystemDraft(previousConfig)
-        setBackupDraft(cloneWebdavBackupConfig(previousConfig.webdavBackup))
         const message =
           error instanceof Error ? error.message : messages.settings.networkSection.saveFailed
         setNetworkFeedback({
@@ -599,15 +590,18 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
       onSuccess?: () => void
     }
   ) {
-    const previousConfig = systemDraft
-
-    setSystemDraft(nextConfig)
+    nextConfig = {
+      ...activeSystemConfig,
+      _revision: systemDraft._revision,
+      defaultSearchEngine: nextConfig.defaultSearchEngine,
+      customSearchEngines: nextConfig.customSearchEngines,
+    }
+    setSystemDraft((current) => ({ ...nextConfig, networkProbe: current.networkProbe }))
     setSearchFeedback(null)
 
     saveSystemMutation.mutate(nextConfig, {
       onSuccess: (savedConfig) => {
-        setSystemDraft(savedConfig)
-        setBackupDraft(cloneWebdavBackupConfig(savedConfig.webdavBackup))
+        setSystemDraft((current) => ({ ...savedConfig, networkProbe: current.networkProbe }))
         setSearchFeedback({
           type: 'success',
           message: successMessage,
@@ -616,8 +610,6 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
         options?.onSuccess?.()
       },
       onError: (error) => {
-        setSystemDraft(previousConfig)
-        setBackupDraft(cloneWebdavBackupConfig(activeSystemConfig.webdavBackup))
         const message =
           error instanceof Error ? error.message : messages.settings.searchSection.saveFailed
         setSearchFeedback({
@@ -740,7 +732,8 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
 
   function handleSaveWebdavBackupConfig() {
     const nextConfig: SystemConfig = {
-      ...systemDraft,
+      ...activeSystemConfig,
+      _revision: systemDraft._revision,
       webdavBackup: cloneWebdavBackupConfig(backupDraft),
     }
 
@@ -748,7 +741,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
 
     saveSystemMutation.mutate(nextConfig, {
       onSuccess: (savedConfig) => {
-        setSystemDraft(savedConfig)
+        setSystemDraft((current) => ({ ...savedConfig, networkProbe: current.networkProbe }))
         setBackupDraft(cloneWebdavBackupConfig(savedConfig.webdavBackup))
         setBackupFeedback({
           type: 'success',
@@ -854,7 +847,6 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
 
     restoreWebdavBackupMutation.mutate(versionId, {
       onSuccess: (result) => {
-        setSkin(result.restoredConfig.system.skin)
         setSystemDraft(result.restoredConfig.system)
         setBackupDraft(cloneWebdavBackupConfig(result.restoredConfig.system.webdavBackup))
         setJsonDraft(formatAppConfig(result.restoredConfig))
@@ -927,6 +919,26 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
     },
   ]
 
+  const closeSettings = useDiscardDraft(
+    isOpen &&
+      Boolean(
+        (editor.snapshot && jsonDraft !== formatAppConfig(editor.snapshot)) ||
+        isWebdavBackupDirty ||
+        credentialsDraft.currentPassword ||
+        credentialsDraft.nextPassword ||
+        credentialsDraft.confirmPassword ||
+        credentialsDraft.nextUsername !== (authStatusQuery.data?.username ?? '') ||
+        JSON.stringify(systemDraft.networkProbe) !==
+          JSON.stringify(activeSystemConfig.networkProbe) ||
+        customEngineName ||
+        customEngineUrl
+      ),
+    saveAppMutation.isPending ||
+      saveSystemMutation.isPending ||
+      restoreWebdavBackupMutation.isPending,
+    () => setIsOpen(false)
+  )
+
   return (
     <>
       <Button
@@ -942,12 +954,22 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
 
       <ModalShell
         open={isOpen}
-        onClose={() => setIsOpen(false)}
+        onClose={closeSettings}
         title={messages.settings.title}
         description={messages.settings.description}
         icon={Settings2}
         widthClassName="max-w-6xl"
       >
+        <DraftNotice
+          changed={
+            activeSection === 'config-json'
+              ? editor.changed
+              : systemDraft._revision !== activeSystemConfig._revision
+          }
+          current={jsonDraft}
+          latest={activeAppConfig}
+          onReload={editor.reload}
+        />
         <ConfigPanelLayout
           panelTitle={messages.settings.panelTitle}
           tabs={panelTabs}
@@ -968,7 +990,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setIsOpen(false)}
+                      onClick={closeSettings}
                       className="w-full sm:w-auto"
                     >
                       {messages.common.close}
@@ -999,9 +1021,9 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
                       <button
                         key={skin}
                         type="button"
-                        aria-pressed={systemDraft.skin === skin}
+                        aria-pressed={currentSkin === skin}
                         disabled={saveSystemMutation.isPending}
-                        className={`skin-option skin-option-${skin} ${systemDraft.skin === skin ? 'is-active' : ''}`}
+                        className={`skin-option skin-option-${skin} ${currentSkin === skin ? 'is-active' : ''}`}
                         onClick={() => handleSkinChange(skin)}
                       >
                         <span className="skin-preview" aria-hidden="true">
@@ -1116,7 +1138,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setIsOpen(false)}
+                      onClick={closeSettings}
                       className="w-full sm:w-auto"
                     >
                       {messages.common.close}
@@ -1272,7 +1294,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setIsOpen(false)}
+                      onClick={closeSettings}
                       className="w-full sm:w-auto"
                     >
                       {messages.common.close}
@@ -1413,7 +1435,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setIsOpen(false)}
+                      onClick={closeSettings}
                       className="w-full sm:w-auto"
                     >
                       {messages.common.close}
@@ -1611,7 +1633,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setIsOpen(false)}
+                      onClick={closeSettings}
                       className="w-full sm:w-auto"
                     >
                       {messages.common.close}
@@ -1809,10 +1831,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
                       </div>
                     ) : webdavBackupVersionsQuery.data?.length ? (
                       webdavBackupVersionsQuery.data.map((version, index) => (
-                        <div
-                          key={version.id}
-                          className="config-panel-card-muted p-2.5"
-                        >
+                        <div key={version.id} className="config-panel-card-muted p-2.5">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
@@ -1908,7 +1927,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setIsOpen(false)}
+                      onClick={closeSettings}
                       className="w-full sm:w-auto"
                     >
                       {messages.common.close}

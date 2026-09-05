@@ -56,20 +56,20 @@ const zhCN = {
     networkMode: {
       lan: '局域网',
       wan: '外网',
-      unknown: '未检测',
+      unknown: '未知',
     },
     networkInfo: {
       buttonAria: '查看网络模式说明',
       title: '网络模式说明',
       summary:
-        '系统会在首页加载时检测一次当前网络环境。若已完整配置探测设置，则优先检查内外网健康地址；否则回退到第一个书签的探测逻辑。',
+        '系统会在首页加载时检测一次当前网络环境。若已完整配置探测设置，则优先检查内外网健康地址；否则显示网络状态未知，可手动选择内外网。',
       currentMode: '当前模式',
       currentStrategy: '当前策略',
       strategyLabel: '网络切换',
       strategyAuto: '自动检测',
       strategyManual: '手动切换',
       autoHint:
-        '选“自动检测”时，系统会先尝试探测设置里的内网健康地址，再尝试外网健康地址；若未完整配置，则回退到第一个书签。',
+        '选“自动检测”时，系统会先尝试探测设置里的内网健康地址，再尝试外网健康地址；若未完整配置，则显示未知，请手动选择。',
       manualHint:
         '适用于 iOS 等无法从 HTTPS 页面探测 HTTP 地址的场景，切换后会立即影响所有书签的打开地址。',
       manualModeLabel: '手动网络',
@@ -334,7 +334,7 @@ const zhCN = {
       title: '系统设置',
       summary: '调整页面外观、语言和常用选项。',
       skinTitle: '界面风格',
-      skinHint: '选择一套配色和明暗风格，保存后立即生效。',
+      skinHint: '仅保存在当前浏览器中，立即生效，不影响其他设备。',
       skinUpdated: '界面风格已更新。',
       skinNames: {
         midnight: '午夜',
@@ -366,8 +366,7 @@ const zhCN = {
       label: '探测设置',
       description: '内外网健康检查地址',
       title: '探测设置',
-      summary:
-        '优先使用这里配置的内外网健康地址判断网络模式；未完整配置时，会回退到第一个书签的探测逻辑。',
+      summary: '优先使用这里配置的内外网健康地址判断网络模式；未完整配置时显示未知，可手动选择。',
       connectionTitle: '健康检查地址',
       connectionHint: '这里只填写协议和主机/IP，系统会自动拼接固定的健康检查路径。',
       lanTitle: '内网健康地址',
@@ -378,10 +377,9 @@ const zhCN = {
       wanPlaceholder: '例如：nav.example.com',
       previewLabel: '最终地址',
       suffixHint: (path: string) => `固定路径为 ${path}，无需手动填写。`,
-      fallbackHint:
-        '内外网地址需同时填写后才会优先用于自动检测；否则会回退到第一个书签的探测逻辑。',
+      fallbackHint: '内外网地址需同时填写后才会优先用于自动检测；否则显示未知，可手动选择。',
       priorityReady: '当前状态：已完整配置，自动检测会优先使用这里的健康地址。',
-      priorityFallback: '当前状态：配置未完成，自动检测仍会回退到第一个书签。',
+      priorityFallback: '当前状态：配置未完成，请手动选择内外网。',
       footerHint: '保存后会在下次自动检测时生效。',
       saved: '探测设置已保存。',
       saveFailed: '探测设置保存失败，请稍后再试。',
@@ -582,14 +580,14 @@ const en: typeof zhCN = {
       buttonAria: 'View network mode details',
       title: 'Network mode details',
       summary:
-        'The app checks the current network environment once when the homepage loads. If probe settings are fully configured, it checks the LAN and WAN health addresses first; otherwise it falls back to the first bookmark probe.',
+        'The app checks the current network environment once when the homepage loads. If probe settings are fully configured, it checks the LAN and WAN health addresses first; otherwise the network mode is unknown; select LAN or WAN manually.',
       currentMode: 'Current mode',
       currentStrategy: 'Current strategy',
       strategyLabel: 'Network switching',
       strategyAuto: 'Auto detect',
       strategyManual: 'Manual switch',
       autoHint:
-        'When Auto detect is selected, the app checks the configured LAN health address first, then the WAN health address. If the probe settings are incomplete, it falls back to the first bookmark.',
+        'When Auto detect is selected, the app checks the configured LAN health address first, then the WAN health address. If probe settings are incomplete, select LAN or WAN manually.',
       manualHint:
         'Useful on iOS and similar environments where an HTTPS page cannot probe HTTP addresses. Switching takes effect for all bookmarks immediately.',
       manualModeLabel: 'Manual network',
@@ -877,7 +875,8 @@ const en: typeof zhCN = {
       title: 'System Settings',
       summary: 'Adjust the page appearance, language, and common options.',
       skinTitle: 'App Skin',
-      skinHint: 'Choose a color and contrast style. The page updates immediately after saving.',
+      skinHint:
+        'Saved in this browser only. Changes apply immediately without affecting other devices.',
       skinUpdated: 'App skin updated.',
       skinNames: {
         midnight: 'Midnight',
@@ -911,7 +910,7 @@ const en: typeof zhCN = {
       description: 'LAN and WAN health check addresses',
       title: 'Probe Settings',
       summary:
-        'Prefer the configured LAN and WAN health addresses to determine the network mode. If the setup is incomplete, the app falls back to the first bookmark probe.',
+        'Prefer the configured LAN and WAN health addresses to determine the network mode. If the setup is incomplete, the network mode is unknown.',
       connectionTitle: 'Health Check Addresses',
       connectionHint:
         'Only enter the protocol and host/IP here. The app appends the fixed health check path automatically.',
@@ -924,11 +923,10 @@ const en: typeof zhCN = {
       previewLabel: 'Resolved URL',
       suffixHint: (path: string) => `The fixed path ${path} is appended automatically.`,
       fallbackHint:
-        'Both LAN and WAN addresses must be filled in before automatic detection will prefer them; otherwise it falls back to the first bookmark probe.',
+        'Both LAN and WAN addresses must be filled in before automatic detection will prefer them; otherwise the network mode is unknown; select LAN or WAN manually.',
       priorityReady:
         'Current state: fully configured. Auto detection will prefer these health check addresses.',
-      priorityFallback:
-        'Current state: incomplete. Auto detection still falls back to the first bookmark.',
+      priorityFallback: 'Current state: incomplete. Select LAN or WAN manually.',
       footerHint: 'Changes take effect on the next automatic detection.',
       saved: 'Probe settings saved.',
       saveFailed: 'Failed to save probe settings. Please try again later.',

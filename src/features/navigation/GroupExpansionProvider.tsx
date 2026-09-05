@@ -38,6 +38,8 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   })
+  const [initializeAttempt, setInitializeAttempt] = useState(0)
+  const [fallbackKeys, setFallbackKeys] = useState<string[]>([])
   const [pendingGroupKeys, setPendingGroupKeys] = useState<Set<string>>(() => new Set())
   const [pendingSceneIds, setPendingSceneIds] = useState<Set<string>>(() => new Set())
   const channelRef = useRef<BroadcastChannel | null>(null)
@@ -117,11 +119,10 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
         confirmedDesiredRef.current.clear()
       }
       setServerSnapshot(snapshot)
-      broadcastSnapshot(snapshot)
     } catch {
       // A later focus or visibility refresh will retry reconciliation.
     }
-  }, [broadcastSnapshot, hasPendingOperations, setServerSnapshot])
+  }, [hasPendingOperations, setServerSnapshot])
 
   useEffect(() => {
     if (typeof BroadcastChannel === 'undefined') {
@@ -178,6 +179,7 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
       })
   }, [
     broadcastSnapshot,
+    initializeAttempt,
     messages.serviceGrid.groupPreferenceInitializeFailed,
     navigationQuery.data,
     preferenceQuery.data,
@@ -225,9 +227,14 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
   const setGroupExpanded = useCallback(
     (sceneId: string, groupId: string, expanded: boolean) => {
       const snapshot = queryClient.getQueryData<GroupExpansionSnapshot>(groupExpansionQueryKey)
-      if (!snapshot?.initialized || pendingSceneDesiredRef.current.has(sceneId)) {
+      if (!snapshot?.initialized) {
+        const key = getGroupKey(sceneId, groupId)
+        setFallbackKeys((keys) =>
+          expanded ? [...new Set([...keys, key])] : keys.filter((item) => item !== key)
+        )
         return
       }
+      if (pendingSceneDesiredRef.current.has(sceneId)) return
 
       const key = getGroupKey(sceneId, groupId)
       const rollbackSnapshot = snapshot
@@ -373,14 +380,24 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
   )
 
   const expandedGroupKeys = useMemo(
-    () => new Set(preferenceQuery.data?.expandedGroupKeys ?? []),
-    [preferenceQuery.data?.expandedGroupKeys]
+    () =>
+      new Set(
+        preferenceQuery.data?.initialized ? preferenceQuery.data.expandedGroupKeys : fallbackKeys
+      ),
+    [preferenceQuery.data, fallbackKeys]
   )
   const isReady = Boolean(preferenceQuery.data?.initialized)
+  const refetchPreference = preferenceQuery.refetch
+  const retry = useCallback(() => {
+    loadErrorShownRef.current = false
+    setInitializeAttempt((attempt) => attempt + 1)
+    void refetchPreference()
+  }, [refetchPreference])
   const contextValue = useMemo(
     () => ({
       expandedGroupKeys,
       isReady,
+      retry,
       isGroupPending,
       isScenePending,
       setGroupExpanded,
@@ -390,6 +407,7 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
       expandedGroupKeys,
       isGroupPending,
       isReady,
+      retry,
       isScenePending,
       setGroupExpanded,
       setSceneGroupsExpanded,

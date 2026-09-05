@@ -1,3 +1,5 @@
+import { QuickRecordInbox } from '@/features/services/QuickRecordInbox'
+import { WEB_THEME_STORAGE_KEY, isAppSkin } from '@shared/theme'
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, HelpCircle, Wifi, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -23,6 +25,7 @@ function GitHubMarkIcon() {
 }
 
 export function TopBar() {
+  const requestDetection = useAppStore((state) => state.requestNetworkDetection)
   const networkMode = useAppStore((state) => state.networkMode)
   const networkModeStrategy = useAppStore((state) => state.networkModeStrategy)
   const manualNetworkMode = useAppStore((state) => state.manualNetworkMode)
@@ -37,7 +40,11 @@ export function TopBar() {
 
   useEffect(() => {
     if (systemSkin) {
-      setSkin(systemSkin)
+      try {
+        if (!isAppSkin(window.localStorage.getItem(WEB_THEME_STORAGE_KEY))) setSkin(systemSkin)
+      } catch {
+        /* Keep the current in-memory preference when storage is unavailable. */
+      }
     }
   }, [setSkin, systemSkin])
 
@@ -101,12 +108,15 @@ export function TopBar() {
 
   return (
     <div className="sticky top-0 z-50 px-3 pt-2 sm:px-4 sm:pt-3">
-      <div className="container mx-auto flex h-[3.6rem] max-w-[92rem] items-center justify-between gap-3 rounded-[1.2rem] border border-border/75 bg-background/84 px-3.5 shadow-[0_14px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/66 sm:px-4 dark:shadow-[0_18px_40px_rgba(0,0,0,0.26)]">
-        <div className="flex min-w-0 shrink items-center gap-2 sm:gap-3">
-          <div className="hidden h-8 w-8 items-center justify-center rounded-xl border border-primary/20 bg-primary/12 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] sm:flex">
+      <div className="container mx-auto flex h-[3.6rem] max-w-[92rem] items-center justify-between gap-1 rounded-[1.2rem] sm:gap-3 border border-border/75 bg-background/84 px-3.5 shadow-[0_14px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/66 sm:px-4 dark:shadow-[0_18px_40px_rgba(0,0,0,0.26)]">
+        <div className="flex min-w-0 shrink items-center gap-1 sm:gap-3">
+          <div
+            aria-label={systemConfig?.appName ?? 'HarborDeck'}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/12 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]"
+          >
             <Wifi className="h-3.5 w-3.5" />
           </div>
-          <h1 className="truncate whitespace-nowrap font-display text-[15px] font-semibold tracking-tight sm:text-base">
+          <h1 className="hidden truncate whitespace-nowrap font-display sm:block text-[15px] font-semibold tracking-tight sm:text-base">
             <span className="sm:hidden">HarborDeck</span>
             <span className="hidden sm:inline">{systemConfig?.appName ?? 'HarborDeck'}</span>
           </h1>
@@ -168,7 +178,10 @@ export function TopBar() {
                     <button
                       type="button"
                       aria-pressed={networkModeStrategy === 'auto'}
-                      onClick={() => setNetworkModeStrategy('auto')}
+                      onClick={() => {
+                        setNetworkModeStrategy('auto')
+                        requestDetection()
+                      }}
                       className={networkOptionButtonClass(networkModeStrategy === 'auto')}
                     >
                       {messages.topBar.networkInfo.strategyAuto}
@@ -200,6 +213,13 @@ export function TopBar() {
                       {messages.topBar.networkMode.wan}
                     </button>
                   </div>
+                  <button
+                    type="button"
+                    className="mt-3 text-xs underline"
+                    onClick={requestDetection}
+                  >
+                    {messages.common.refresh}
+                  </button>
                   <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-2.5 text-xs leading-5 text-muted-foreground dark:border-amber-400/20 dark:bg-amber-400/8">
                     {messages.topBar.networkInfo.manualHint}
                   </div>
@@ -230,7 +250,8 @@ export function TopBar() {
           <SceneSwitcher />
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <QuickRecordInbox />
           <LazyBookmarkManageButton />
           <LazyServiceSettingsButton />
           <Button

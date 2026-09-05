@@ -18,9 +18,10 @@ import {
 import { useAppStore } from '@/store/appStore'
 
 export function useNavigationConfig(options?: { enabled?: boolean }) {
+  const accessVersion = useAppStore((state) => state.sceneAccessVersion)
   return useQuery({
-    queryKey: navigationConfigQueryKey,
-    queryFn: fetchNavigationConfig,
+    queryKey: [...navigationConfigQueryKey, accessVersion],
+    queryFn: ({ signal }) => fetchNavigationConfig(signal),
     enabled: options?.enabled ?? true,
     staleTime: 30_000,
   })
@@ -30,8 +31,8 @@ export function useSaveNavigationConfig() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (config: NavigationConfig) => saveNavigationConfig(config),
-    onSuccess: (savedConfig) => {
-      queryClient.setQueryData(navigationConfigQueryKey, savedConfig)
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: navigationConfigQueryKey })
       void queryClient.invalidateQueries({ queryKey: appConfigQueryKey })
       void queryClient.invalidateQueries({ queryKey: sceneListQueryKey })
       void queryClient.invalidateQueries({ queryKey: ['navigation', 'services'] })
@@ -84,13 +85,7 @@ export function useActiveScene() {
       sceneList.scenes[0]
 
     initializeActiveScene(fallback.id, fallback.protected)
-  }, [
-    activeSceneId,
-    initializeActiveScene,
-    lastRegularSceneId,
-    sceneListQuery.data,
-    sceneTokens,
-  ])
+  }, [activeSceneId, initializeActiveScene, lastRegularSceneId, sceneListQuery.data, sceneTokens])
 
   const activeScene = sceneListQuery.data?.scenes.find((scene) => scene.id === activeSceneId)
   return { sceneListQuery, activeSceneId, activeScene }
@@ -105,12 +100,14 @@ export function useActiveSceneServices() {
   const initializeActiveScene = useAppStore((state) => state.initializeActiveScene)
   const lastRegularSceneId = useAppStore((state) => state.lastRegularSceneId)
 
+  const accessVersion = useAppStore((state) => state.sceneAccessVersion)
   const query = useQuery({
-    queryKey: sceneServicesQueryKey(activeSceneId),
-    queryFn: () => fetchSceneServices(activeSceneId!, token),
-    enabled: Boolean(activeSceneId && activeScene),
+    queryKey: [...sceneServicesQueryKey(activeSceneId), accessVersion],
+    queryFn: ({ signal }) => fetchSceneServices(activeSceneId!, token, signal),
+    enabled: Boolean(activeSceneId && activeScene && (!activeScene.protected || token)),
     staleTime: 30_000,
-    retry: (failureCount, error) => !(error instanceof ApiError && error.status === 403) && failureCount < 2,
+    retry: (failureCount, error) =>
+      !(error instanceof ApiError && error.status === 403) && failureCount < 2,
   })
 
   useEffect(() => {
@@ -153,10 +150,18 @@ export function useLockScene() {
 export function useSetScenePassword() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ sceneId, password }: { sceneId: string; password: string | null }) =>
-      setScenePassword(sceneId, password),
-    onSuccess: (navigation) => {
-      queryClient.setQueryData(navigationConfigQueryKey, navigation)
+    mutationFn: ({
+      sceneId,
+      password,
+      revision,
+    }: {
+      sceneId: string
+      password: string | null
+      revision?: string
+    }) => setScenePassword(sceneId, password, revision),
+    onSuccess: () => {
+      useAppStore.getState().clearSceneTokens()
+      void queryClient.invalidateQueries({ queryKey: navigationConfigQueryKey })
       void queryClient.invalidateQueries({ queryKey: sceneListQueryKey })
       void queryClient.invalidateQueries({ queryKey: ['navigation', 'services'] })
     },

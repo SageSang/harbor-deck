@@ -39,8 +39,7 @@ vi.mock('@/features/navigation/useNavigation', () => ({
 }))
 
 vi.mock('@/features/navigation/groupExpansionApi', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('@/features/navigation/groupExpansionApi')>()
+  const actual = await importOriginal<typeof import('@/features/navigation/groupExpansionApi')>()
   return {
     ...actual,
     fetchGroupExpansionPreference: vi.fn(),
@@ -98,9 +97,18 @@ function deferredSnapshot() {
 
 class FakeBroadcastChannel {
   static instances: FakeBroadcastChannel[] = []
+  static linked = false
+  static deliveries = 0
 
   onmessage: ((event: MessageEvent) => void) | null = null
-  postMessage = vi.fn()
+  postMessage = vi.fn((data: unknown) => {
+    if (!FakeBroadcastChannel.linked) return
+    for (const peer of FakeBroadcastChannel.instances) {
+      if (peer === this) continue
+      if (++FakeBroadcastChannel.deliveries > 20) throw new Error('Broadcast echo loop')
+      queueMicrotask(() => peer.emit(data))
+    }
+  })
   close = vi.fn()
 
   constructor(readonly name: string) {
@@ -155,6 +163,8 @@ describe('GroupExpansionProvider', () => {
     currentExpansion = null
     window.localStorage.clear()
     FakeBroadcastChannel.instances = []
+    FakeBroadcastChannel.linked = false
+    FakeBroadcastChannel.deliveries = 0
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
     vi.mocked(useNavigationConfig).mockReturnValue({ data: navigation } as ReturnType<
@@ -179,15 +189,64 @@ describe('GroupExpansionProvider', () => {
     vi.clearAllMocks()
   })
 
+  it('settles after a save with two communicating tabs', async () => {
+    FakeBroadcastChannel.linked = true
+    await renderProvider()
+    await waitUntilReady()
+    const otherHost = document.createElement('div')
+    document.body.append(otherHost)
+    const otherRoot = createRoot(otherHost)
+    const otherClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    try {
+      await act(async () =>
+        otherRoot.render(
+          <QueryClientProvider client={otherClient}>
+            <GroupExpansionProvider>
+              <ExpansionProbe />
+            </GroupExpansionProvider>
+          </QueryClientProvider>
+        )
+      )
+      await waitUntilReady()
+      expect(fetchGroupExpansionPreference).toHaveBeenCalledTimes(2)
+      await act(async () => {
+        currentExpansion?.setGroupExpanded('personal', 'main', true)
+        await vi.waitFor(() => expect(fetchGroupExpansionPreference).toHaveBeenCalledTimes(4))
+      })
+      expect(FakeBroadcastChannel.deliveries).toBe(1)
+      expect(
+        FakeBroadcastChannel.instances.reduce(
+          (count, channel) => count + channel.postMessage.mock.calls.length,
+          0
+        )
+      ).toBe(1)
+    } finally {
+      await act(async () => otherRoot.unmount())
+      otherClient.clear()
+      otherHost.remove()
+    }
+  })
+
+  it('allows temporary browsing after preference failure and explicit retry restores server state', async () => {
+    vi.mocked(fetchGroupExpansionPreference).mockRejectedValueOnce(new Error('offline'))
+    await renderProvider()
+    await act(async () => {
+      await vi.waitFor(() => expect(feedbackMocks.showToast).toHaveBeenCalled())
+    })
+    act(() => currentExpansion?.setGroupExpanded('personal', 'main', true))
+    expect(currentExpansion?.expandedGroupKeys.has('personal:main')).toBe(true)
+    expect(saveGroupExpansion).not.toHaveBeenCalled()
+    vi.mocked(fetchGroupExpansionPreference).mockResolvedValue(emptySnapshot)
+    await act(async () => {
+      currentExpansion?.retry()
+      await vi.waitFor(() => expect(currentExpansion?.isReady).toBe(true))
+    })
+    expect(currentExpansion?.expandedGroupKeys.size).toBe(0)
+  })
+
   it('initializes from legacy state once and clears both local storage keys', async () => {
-    window.localStorage.setItem(
-      COLLAPSED_GROUPS_STORAGE_KEY,
-      JSON.stringify(['personal:main'])
-    )
-    window.localStorage.setItem(
-      LEGACY_COLLAPSED_GROUPS_STORAGE_KEY,
-      JSON.stringify(['work:apps'])
-    )
+    window.localStorage.setItem(COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify(['personal:main']))
+    window.localStorage.setItem(LEGACY_COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify(['work:apps']))
     vi.mocked(fetchGroupExpansionPreference).mockResolvedValue({
       ...emptySnapshot,
       initialized: false,
@@ -248,7 +307,7 @@ describe('GroupExpansionProvider', () => {
         )
       )
       await vi.waitFor(() =>
-        expect(FakeBroadcastChannel.instances[0]?.postMessage).toHaveBeenCalledTimes(2)
+        expect(FakeBroadcastChannel.instances[0]?.postMessage).toHaveBeenCalledTimes(1)
       )
     })
 

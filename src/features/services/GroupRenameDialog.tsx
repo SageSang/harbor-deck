@@ -1,3 +1,5 @@
+import { useDialogFocus } from '@/components/useDialogFocus'
+import { useDiscardDraft } from '@/features/config/useDiscardDraft'
 import {
   useEffect,
   useId,
@@ -30,13 +32,10 @@ export function GroupRenameDialog({
   const { messages } = useI18n()
   const [name, setName] = useState(currentName)
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const onCloseRef = useRef(onClose)
   const titleId = useId()
   const descriptionId = useId()
-
-  useEffect(() => {
-    onCloseRef.current = onClose
-  }, [onClose])
+  const close = useDiscardDraft(open && name !== currentName, saving, onClose)
+  const dialogRef = useDialogFocus<HTMLFormElement>(open, close, 120)
 
   useEffect(() => {
     if (!open) {
@@ -45,17 +44,7 @@ export function GroupRenameDialog({
 
     setName(currentName)
     const focusTimer = window.setTimeout(() => inputRef.current?.select(), 0)
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onCloseRef.current()
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      window.clearTimeout(focusTimer)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
+    return () => window.clearTimeout(focusTimer)
   }, [currentName, open])
 
   if (!open) {
@@ -89,11 +78,13 @@ export function GroupRenameDialog({
       className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-950/65 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !saving) {
-          onClose()
+          void close()
         }
       }}
     >
       <form
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -125,7 +116,7 @@ export function GroupRenameDialog({
             size="icon"
             aria-label={messages.common.closeModal}
             disabled={saving}
-            onClick={onClose}
+            onClick={close}
             className="h-8 w-8 shrink-0 rounded-lg text-stone-600 hover:bg-stone-100 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-white"
           >
             <X className="h-4 w-4" />
@@ -155,7 +146,7 @@ export function GroupRenameDialog({
             type="button"
             variant="outline"
             disabled={saving}
-            onClick={onClose}
+            onClick={close}
             className="border-stone-300 bg-white text-stone-800 hover:border-stone-400 hover:bg-stone-100 hover:text-stone-950 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:hover:border-stone-600 dark:hover:bg-stone-800 dark:hover:text-white"
           >
             {messages.common.cancel}

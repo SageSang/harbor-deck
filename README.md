@@ -56,7 +56,7 @@ The repository includes a generic Docker Compose configuration for Docker Compos
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.18
+    image: ghcr.io/sagesang/harbor-deck:1.4.19
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -84,7 +84,7 @@ Deployment steps:
 3. Point an HTTPS reverse proxy at `127.0.0.1:8080`, then open the HTTPS domain and create the administrator account.
 4. Create scenes and groups in Bookmark Management, then add or import bookmarks.
 
-The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.18` with `latest` only when you intentionally want automatic image updates.
+The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.19` with `latest` only when you intentionally want automatic image updates.
 
 For a direct Docker command:
 
@@ -97,7 +97,7 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
   -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
-  ghcr.io/sagesang/harbor-deck:1.4.18
+  ghcr.io/sagesang/harbor-deck:1.4.19
 ```
 
 HTTPS is supported by putting the container behind any reverse proxy, including Synology Reverse Proxy, Caddy, or Nginx Proxy Manager. The application listens on HTTP inside the container; point the proxy at host `127.0.0.1:8080`. By default it trusts forwarded headers only from loopback, link-local, and private-network proxies. Set `HARBORDECK_TRUST_PROXY` to an explicit IP or CIDR when the proxy is elsewhere. Change the port binding back to `8080:80` only when direct LAN access is intentionally required.
@@ -205,3 +205,11 @@ npm run build:extension
 React 19, TypeScript, Vite, Tailwind CSS, Zustand, TanStack Query, Fastify, and Zod.
 
 Licensed under [Apache-2.0](LICENSE).
+
+## Web editing and privacy behavior
+
+- Web themes are local to each browser. The server skin is only a first-visit default; extension redirects do not overwrite an existing local choice.
+- Home search includes bookmark names, slugs, groups, both URLs, and notes. The Quick records button lists ungrouped records and supports bulk placement.
+- Automatic network detection uses dedicated LAN/WAN probes. Incomplete settings produce Unknown; choose a network manually or open either URL from the bookmark menu.
+- Web configuration responses omit locked scene content. Saving visible content preserves locked scenes on the server. JSON exports made while scenes are locked are partial; use WebDAV for a full backup.
+- Editing drafts keep their original revision and survive background updates. Conflicting saves require an explicit reload, with a comparison view and a discard confirmation.

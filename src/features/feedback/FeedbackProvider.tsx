@@ -1,3 +1,4 @@
+import { useDialogFocus } from '@/components/useDialogFocus'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertTriangle, X } from 'lucide-react'
@@ -53,31 +54,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     setConfirmation(null)
   }, [])
 
-  useEffect(() => {
-    if (!confirmation) {
-      return
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        closeConfirmation(false)
-        return
-      }
-
-      if (
-        event.key === 'Enter' &&
-        confirmation.variant === 'destructive' &&
-        !event.isComposing
-      ) {
-        event.preventDefault()
-        closeConfirmation(true)
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [closeConfirmation, confirmation])
+  const confirmationRef = useDialogFocus(Boolean(confirmation), () => closeConfirmation(false), 130)
 
   useEffect(() => {
     return () => {
@@ -164,6 +141,11 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
               }}
             >
               <div
+                ref={confirmationRef}
+                role="alertdialog"
+                aria-modal="true"
+                aria-label={confirmation.title}
+                tabIndex={-1}
                 className="mx-auto mt-24 w-full max-w-md rounded-[1.6rem] border border-border/80 bg-background/96 shadow-[0_30px_80px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:bg-background/92"
                 onMouseDown={(event) => event.stopPropagation()}
               >

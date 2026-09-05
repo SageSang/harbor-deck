@@ -1,3 +1,6 @@
+import { useEditSnapshot } from '@/features/config/useEditSnapshot'
+import { DraftNotice } from '@/features/config/DraftNotice'
+import { useDiscardDraft } from '@/features/config/useDiscardDraft'
 import { useEffect, useMemo, useState } from 'react'
 import { Bookmark, Check, Pencil } from 'lucide-react'
 import {
@@ -59,7 +62,10 @@ export function QuickRecordEditDialog({
   const saveMutation = useSaveNavigationConfig()
   const sceneTokens = useAppStore((state) => state.sceneTokens)
   const { showToast } = useFeedback()
-  const navigation = config ?? navigationQuery.data
+  const accessVersion = useAppStore((state) => state.sceneAccessVersion)
+  const latestNavigation = config ?? navigationQuery.data
+  const editor = useEditSnapshot(open, `${sceneId}:${recordId}:${accessVersion}`, latestNavigation)
+  const navigation = editor.snapshot
   const record = findRecord(navigation, sceneId, recordId)
   const editableScenes = useMemo(
     () =>
@@ -75,7 +81,14 @@ export function QuickRecordEditDialog({
   const [feedback, setFeedback] = useState('')
 
   useEffect(() => {
-    if (!open || !record) return
+    if (!open || !record) {
+      setName('')
+      setPrimaryUrl('')
+      setSecondaryUrl('')
+      setNote('')
+      setPlacements([])
+      return
+    }
     setName(record.name)
     setPrimaryUrl(record.primaryUrl)
     setSecondaryUrl(record.secondaryUrl ?? '')
@@ -168,17 +181,32 @@ export function QuickRecordEditDialog({
     })
   }
 
+  const dirty = Boolean(
+    record &&
+    (name !== record.name ||
+      primaryUrl !== record.primaryUrl ||
+      secondaryUrl !== (record.secondaryUrl ?? '') ||
+      note !== (record.note ?? '') ||
+      placements.length)
+  )
+  const close = useDiscardDraft(open && dirty, saveMutation.isPending, onClose)
   if (!record) return null
 
   return (
     <ModalShell
       open={open}
-      onClose={onClose}
+      onClose={close}
       title="编辑快速记录"
       description="不选择分组会继续作为快速记录；选择分组后会转为普通书签。"
       icon={Pencil}
       widthClassName="max-w-2xl"
     >
+      <DraftNotice
+        changed={editor.changed}
+        current={{ name, primaryUrl, secondaryUrl, note }}
+        latest={findRecord(latestNavigation, sceneId, recordId)}
+        onReload={editor.reload}
+      />
       <form
         className="flex min-h-0 flex-1 flex-col"
         onSubmit={(event) => {
@@ -249,12 +277,7 @@ export function QuickRecordEditDialog({
           {feedback ? <p className="text-sm text-destructive">{feedback}</p> : null}
         </div>
         <div className="flex justify-end gap-2 border-t border-border/65 p-3 sm:p-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            disabled={saveMutation.isPending}
-          >
+          <Button type="button" variant="outline" onClick={close} disabled={saveMutation.isPending}>
             取消
           </Button>
           <Button type="submit" disabled={saveMutation.isPending}>

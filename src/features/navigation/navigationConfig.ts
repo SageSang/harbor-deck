@@ -27,6 +27,7 @@ export interface UpsertBookmarkOptions {
 
 export function cloneNavigationConfig(config: NavigationConfig): NavigationConfig {
   return {
+    ...(config._revision ? { _revision: config._revision } : {}),
     defaultSceneId: config.defaultSceneId,
     bookmarks: config.bookmarks.map((bookmark) => ({
       ...bookmark,

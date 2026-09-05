@@ -26,6 +26,8 @@ import {
 } from '@/features/navigation/scenePreference'
 
 interface AppState {
+  networkProbeVersion: number
+  requestNetworkDetection: () => void
   networkMode: NetworkMode
   detectedNetworkMode: NetworkMode
   networkModeStrategy: NetworkModeStrategy
@@ -37,6 +39,8 @@ interface AppState {
   error: string | null
   activeSceneId: string | null
   lastRegularSceneId: string | null
+  sceneAccessVersion: number
+  clearSceneTokens: () => void
   sceneTokens: Record<string, string>
   setDetectedNetworkMode: (mode: NetworkMode) => void
   setNetworkModeStrategy: (strategy: NetworkModeStrategy) => void
@@ -59,7 +63,9 @@ function resolveInitialSkin(): AppSkin {
   if (typeof window === 'undefined') return DEFAULT_APP_SKIN
 
   try {
-    return normalizeAppSkin(window.localStorage.getItem(WEB_THEME_STORAGE_KEY))
+    const stored = window.localStorage.getItem(WEB_THEME_STORAGE_KEY)
+    if (stored) return normalizeAppSkin(stored)
+    return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'frost' : DEFAULT_APP_SKIN
   } catch {
     return DEFAULT_APP_SKIN
   }
@@ -76,6 +82,9 @@ function persistSkin(skin: AppSkin) {
 const initialSkin = resolveInitialSkin()
 
 export const useAppStore = create<AppState>()((set) => ({
+  networkProbeVersion: 0,
+  requestNetworkDetection: () =>
+    set((state) => ({ networkProbeVersion: state.networkProbeVersion + 1 })),
   networkMode: resolveEffectiveNetworkMode(
     initialDetectedNetworkMode,
     initialNetworkModeStrategy,
@@ -91,6 +100,11 @@ export const useAppStore = create<AppState>()((set) => ({
   error: null,
   activeSceneId: readInitialActiveSceneId(),
   lastRegularSceneId: readLastRegularSceneId(),
+  sceneAccessVersion: 0,
+  clearSceneTokens: () => {
+    Object.keys(readSceneTokens()).forEach(removeSceneToken)
+    set((state) => ({ sceneTokens: {}, sceneAccessVersion: state.sceneAccessVersion + 1 }))
+  },
   sceneTokens: readSceneTokens(),
   setDetectedNetworkMode: (mode) =>
     set((state) => ({
@@ -150,6 +164,7 @@ export const useAppStore = create<AppState>()((set) => ({
     set((state) => ({
       activeSceneId: sceneId,
       lastRegularSceneId: options.protected ? state.lastRegularSceneId : sceneId,
+      sceneAccessVersion: options.token ? state.sceneAccessVersion + 1 : state.sceneAccessVersion,
       sceneTokens: options.token
         ? { ...state.sceneTokens, [sceneId]: options.token }
         : state.sceneTokens,
@@ -167,7 +182,7 @@ export const useAppStore = create<AppState>()((set) => ({
     set((state) => {
       const sceneTokens = { ...state.sceneTokens }
       delete sceneTokens[sceneId]
-      return { sceneTokens }
+      return { sceneTokens, sceneAccessVersion: state.sceneAccessVersion + 1 }
     })
   },
 }))

@@ -41,18 +41,18 @@ curl "$BASE_URL/api/integrations/theme" \
 响应示例：
 
 ```json
-{"skin":"midnight"}
+{ "skin": "midnight" }
 ```
 
 ## 错误码
 
-| 状态码 | 含义 |
-| --- | --- |
-| `400` | 请求参数不符合约束，响应正文包含错误原因 |
-| `401` | Token 缺失或不正确 |
-| `404` | 指定的场景不存在 |
-| `503` | 服务端没有配置集成 Token |
-| `500` | 服务端内部错误 |
+| 状态码 | 含义                                     |
+| ------ | ---------------------------------------- |
+| `400`  | 请求参数不符合约束，响应正文包含错误原因 |
+| `401`  | Token 缺失或不正确                       |
+| `404`  | 指定的场景不存在                         |
+| `503`  | 服务端没有配置集成 Token                 |
+| `500`  | 服务端内部错误                           |
 
 ## 1. 健康检查
 
@@ -67,7 +67,7 @@ curl "$BASE_URL/api/health"
 响应：
 
 ```json
-{"ok":true}
+{ "ok": true }
 ```
 
 ## 2. 搜索书签
@@ -78,10 +78,10 @@ curl "$BASE_URL/api/health"
 
 查询参数：
 
-| 参数 | 必填 | 约束 | 说明 |
-| --- | --- | --- | --- |
-| `q` | 是 | 1–200 个字符 | 匹配名称、slug、主地址、备用地址和备注 |
-| `sceneId` | 否 | 非空字符串 | 指定场景 ID；传 `all` 或省略时搜索所有场景 |
+| 参数      | 必填 | 约束         | 说明                                       |
+| --------- | ---- | ------------ | ------------------------------------------ |
+| `q`       | 是   | 1–200 个字符 | 匹配名称、slug、主地址、备用地址和备注     |
+| `sceneId` | 否   | 非空字符串   | 指定场景 ID；传 `all` 或省略时搜索所有场景 |
 
 搜索所有场景：
 
@@ -152,9 +152,7 @@ curl "$BASE_URL/api/integrations/bookmarks/scenes" \
     {
       "id": "work",
       "name": "工作",
-      "groups": [
-        { "id": "dev-tools", "name": "开发工具" }
-      ]
+      "groups": [{ "id": "dev-tools", "name": "开发工具" }]
     }
   ]
 }
@@ -166,13 +164,13 @@ curl "$BASE_URL/api/integrations/bookmarks/scenes" \
 
 必须携带集成 Token。请求体为 JSON：
 
-| 字段 | 必填 | 约束 |
-| --- | --- | --- |
-| `name` | 是 | 1–200 个字符 |
-| `primaryUrl` | 是 | 合法 URL |
-| `secondaryUrl` | 否 | 合法 URL |
-| `note` | 否 | 最长 5000 个字符 |
-| `placements` | 是 | 1–100 个 `{ sceneId, groupId }` |
+| 字段           | 必填 | 约束                            |
+| -------------- | ---- | ------------------------------- |
+| `name`         | 是   | 1–200 个字符                    |
+| `primaryUrl`   | 是   | 合法 URL                        |
+| `secondaryUrl` | 否   | 合法 URL                        |
+| `note`         | 否   | 最长 5000 个字符                |
+| `placements`   | 是   | 1–100 个 `{ sceneId, groupId }` |
 
 添加到一个场景：
 
@@ -226,9 +224,7 @@ curl -X POST "$BASE_URL/api/integrations/bookmarks" \
     "primaryUrl": "https://example.com",
     "secondaryUrl": "https://example-internal.example.com"
   },
-  "placements": [
-    { "sceneId": "work", "groupId": "dev-tools" }
-  ],
+  "placements": [{ "sceneId": "work", "groupId": "dev-tools" }],
   "navigation": {
     "defaultSceneId": "work",
     "bookmarks": [],
@@ -244,3 +240,17 @@ curl -X POST "$BASE_URL/api/integrations/bookmarks" \
 用户每输入一个字符就调用一次搜索接口时，建议增加 150–300ms 防抖，并使用 URL 编码。Token 应保存在 uTools 私有配置中，不要写入公开仓库。
 
 Windows PowerShell 请使用 `curl.exe`，避免 `curl` 被 PowerShell 别名替换为 `Invoke-WebRequest`。
+
+## Authenticated Web configuration snapshots
+
+These endpoints use the administrator session cookie, not the independent management token.
+
+| Endpoint                         | Revision scope                 |
+| -------------------------------- | ------------------------------ |
+| `GET/PUT /api/config/navigation` | Navigation                     |
+| `GET/PUT /api/config/system`     | System settings                |
+| `GET/PUT /api/config/app`        | Navigation and system settings |
+
+All three PUT endpoints require the exact ETag returned by the corresponding GET. Missing revisions return 428; stale revisions return 412. Web snapshot objects contain `_revision` metadata on `navigation` and `system` so a draft can keep its original version across copies. These fields are removed from the stored file and JSON exports. A whole-app ETag combines the two revisions. UI preference changes do not invalidate content drafts.
+
+Locked scenes are returned as placeholders containing only their ID, name, protected flag and empty group/record arrays. Bookmarks exclusive to locked scenes are omitted; shared bookmarks remain visible through accessible scenes. Web writes preserve locked content, reject hidden-bookmark ID collisions, and reject changes affecting a locked scene. To edit protected content, send a valid session-bound scene token in `X-Scene-Tokens`. Full backup remains an administrator operation; the independent management API retains its explicitly authorized access to protected scenes.
