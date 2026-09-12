@@ -128,6 +128,50 @@ describe('Web configuration isolation and concurrency', () => {
     ).toBe(403)
   })
 
+  it.each(['/api/config/navigation', '/api/config/app'])(
+    'rejects new hidden references in %s without writing any state',
+    async (url) => {
+      const before = await readFile(path.join(directory, 'config.json'), 'utf8')
+      const response = await read(url)
+      for (const newScene of [false, true]) {
+        const draft = response.json()
+        const navigation = url.endsWith('/app') ? draft.navigation : draft
+        if (newScene)
+          navigation.scenes.push({
+            id: 'forged',
+            name: 'Forged',
+            groups: [{ id: 'main', name: 'Main', bookmarkIds: ['private-link'] }],
+          })
+        else navigation.scenes[0].groups[0].bookmarkIds.push('private-link')
+        const rejected = await write(url, draft, String(response.headers.etag))
+        expect(rejected.statusCode).toBe(403)
+        expect(await readFile(path.join(directory, 'config.json'), 'utf8')).toBe(before)
+        expect((await read(url)).headers.etag).toBe(response.headers.etag)
+      }
+    }
+  )
+
+  it('allows deliberately sharing a bookmark after unlocking its source scene', async () => {
+    const unlocked = await server.inject({
+      method: 'POST',
+      url: '/api/navigation/scenes/private/unlock',
+      headers: { cookie },
+      payload: { password: 'scene-password' },
+    })
+    const headers = { cookie, 'x-scene-tokens': JSON.stringify({ private: unlocked.json().token }) }
+    const response = await server.inject({ method: 'GET', url: '/api/config/navigation', headers })
+    const draft = response.json()
+    draft.scenes[0].groups[0].bookmarkIds.push('private-link')
+    const saved = await server.inject({
+      method: 'PUT',
+      url: '/api/config/navigation',
+      headers: { ...headers, 'if-match': String(response.headers.etag) },
+      payload: draft,
+    })
+    expect(saved.statusCode).toBe(200)
+    expect((await read('/api/config/navigation')).body).toContain('secret-note-marker')
+  })
+
   it('shows unlocked content and removes it again after locking', async () => {
     const unlocked = await server.inject({
       method: 'POST',

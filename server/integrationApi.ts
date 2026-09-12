@@ -9,6 +9,7 @@ import {
 } from '../src/config/schema.js'
 import { bookmarkMatchesAnyUrl } from '../src/features/services/bookmarkUrl.js'
 import { quickRecordMatchesSearch } from '../src/features/services/quickRecordSearch.js'
+import { buildUniqueIdentifier } from '../shared/identifiers.js'
 
 export const integrationTokenHeader = 'x-harbordeck-search-token'
 const legacyIntegrationTokenHeader = 'x-smart-harbor-search-token'
@@ -133,7 +134,10 @@ function isBookmarkVisibleInUnlockedScene(navigation: NavigationConfig, slug: st
 }
 
 export function lookupIntegrationBookmark(navigation: NavigationConfig, url: string) {
-  const bookmark = navigation.bookmarks.find((item) => bookmarkMatchesAnyUrl(item, [url]))
+  const bookmark = navigation.bookmarks.find(
+    (item) =>
+      isBookmarkVisibleInUnlockedScene(navigation, item.slug) && bookmarkMatchesAnyUrl(item, [url])
+  )
   if (!bookmark) {
     for (const scene of navigation.scenes) {
       if (scene.protected) continue
@@ -166,8 +170,6 @@ export function lookupIntegrationBookmark(navigation: NavigationConfig, url: str
     })
   })
 
-  // Never reveal a bookmark that is only referenced by protected scenes. The
-  // POST path still merges into that existing record without exposing it.
   if (placements.length === 0) {
     return { bookmark: null, placements }
   }
@@ -234,12 +236,7 @@ function buildUniqueSlug(source: string, occupied: Iterable<string>) {
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
-  const base = normalized || 'bookmark'
-  const used = new Set(occupied)
-  if (!used.has(base)) return base
-  let suffix = 2
-  while (used.has(`${base}-${suffix}`)) suffix += 1
-  return `${base}-${suffix}`
+  return buildUniqueIdentifier(normalized || 'bookmark', occupied)
 }
 
 export function createIntegrationBookmark(
@@ -325,7 +322,12 @@ export function createIntegrationBookmark(
       )
     : undefined
   let bookmark =
-    requestedBookmark ?? next.bookmarks.find((item) => bookmarkMatchesAnyUrl(item, submittedUrls))
+    requestedBookmark ??
+    next.bookmarks.find(
+      (item) =>
+        isBookmarkVisibleInUnlockedScene(navigation, item.slug) &&
+        bookmarkMatchesAnyUrl(item, submittedUrls)
+    )
   const replaceExistingMetadata = Boolean(requestedBookmark)
   let created = false
   const existingQuickRecord = !bookmark

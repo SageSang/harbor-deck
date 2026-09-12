@@ -115,7 +115,9 @@ body {
   background-attachment: fixed;
   background-image: var(--extension-page-background);
   color: var(--extension-text);
-  transition: background-color 180ms ease, color 180ms ease;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
 }
 
 body[data-page='newtab'] {
@@ -220,7 +222,11 @@ a {
 
 .btn-primary {
   color: var(--extension-on-primary);
-  background: linear-gradient(135deg, var(--extension-primary) 0%, var(--extension-primary-strong) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--extension-primary) 0%,
+    var(--extension-primary-strong) 100%
+  );
 }
 
 .btn-secondary {
@@ -560,7 +566,11 @@ a {
 
 .language-toggle button.active {
   color: var(--extension-on-primary);
-  background: linear-gradient(135deg, var(--extension-primary) 0%, var(--extension-primary-strong) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--extension-primary) 0%,
+    var(--extension-primary-strong) 100%
+  );
   box-shadow: 0 10px 20px var(--extension-primary-glow);
 }
 
@@ -692,7 +702,11 @@ a {
 
 .toggle-option.active {
   color: var(--extension-on-primary);
-  background: linear-gradient(135deg, var(--extension-primary) 0%, var(--extension-primary-strong) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--extension-primary) 0%,
+    var(--extension-primary-strong) 100%
+  );
   box-shadow: 0 12px 28px var(--extension-primary-glow);
 }
 
@@ -792,4 +806,15 @@ a {
   .field {
     padding: 14px;
   }
+}
+
+.embedded-help {
+  top: auto;
+  left: auto;
+  right: 12px;
+  bottom: 12px;
+  width: auto;
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 8px 12px;
+  transform: none;
 }

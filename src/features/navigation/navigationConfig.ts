@@ -1,3 +1,4 @@
+import { buildUniqueIdentifier } from '../../../shared/identifiers'
 import {
   navigationConfigSchema,
   type NavigationConfig,
@@ -97,17 +98,7 @@ export function buildUniqueNavigationId(
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
   const base = normalized || fallback
-  const used = new Set(occupied)
-
-  if (!used.has(base)) {
-    return base
-  }
-
-  let suffix = 2
-  while (used.has(`${base}-${suffix}`)) {
-    suffix += 1
-  }
-  return `${base}-${suffix}`
+  return buildUniqueIdentifier(base, occupied)
 }
 
 export function createScene(config: NavigationConfig, name: string): NavigationSceneConfig {

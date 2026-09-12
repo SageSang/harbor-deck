@@ -1,3 +1,4 @@
+import { buildUniqueIdentifier } from '../../../shared/identifiers'
 import { pinyin } from 'pinyin-pro'
 import { defaultServicesConfig as bundledDefaultServicesConfig } from '@/config/defaultConfig'
 import {
@@ -134,16 +135,7 @@ export function buildUniqueSlug(
       .filter((slug) => slug && slug !== currentSlug)
   )
 
-  if (!occupied.has(base)) {
-    return base
-  }
-
-  let nextIndex = 2
-  while (occupied.has(`${base}-${nextIndex}`)) {
-    nextIndex += 1
-  }
-
-  return `${base}-${nextIndex}`
+  return buildUniqueIdentifier(base, occupied)
 }
 
 export function validateGroupName(name: string, config: ServicesConfig, currentIndex?: number) {

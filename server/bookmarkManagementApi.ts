@@ -2,7 +2,11 @@ import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { ZodError, z } from 'zod'
 import { httpUrlSchema, slugSchema, type NavigationConfig } from '../src/config/schema.js'
-import { mutateNavigationConfig, previewNavigationConfig, readNavigationConfig } from './configStore.js'
+import {
+  mutateNavigationConfig,
+  previewNavigationConfig,
+  readNavigationConfig,
+} from './configStore.js'
 import {
   bookmarkManagementTokenHeader,
   getBookmarkManagementTokenStatus,
@@ -71,9 +75,7 @@ const groupCreateSchema = z
   .object({ id: slugSchema.optional(), name: nameSchema, position: positionSchema.optional() })
   .strict()
 const groupPatchSchema = z.object({ name: nameSchema }).strict()
-const groupOrderSchema = z
-  .object({ groupIds: z.array(slugSchema).max(10_000) })
-  .strict()
+const groupOrderSchema = z.object({ groupIds: z.array(slugSchema).max(10_000) }).strict()
 const groupDeleteQuerySchema = z
   .object({
     bookmarkDisposition: z.enum(['reject', 'remove', 'move']).default('reject'),
@@ -132,7 +134,10 @@ const batchMoveSchema = z
 const batchPlaceSchema = z
   .object({
     bookmarkIds: z.array(slugSchema).min(1).max(MAX_BATCH_SIZE),
-    placements: z.array(placementSchema.omit({ position: true })).min(1).max(MAX_BATCH_SIZE),
+    placements: z
+      .array(placementSchema.omit({ position: true }))
+      .min(1)
+      .max(MAX_BATCH_SIZE),
     conflictPolicy: z.enum(['move', 'skip', 'reject']),
   })
   .strict()
@@ -142,9 +147,7 @@ const batchRemoveSchema = z
     orphanPolicy: z.enum(['reject', 'delete']),
   })
   .strict()
-const bookmarkOrderSchema = z
-  .object({ bookmarkIds: z.array(slugSchema).max(100_000) })
-  .strict()
+const bookmarkOrderSchema = z.object({ bookmarkIds: z.array(slugSchema).max(100_000) }).strict()
 
 const quickRecordCreateSchema = z
   .object({
@@ -277,7 +280,13 @@ async function executeWrite<TResult>(
   }
   const expectedRevision = normalizeIfMatch(suppliedRevision)
   if (!/^sha256:[a-f0-9]{64}$/.test(expectedRevision)) {
-    return sendError(request, reply, 400, 'INVALID_IF_MATCH', 'If-Match 必须是有效的 SHA-256 revision')
+    return sendError(
+      request,
+      reply,
+      400,
+      'INVALID_IF_MATCH',
+      'If-Match 必须是有效的 SHA-256 revision'
+    )
   }
   const dryRun = isDryRun(request)
 
@@ -287,7 +296,11 @@ async function executeWrite<TResult>(
     const output = await execute((current) => {
       const currentRevision = getNavigationRevision(current)
       if (currentRevision !== expectedRevision) {
-        throw new BookmarkManagementError(412, 'REVISION_MISMATCH', '状态已变化，请重新读取后再修改')
+        throw new BookmarkManagementError(
+          412,
+          'REVISION_MISMATCH',
+          '状态已变化，请重新读取后再修改'
+        )
       }
       baseNavigation = current
       return mutation(current)
@@ -368,7 +381,10 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       const current = isRead ? record.reads : record.writes
       const limit = isRead ? READ_LIMIT_PER_MINUTE : WRITE_LIMIT_PER_MINUTE
       if (current >= limit) {
-        reply.header('Retry-After', String(Math.max(1, Math.ceil((record.windowStartedAt + RATE_WINDOW_MS - now) / 1000))))
+        reply.header(
+          'Retry-After',
+          String(Math.max(1, Math.ceil((record.windowStartedAt + RATE_WINDOW_MS - now) / 1000)))
+        )
         return sendError(request, reply, 429, 'RATE_LIMITED', '请求过于频繁，请稍后重试')
       }
       if (isRead) record.reads += 1
@@ -450,7 +466,10 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       }
       const revision = getNavigationRevision(navigation)
       reply.header('ETag', etag(revision))
-      return { revision, bookmark: { ...bookmark, placements: getBookmarkPlacements(navigation, slug) } }
+      return {
+        revision,
+        bookmark: { ...bookmark, placements: getBookmarkPlacements(navigation, slug) },
+      }
     })
 
     management.post(
@@ -459,7 +478,12 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       async (request, reply) => {
         const { sceneId } = parseRouteValue(sceneParamsSchema, request.params)
         const body = groupCreateSchema.parse(request.body)
-        return executeWrite(request, reply, (navigation) => createManagedGroup(navigation, sceneId, body), true)
+        return executeWrite(
+          request,
+          reply,
+          (navigation) => createManagedGroup(navigation, sceneId, body),
+          true
+        )
       }
     )
 
@@ -469,7 +493,9 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       async (request, reply) => {
         const { sceneId, groupId } = parseRouteValue(groupParamsSchema, request.params)
         const { name } = groupPatchSchema.parse(request.body)
-        return executeWrite(request, reply, (navigation) => renameManagedGroup(navigation, sceneId, groupId, name))
+        return executeWrite(request, reply, (navigation) =>
+          renameManagedGroup(navigation, sceneId, groupId, name)
+        )
       }
     )
 
@@ -479,22 +505,91 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       async (request, reply) => {
         const { sceneId } = parseRouteValue(sceneParamsSchema, request.params)
         const { groupIds } = groupOrderSchema.parse(request.body)
-        return executeWrite(request, reply, (navigation) => reorderManagedGroups(navigation, sceneId, groupIds))
+        return executeWrite(request, reply, (navigation) =>
+          reorderManagedGroups(navigation, sceneId, groupIds)
+        )
       }
     )
 
-    management.delete(`${MANAGEMENT_PREFIX}/scenes/:sceneId/groups/:groupId`, async (request, reply) => {
-      const { sceneId, groupId } = parseRouteValue(groupParamsSchema, request.params)
-      const query = parseRouteValue(groupDeleteQuerySchema, request.query)
-      return executeWrite(request, reply, (navigation) => deleteManagedGroup(navigation, sceneId, groupId, query))
-    })
+    management.delete(
+      `${MANAGEMENT_PREFIX}/scenes/:sceneId/groups/:groupId`,
+      async (request, reply) => {
+        const { sceneId, groupId } = parseRouteValue(groupParamsSchema, request.params)
+        const query = parseRouteValue(groupDeleteQuerySchema, request.query)
+        return executeWrite(request, reply, (navigation) =>
+          deleteManagedGroup(navigation, sceneId, groupId, query)
+        )
+      }
+    )
 
     management.post(
       `${MANAGEMENT_PREFIX}/bookmarks`,
       { bodyLimit: MANAGEMENT_BODY_LIMIT },
       async (request, reply) => {
         const body = bookmarkCreateSchema.parse(request.body)
-        return executeWrite(request, reply, (navigation) => createManagedBookmark(navigation, body), true)
+        return executeWrite(
+          request,
+          reply,
+          (navigation) => createManagedBookmark(navigation, body),
+          true
+        )
+      }
+    )
+
+    // Static aliases keep historical identifiers in the bounded JSON body.
+    management.post(
+      `${MANAGEMENT_PREFIX}/bookmarks/update`,
+      { bodyLimit: MANAGEMENT_BODY_LIMIT },
+      async (request, reply) => {
+        const { slug, patch } = z
+          .object({ slug: slugSchema, patch: bookmarkPatchSchema })
+          .strict()
+          .parse(request.body)
+        return executeWrite(request, reply, (navigation) =>
+          updateManagedBookmark(navigation, slug, patch)
+        )
+      }
+    )
+    management.post(
+      `${MANAGEMENT_PREFIX}/bookmarks/delete`,
+      { bodyLimit: MANAGEMENT_BODY_LIMIT },
+      async (request, reply) => {
+        const { slug } = z.object({ slug: slugSchema }).strict().parse(request.body)
+        return executeWrite(request, reply, (navigation) => deleteManagedBookmark(navigation, slug))
+      }
+    )
+    management.post(
+      `${MANAGEMENT_PREFIX}/bookmarks/duplicate`,
+      { bodyLimit: MANAGEMENT_BODY_LIMIT },
+      async (request, reply) => {
+        const { slug, options } = z
+          .object({ slug: slugSchema, options: duplicateBookmarkSchema })
+          .strict()
+          .parse(request.body)
+        return executeWrite(
+          request,
+          reply,
+          (navigation) => duplicateManagedBookmark(navigation, slug, options),
+          true
+        )
+      }
+    )
+    management.post(
+      `${MANAGEMENT_PREFIX}/bookmarks/set-placement`,
+      { bodyLimit: MANAGEMENT_BODY_LIMIT },
+      async (request, reply) => {
+        const { slug, sceneId, groupId, position } = z
+          .object({
+            slug: slugSchema,
+            sceneId: slugSchema,
+            groupId: slugSchema,
+            position: positionSchema.optional(),
+          })
+          .strict()
+          .parse(request.body)
+        return executeWrite(request, reply, (navigation) =>
+          setManagedPlacement(navigation, sceneId, slug, { groupId, position })
+        )
       }
     )
 
@@ -504,7 +599,9 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       async (request, reply) => {
         const { slug } = parseRouteValue(bookmarkParamsSchema, request.params)
         const body = bookmarkPatchSchema.parse(request.body)
-        return executeWrite(request, reply, (navigation) => updateManagedBookmark(navigation, slug, body))
+        return executeWrite(request, reply, (navigation) =>
+          updateManagedBookmark(navigation, slug, body)
+        )
       }
     )
 
@@ -514,7 +611,12 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       async (request, reply) => {
         const { slug } = parseRouteValue(bookmarkParamsSchema, request.params)
         const body = duplicateBookmarkSchema.parse(request.body ?? {})
-        return executeWrite(request, reply, (navigation) => duplicateManagedBookmark(navigation, slug, body), true)
+        return executeWrite(
+          request,
+          reply,
+          (navigation) => duplicateManagedBookmark(navigation, slug, body),
+          true
+        )
       }
     )
 
@@ -529,7 +631,9 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       async (request, reply) => {
         const { sceneId, slug } = parseRouteValue(sceneBookmarkParamsSchema, request.params)
         const body = placementBodySchema.parse(request.body)
-        return executeWrite(request, reply, (navigation) => setManagedPlacement(navigation, sceneId, slug, body))
+        return executeWrite(request, reply, (navigation) =>
+          setManagedPlacement(navigation, sceneId, slug, body)
+        )
       }
     )
 
@@ -538,7 +642,9 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       async (request, reply) => {
         const { sceneId, slug } = parseRouteValue(sceneBookmarkParamsSchema, request.params)
         const { orphanPolicy } = parseRouteValue(orphanQuerySchema, request.query)
-        return executeWrite(request, reply, (navigation) => removeManagedPlacement(navigation, sceneId, slug, orphanPolicy))
+        return executeWrite(request, reply, (navigation) =>
+          removeManagedPlacement(navigation, sceneId, slug, orphanPolicy)
+        )
       }
     )
 
@@ -549,7 +655,13 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
         const { sceneId } = parseRouteValue(sceneParamsSchema, request.params)
         const body = batchMoveSchema.parse(request.body)
         return executeWrite(request, reply, (navigation) =>
-          batchMoveManagedBookmarks(navigation, sceneId, body.bookmarkIds, body.targetGroupId, body.position)
+          batchMoveManagedBookmarks(
+            navigation,
+            sceneId,
+            body.bookmarkIds,
+            body.targetGroupId,
+            body.position
+          )
         )
       }
     )
@@ -600,7 +712,12 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       async (request, reply) => {
         const { sceneId } = parseRouteValue(sceneParamsSchema, request.params)
         const body = quickRecordCreateSchema.parse(request.body)
-        return executeWrite(request, reply, (navigation) => createManagedQuickRecord(navigation, sceneId, body), true)
+        return executeWrite(
+          request,
+          reply,
+          (navigation) => createManagedQuickRecord(navigation, sceneId, body),
+          true
+        )
       }
     )
 
@@ -643,7 +760,9 @@ export async function registerBookmarkManagementApi(app: FastifyInstance) {
       { bodyLimit: MANAGEMENT_BODY_LIMIT },
       async (request, reply) => {
         const { sceneIds } = fillMissingIconsSchema.parse(request.body ?? {})
-        return executeWrite(request, reply, (navigation) => fillMissingManagedIcons(navigation, sceneIds))
+        return executeWrite(request, reply, (navigation) =>
+          fillMissingManagedIcons(navigation, sceneIds)
+        )
       }
     )
   })

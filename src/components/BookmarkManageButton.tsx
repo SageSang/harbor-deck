@@ -1,4 +1,4 @@
-import { useFieldDraft } from '@/features/config/useFieldDraft'
+import { useFieldDraft, useFieldDrafts } from '@/features/config/useFieldDraft'
 import { useDiscardDraft } from '@/features/config/useDiscardDraft'
 import { DraftNotice } from '@/features/config/DraftNotice'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
@@ -62,6 +62,7 @@ import {
 } from '@/features/services/randomBookmarkIcon'
 import { useI18n } from '@/i18n/runtime'
 import { useAppStore } from '@/store/appStore'
+import { NavigationSyncNotice } from '@/features/navigation/NavigationSyncNotice'
 
 interface FeedbackState {
   type: 'success' | 'error'
@@ -76,7 +77,6 @@ type SectionKey = 'scenes' | 'groups' | 'bookmark' | 'import' | 'export'
 
 export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButtonProps) {
   const navigationQuery = useNavigationConfig()
-  const saveMutation = useSaveNavigationConfig()
   const passwordMutation = useSetScenePassword()
   const activeSceneId = useAppStore((state) => state.activeSceneId)
   const accessVersion = useAppStore((state) => state.sceneAccessVersion)
@@ -87,6 +87,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   const [isOpen, setIsOpen] = useState(initialOpen)
   const [activeSection, setActiveSection] = useState<SectionKey>('groups')
   const [selectedSceneId, setSelectedSceneId] = useState<string>('')
+  const saveMutation = useSaveNavigationConfig(`${isOpen}:${selectedSceneId}`)
   const [newSceneName, setNewSceneName] = useState('')
   const [scenePassword, setScenePassword] = useState('')
   const [newGroupName, setNewGroupName] = useState('')
@@ -127,9 +128,11 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     () => Object.fromEntries(selectedScene?.groups.map((group) => [group.id, group.name]) ?? []),
     [selectedScene]
   )
-  const groupEditor = useFieldDraft(groupNames, `${selectedSceneId}:${accessVersion}`)
+  const groupEditor = useFieldDrafts(groupNames, `${selectedSceneId}:${accessVersion}`)
   const groupDrafts = groupEditor.value
   const setGroupDrafts = groupEditor.setValue
+  const deletedGroupDrafts = groupEditor.dirtyFields.filter((id) => !(id in groupNames))
+  const writeBlocked = saveMutation.isSaveBlocked || passwordMutation.isPending
   const [bookmarkDirty, setBookmarkDirty] = useState(false)
   const editableSceneIds = useMemo(
     () => new Set(manageableNavigation?.scenes.map((scene) => scene.id) ?? []),
@@ -160,6 +163,9 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
 
   useEffect(() => {
     saveOperationRef.current += 1
+  }, [isOpen, selectedSceneId, accessVersion])
+
+  useEffect(() => {
     if (isOpen) {
       setFeedback(null)
       clearToasts()
@@ -174,14 +180,18 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   function saveNavigation(
     nextNavigation: NonNullable<typeof navigation>,
     successMessage: string,
-    afterSave?: () => void
+    afterSave?: (
+      saved: NonNullable<typeof navigation>,
+      current: NonNullable<typeof navigation>
+    ) => void
   ) {
+    if (writeBlocked) return
     const operationId = ++saveOperationRef.current
     saveMutation.mutate(nextNavigation, {
-      onSuccess: () => {
+      onSuccess: (saved, current) => {
         if (operationId !== saveOperationRef.current) return
         notify('success', successMessage)
-        afterSave?.()
+        afterSave?.(saved, current)
       },
       onError: (error) => {
         if (operationId !== saveOperationRef.current) return
@@ -191,6 +201,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   }
 
   function handleSceneSelection(sceneId: string) {
+    saveOperationRef.current += 1
     setSelectedSceneId(sceneId)
     setFeedback(null)
     if (manageableNavigation) {
@@ -213,9 +224,9 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     const scene = createScene(navigation, newSceneName)
     const next = cloneNavigationConfig(navigation)
     next.scenes.push(scene)
-    saveNavigation(next, `场景“${scene.name}”已创建。`, () => {
-      setNewSceneName('')
-      setSelectedSceneId(scene.id)
+    saveNavigation(next, `场景“${scene.name}”已创建。`, (_saved, current) => {
+      setNewSceneName((value) => (value === newSceneName ? '' : value))
+      selectSavedScene(scene.id, current)
       setActiveSection('groups')
     })
   }
@@ -236,7 +247,18 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       notify('error', '场景名称已变化，请比较并重新加载后再保存')
       return
     }
-    saveNavigation(next, '场景名称已更新。', () => sceneNameEditor.accept(sceneNameDraft.trim()))
+    saveNavigation(next, '场景名称已更新。', (saved) => {
+      const savedName = saved.scenes.find((scene) => scene.id === selectedScene.id)?.name
+      if (savedName !== undefined) sceneNameEditor.accept(sceneNameDraft, savedName)
+    })
+  }
+
+  function selectSavedScene(sceneId: string, current: NonNullable<typeof navigation>) {
+    if (current.scenes.some((scene) => scene.id === sceneId)) {
+      setSelectedSceneId(sceneId)
+    } else {
+      notify('error', '操作已保存，但该场景随后已被移除。已保留当前可用场景。')
+    }
   }
 
   function handleDuplicateScene() {
@@ -261,7 +283,9 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     scene.quickRecords = (selectedScene.quickRecords ?? []).map((record) => ({ ...record }))
     const next = cloneNavigationConfig(navigation)
     next.scenes.push(scene)
-    saveNavigation(next, `场景“${scene.name}”已复制。`, () => setSelectedSceneId(scene.id))
+    saveNavigation(next, `场景“${scene.name}”已复制。`, (_saved, current) =>
+      selectSavedScene(scene.id, current)
+    )
   }
 
   async function handleDeleteScene() {
@@ -304,7 +328,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   }
 
   function saveScenePassword(password: string | null) {
-    if (!selectedScene) return
+    if (!selectedScene || writeBlocked) return
     passwordMutation.mutate(
       { sceneId: selectedScene.id, password, revision: navigation?._revision },
       {
@@ -327,7 +351,9 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
     const next = cloneNavigationConfig(navigation)
     const scene = next.scenes.find((item) => item.id === selectedScene.id)!
     scene.groups.push(createSceneGroup(scene, newGroupName))
-    saveNavigation(next, `分组“${newGroupName.trim()}”已创建。`, () => setNewGroupName(''))
+    saveNavigation(next, `分组“${newGroupName.trim()}”已创建。`, () =>
+      setNewGroupName((value) => (value === newGroupName ? '' : value))
+    )
   }
 
   function handleRenameGroup(groupId: string) {
@@ -345,9 +371,13 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
       notify('error', '分组名称已变化，请比较并重新加载后再保存')
       return
     }
-    saveNavigation(next, '分组名称已更新。', () =>
-      groupEditor.accept({ ...groupEditor.base, [groupId]: name })
-    )
+    const submittedName = groupDrafts[groupId]
+    saveNavigation(next, '分组名称已更新。', (saved) => {
+      const savedName = saved.scenes
+        .find((scene) => scene.id === selectedScene.id)
+        ?.groups.find((group) => group.id === groupId)?.name
+      if (savedName !== undefined) groupEditor.acceptField(groupId, submittedName, savedName)
+    })
   }
 
   async function handleDeleteGroup(groupId: string) {
@@ -378,8 +408,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
   }
 
   function moveGroupTo(groupId: string, targetIndex: number) {
-    if (saveMutation.isPending || !navigation || !selectedScene || groupId === dragOverGroupId)
-      return
+    if (writeBlocked || !navigation || !selectedScene || groupId === dragOverGroupId) return
     const sourceIndex = selectedScene.groups.findIndex((group) => group.id === groupId)
     if (sourceIndex < 0 || sourceIndex === targetIndex) return
     const adjustedTargetIndex = getSceneGroupDropIndex(sourceIndex, targetIndex)
@@ -733,11 +762,9 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
         icon={Plus}
         widthClassName="max-w-6xl"
       >
+        <NavigationSyncNotice save={saveMutation} />
         <DraftNotice
-          changed={
-            (sceneNameEditor.dirty && selectedScene.name !== sceneNameEditor.base) ||
-            (groupEditor.dirty && JSON.stringify(groupNames) !== JSON.stringify(groupEditor.base))
-          }
+          changed={sceneNameEditor.changed || groupEditor.changed}
           current={{ name: sceneNameDraft, groups: groupDrafts }}
           latest={{ name: selectedScene.name, groups: groupNames }}
           onReload={() => {
@@ -767,7 +794,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                   <Button
                     type="button"
                     onClick={handleAddScene}
-                    disabled={!newSceneName.trim() || saveMutation.isPending}
+                    disabled={!newSceneName.trim() || writeBlocked}
                   >
                     <Plus className="h-4 w-4" />
                     新增场景
@@ -776,23 +803,44 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                 <div className="config-panel-card space-y-4 p-4">
                   <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                     <Input
+                      aria-label="场景名称"
                       value={sceneNameDraft}
                       onChange={(event) => setSceneNameDraft(event.target.value)}
                     />
-                    <Button type="button" variant="outline" onClick={handleRenameScene}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRenameScene}
+                      disabled={writeBlocked}
+                    >
                       保存名称
                     </Button>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" onClick={() => moveScene(-1)}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => moveScene(-1)}
+                      disabled={writeBlocked}
+                    >
                       <ArrowUp className="h-4 w-4" />
                       前移
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => moveScene(1)}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => moveScene(1)}
+                      disabled={writeBlocked}
+                    >
                       <ArrowDown className="h-4 w-4" />
                       后移
                     </Button>
-                    <Button type="button" variant="outline" onClick={handleDuplicateScene}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleDuplicateScene}
+                      disabled={writeBlocked}
+                    >
                       <Copy className="h-4 w-4" />
                       复制场景
                     </Button>
@@ -800,7 +848,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                       type="button"
                       variant="outline"
                       onClick={setDefaultScene}
-                      disabled={navigation.defaultSceneId === selectedScene.id}
+                      disabled={navigation.defaultSceneId === selectedScene.id || writeBlocked}
                     >
                       设为默认
                     </Button>
@@ -808,7 +856,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                       type="button"
                       variant="destructive"
                       onClick={() => void handleDeleteScene()}
-                      disabled={navigation.scenes.length <= 1}
+                      disabled={navigation.scenes.length <= 1 || writeBlocked}
                     >
                       <Trash2 className="h-4 w-4" />
                       删除场景
@@ -833,7 +881,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                     <Button
                       type="button"
                       onClick={() => saveScenePassword(scenePassword)}
-                      disabled={scenePassword.length < 6 || passwordMutation.isPending}
+                      disabled={scenePassword.length < 6 || writeBlocked}
                     >
                       设置密码
                     </Button>
@@ -841,7 +889,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                       type="button"
                       variant="outline"
                       onClick={() => saveScenePassword(null)}
-                      disabled={!selectedScene.protected || passwordMutation.isPending}
+                      disabled={!selectedScene.protected || writeBlocked}
                     >
                       移除密码
                     </Button>
@@ -868,7 +916,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                     type="button"
                     variant="outline"
                     onClick={() => void handleFillMissingBookmarkIcons()}
-                    disabled={saveMutation.isPending}
+                    disabled={writeBlocked}
                   >
                     <Sparkles className="h-4 w-4" />
                     {messages.bookmarkManage.iconMigration.fillIconsButton(missingIconCount)}
@@ -881,7 +929,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                   onChange={(event) => setNewGroupName(event.target.value)}
                   placeholder={messages.bookmarkManage.groupSection.createPlaceholder}
                 />
-                <Button type="button" onClick={handleAddGroup}>
+                <Button type="button" onClick={handleAddGroup} disabled={writeBlocked}>
                   <Plus className="h-4 w-4" />
                   {messages.bookmarkManage.groupSection.createButton}
                 </Button>
@@ -890,7 +938,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                 {selectedScene.groups.map((group, index) => (
                   <div
                     key={group.id}
-                    draggable
+                    draggable={!writeBlocked}
                     onDragStart={(event) => {
                       stopDragAutoScroll()
                       setDraggingGroupId(group.id)
@@ -927,6 +975,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                       />
                       <div className="min-w-0 flex-1">
                         <Input
+                          aria-label={`分组名称 ${group.name}`}
                           value={groupDrafts[group.id] ?? ''}
                           onChange={(event) =>
                             setGroupDrafts((current) => ({
@@ -945,7 +994,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                         type="button"
                         size="icon"
                         variant="outline"
-                        disabled={index === 0}
+                        disabled={index === 0 || writeBlocked}
                         onClick={() => moveGroup(group.id, -1)}
                       >
                         <ArrowUp className="h-4 w-4" />
@@ -954,7 +1003,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                         type="button"
                         size="icon"
                         variant="outline"
-                        disabled={index === selectedScene.groups.length - 1}
+                        disabled={index === selectedScene.groups.length - 1 || writeBlocked}
                         onClick={() => moveGroup(group.id, 1)}
                       >
                         <ArrowDown className="h-4 w-4" />
@@ -963,6 +1012,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                         type="button"
                         variant="outline"
                         onClick={() => handleRenameGroup(group.id)}
+                        disabled={writeBlocked}
                       >
                         保存
                       </Button>
@@ -970,10 +1020,35 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                         type="button"
                         variant="destructive"
                         onClick={() => void handleDeleteGroup(group.id)}
+                        disabled={writeBlocked}
                       >
                         删除
                       </Button>
                     </div>
+                  </div>
+                ))}
+                {deletedGroupDrafts.map((groupId) => (
+                  <div
+                    key={groupId}
+                    className="config-panel-card space-y-2 border-amber-400/40 p-3"
+                  >
+                    <p className="text-sm">
+                      分组“{groupEditor.base[groupId]}”已在服务器删除，未保存的输入已保留。
+                    </p>
+                    <Input
+                      aria-label={`已删除分组的草稿 ${groupEditor.base[groupId]}`}
+                      value={groupDrafts[groupId]}
+                      onChange={(event) =>
+                        setGroupDrafts((current) => ({ ...current, [groupId]: event.target.value }))
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => groupEditor.reset(groupId)}
+                    >
+                      丢弃此草稿
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -991,7 +1066,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                 feedback={feedback}
                 allowEmptyPlacements
                 submitLabel={messages.bookmarkManage.bookmarkSection.submitButton}
-                submitDisabled={saveMutation.isPending}
+                submitDisabled={writeBlocked}
                 onSubmit={handleAddBookmark}
                 onCancel={closeManage}
                 onFieldChange={handleBookmarkFieldChange}
@@ -1028,7 +1103,7 @@ export function BookmarkManageButton({ initialOpen = false }: BookmarkManageButt
                 <Button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={saveMutation.isPending}
+                  disabled={writeBlocked}
                 >
                   <Upload className="h-4 w-4" />
                   {messages.bookmarkManage.importSection.selectButton}

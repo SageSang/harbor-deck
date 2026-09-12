@@ -18,12 +18,15 @@ import {
   readSystemConfig,
   mutateAppConfig,
   mutateNavigationConfig,
-  writeAppConfig,
+  commitRestoredAppConfig,
+  commitScenePasswordConfig,
+  inspectAppConfig,
 } from './configStore.js'
 import { createAuthService } from './auth.js'
 import { createWebdavBackupManager } from './webdavBackupManager.js'
 import { createSceneAccessService } from './sceneAccess.js'
 import { hashPassword, verifyPassword } from './password.js'
+import type { PasswordAttemptResult } from './passwordAttempts.js'
 import {
   createIntegrationBookmark,
   getIntegrationTokenStatus,
@@ -310,8 +313,14 @@ function getTrustProxySetting(): boolean | string[] {
     .filter(Boolean)
 }
 
-function getConnectionAddress(request: FastifyRequest) {
-  return request.socket.remoteAddress ?? 'unknown'
+function getTrustedExtensionSources() {
+  const value = process.env.HARBORDECK_TRUSTED_EXTENSION_IDS?.trim()
+  if (!value) return []
+  const ids = value.split(',').map((id) => id.trim())
+  if (ids.some((id) => !/^[a-p]{32}$/.test(id))) {
+    throw new Error('HARBORDECK_TRUSTED_EXTENSION_IDS 必须是逗号分隔的有效 Chrome 扩展 ID')
+  }
+  return [...new Set(ids)].map((id) => `chrome-extension://${id}`)
 }
 
 async function buildContentSecurityPolicy() {
@@ -413,6 +422,13 @@ function getGroupExpansionResponse(config: AppConfig) {
 
 export async function buildServer() {
   const contentSecurityPolicy = await buildContentSecurityPolicy()
+  const extensionSources = getTrustedExtensionSources()
+  const embeddedSecurityPolicy = extensionSources.length
+    ? contentSecurityPolicy.replace(
+        "frame-ancestors 'none'",
+        `frame-ancestors ${extensionSources.join(' ')}`
+      )
+    : contentSecurityPolicy
   const app = Fastify({
     // Legacy bookmark slugs can be longer than find-my-way's 100-character default.
     // Keep route-based management operations usable without changing the slug format.
@@ -441,11 +457,20 @@ export async function buildServer() {
     return typeof singleToken === 'string' ? singleToken : undefined
   }
 
-  function hasProtectedSceneAccess(request: FastifyRequest, sceneId: string) {
+  function hasProtectedSceneAccess(
+    request: FastifyRequest,
+    sceneId: string,
+    navigation: NavigationConfig
+  ) {
     const sessionKey = authService.getSessionKey(request)
     return Boolean(
       sessionKey &&
-      sceneAccessService.validate(getSuppliedSceneToken(request, sceneId), sessionKey, sceneId)
+      sceneAccessService.validate(
+        getSuppliedSceneToken(request, sceneId),
+        sessionKey,
+        sceneId,
+        navigation.scenes.find((scene) => scene.id === sceneId)?.passwordHash
+      )
     )
   }
 
@@ -454,30 +479,72 @@ export async function buildServer() {
     currentNavigation: NavigationConfig,
     nextNavigation: NavigationConfig
   ) {
+    const visibleIds = new Set(
+      sanitizeNavigationConfig(currentNavigation, (id) =>
+        hasProtectedSceneAccess(request, id, currentNavigation)
+      ).bookmarks.map((bookmark) => bookmark.slug)
+    )
+    const hiddenIds = new Set(
+      currentNavigation.bookmarks
+        .filter((bookmark) => !visibleIds.has(bookmark.slug))
+        .map((bookmark) => bookmark.slug)
+    )
+    nextNavigation.scenes.forEach((scene) => {
+      const previousScene = currentNavigation.scenes.find((item) => item.id === scene.id)
+      scene.groups.forEach((group) => {
+        const previousIds = new Set(
+          previousScene?.groups.find((item) => item.id === group.id)?.bookmarkIds ?? []
+        )
+        if (group.bookmarkIds.some((id) => hiddenIds.has(id) && !previousIds.has(id))) {
+          throw new BookmarkManagementError(
+            403,
+            'PROTECTED_SCENE_LOCKED',
+            '书签属于锁定场景，请先解锁'
+          )
+        }
+      })
+    })
     return currentNavigation.scenes.find(
       (scene) =>
         scene.protected &&
         protectedSceneChanged(currentNavigation, nextNavigation, scene) &&
-        !hasProtectedSceneAccess(request, scene.id)
+        !hasProtectedSceneAccess(request, scene.id, currentNavigation)
     )
   }
 
   const webdavBackupManager = createWebdavBackupManager({
     readAppConfig,
     readSystemConfig,
-    writeAppConfig,
+    commitRestoredConfig: (value, canCommit) =>
+      commitRestoredAppConfig(value, canCommit, (requiresReauth) => {
+        if (requiresReauth) authService.invalidateAllSessions()
+        sceneAccessService.clear()
+      }),
     logger: app.log,
   })
 
-  await webdavBackupManager.reloadSchedule()
+  app.addHook('onListen', async () => {
+    webdavBackupManager.start()
+  })
+  app.addHook('preClose', async () => {
+    await webdavBackupManager.stop()
+  })
 
   app.addHook('onSend', async (request, reply, payload) => {
-    applySecurityHeaders(request, reply, contentSecurityPolicy)
+    const url = new URL(request.url, 'http://localhost')
+    const isEmbeddedHtml =
+      ['/', '/index.html'].includes(url.pathname) &&
+      url.searchParams.get('embedded') === '1' &&
+      String(reply.getHeader('content-type') ?? '').startsWith('text/html')
+    applySecurityHeaders(
+      request,
+      reply,
+      isEmbeddedHtml ? embeddedSecurityPolicy : contentSecurityPolicy
+    )
     return payload
   })
 
   app.addHook('onClose', async () => {
-    webdavBackupManager.stop()
     sceneAccessService.clear()
   })
 
@@ -726,7 +793,9 @@ export async function buildServer() {
 
     const config = await readAppConfig()
     reply.header('ETag', `"${appRevision(config)}"`)
-    return sanitizeAppConfig(config, (id) => hasProtectedSceneAccess(request, id))
+    return sanitizeAppConfig(config, (id) =>
+      hasProtectedSceneAccess(request, id, config.navigation)
+    )
   })
 
   app.put('/api/config/app', async (request, reply) => {
@@ -740,14 +809,12 @@ export async function buildServer() {
     }
 
     try {
-      const { appConfig: savedConfig, result } = await mutateAppConfig<{
-        unauthorizedSceneName: string | null
-      }>((currentConfig) => {
+      const { appConfig: savedConfig } = await mutateAppConfig((currentConfig) => {
         if (appRevision(currentConfig) !== expectedRevision) {
           throw new NavigationRevisionMismatchError('导航状态已变化，请重新加载后再保存')
         }
         const nextConfig = mergeAppSecrets(request.body, currentConfig, (id) =>
-          hasProtectedSceneAccess(request, id)
+          hasProtectedSceneAccess(request, id, currentConfig.navigation)
         )
         const parsedNextConfig = appConfigSchema.parse(nextConfig)
         const nextNavigation = storedNavigationConfigSchema.parse(parsedNextConfig.navigation)
@@ -757,25 +824,23 @@ export async function buildServer() {
           nextNavigation
         )
 
-        return unauthorizedScene
-          ? {
-              appConfig: currentConfig,
-              result: { unauthorizedSceneName: unauthorizedScene.name },
-            }
-          : {
-              appConfig: {
-                ...parsedNextConfig,
-                navigation: nextNavigation,
-              },
-              result: { unauthorizedSceneName: null },
-            }
+        if (unauthorizedScene) {
+          throw new BookmarkManagementError(
+            403,
+            'PROTECTED_SCENE_LOCKED',
+            `请先解锁场景“${unauthorizedScene.name}”`
+          )
+        }
+        return {
+          appConfig: { ...parsedNextConfig, navigation: nextNavigation },
+          result: null,
+        }
       })
-      if (result.unauthorizedSceneName) {
-        return reply.code(403).send(`请先解锁场景“${result.unauthorizedSceneName}”`)
-      }
       void webdavBackupManager.reloadSchedule().catch((error) => app.log.error(error))
       reply.header('ETag', `"${appRevision(savedConfig)}"`)
-      return sanitizeAppConfig(savedConfig, (id) => hasProtectedSceneAccess(request, id))
+      return sanitizeAppConfig(savedConfig, (id) =>
+        hasProtectedSceneAccess(request, id, savedConfig.navigation)
+      )
     } catch (error) {
       if (error instanceof NavigationRevisionMismatchError) {
         return reply.code(412).send(error.message)
@@ -795,7 +860,9 @@ export async function buildServer() {
 
     const navigation = await readNavigationConfig()
     reply.header('ETag', navigationEtag(navigation))
-    return sanitizeNavigationConfig(navigation, (id) => hasProtectedSceneAccess(request, id))
+    return sanitizeNavigationConfig(navigation, (id) =>
+      hasProtectedSceneAccess(request, id, navigation)
+    )
   })
 
   app.put('/api/config/navigation', async (request, reply) => {
@@ -814,7 +881,7 @@ export async function buildServer() {
           throw new NavigationRevisionMismatchError('导航状态已变化，请重新加载后再保存')
         }
         const nextNavigation = mergeNavigationPasswords(request.body, currentNavigation, (id) =>
-          hasProtectedSceneAccess(request, id)
+          hasProtectedSceneAccess(request, id, currentNavigation)
         )
         const parsedNextNavigation = storedNavigationConfigSchema.parse(nextNavigation)
         const unauthorizedScene = findUnauthorizedProtectedScene(
@@ -832,7 +899,9 @@ export async function buildServer() {
         return { navigation: parsedNextNavigation, result: null }
       })
       reply.header('ETag', navigationEtag(savedNavigation))
-      return sanitizeNavigationConfig(savedNavigation, (id) => hasProtectedSceneAccess(request, id))
+      return sanitizeNavigationConfig(savedNavigation, (id) =>
+        hasProtectedSceneAccess(request, id, savedNavigation)
+      )
     } catch (error) {
       if (error instanceof NavigationRevisionMismatchError) {
         return reply.code(412).send(error.message)
@@ -858,41 +927,49 @@ export async function buildServer() {
     const { sceneId } = sceneIdParamsSchema.parse(request.params)
     const { password } = scenePasswordBodySchema.parse(request.body)
     const passwordHash = password ? await hashPassword(password) : undefined
+    const sessionKey = authService.getSessionKey(request)
     let savedNavigation: NavigationConfig
     try {
-      ;({ navigation: savedNavigation } = await mutateNavigationConfig((navigation) => {
-        if (getNavigationRevision(navigation) !== expectedRevision) {
-          throw new NavigationRevisionMismatchError('导航状态已变化，请重新加载后再保存')
-        }
-        const sceneIndex = navigation.scenes.findIndex((scene) => scene.id === sceneId)
-        if (sceneIndex < 0) {
-          throw new BookmarkManagementError(404, 'SCENE_NOT_FOUND', '场景不存在')
-        }
-        const currentScene = navigation.scenes[sceneIndex]
-        if (currentScene.protected && !hasProtectedSceneAccess(request, currentScene.id)) {
-          throw new BookmarkManagementError(
-            403,
-            'PROTECTED_SCENE_LOCKED',
-            `请先解锁场景“${currentScene.name}”`
-          )
-        }
-        const scenes = navigation.scenes.map((scene, index) =>
-          index === sceneIndex ? { ...scene, protected: Boolean(password), passwordHash } : scene
-        )
-        return { navigation: { ...navigation, scenes }, result: null }
-      }))
+      savedNavigation = await commitScenePasswordConfig(
+        sceneId,
+        passwordHash,
+        (current) => {
+          if (
+            !sessionKey ||
+            !authService.isSessionCurrent(request, current.system.auth, sessionKey)
+          ) {
+            throw new BookmarkManagementError(401, 'SESSION_EXPIRED', '请先登录')
+          }
+          const navigation = current.navigation
+          if (getNavigationRevision(navigation) !== expectedRevision) {
+            throw new NavigationRevisionMismatchError('导航状态已变化，请重新加载后再保存')
+          }
+          const currentScene = navigation.scenes.find((scene) => scene.id === sceneId)
+          if (!currentScene) throw new BookmarkManagementError(404, 'SCENE_NOT_FOUND', '场景不存在')
+          if (
+            currentScene.protected &&
+            !hasProtectedSceneAccess(request, currentScene.id, navigation)
+          ) {
+            throw new BookmarkManagementError(
+              403,
+              'PROTECTED_SCENE_LOCKED',
+              `请先解锁场景“${currentScene.name}”`
+            )
+          }
+        },
+        () => sceneAccessService.clear()
+      )
     } catch (error) {
-      if (error instanceof NavigationRevisionMismatchError) {
+      if (error instanceof NavigationRevisionMismatchError)
         return reply.code(412).send(error.message)
-      }
-      if (error instanceof BookmarkManagementError) {
+      if (error instanceof BookmarkManagementError)
         return reply.code(error.statusCode).send(error.message)
-      }
       throw error
     }
-    sceneAccessService.clear()
     reply.header('ETag', navigationEtag(savedNavigation))
-    return sanitizeNavigationConfig(savedNavigation, (id) => hasProtectedSceneAccess(request, id))
+    return sanitizeNavigationConfig(savedNavigation, (id) =>
+      hasProtectedSceneAccess(request, id, savedNavigation)
+    )
   })
 
   app.get('/api/navigation/scenes', async (request, reply) => {
@@ -928,7 +1005,10 @@ export async function buildServer() {
       const sessionKey = authService.getSessionKey(request)
       const sceneToken = request.headers['x-scene-token']
       const token = typeof sceneToken === 'string' ? sceneToken : undefined
-      if (!sessionKey || !sceneAccessService.validate(token, sessionKey, scene.id)) {
+      if (
+        !sessionKey ||
+        !sceneAccessService.validate(token, sessionKey, scene.id, scene.passwordHash)
+      ) {
         return reply.code(403).send('场景需要解锁')
       }
     }
@@ -943,39 +1023,60 @@ export async function buildServer() {
 
     const { sceneId } = sceneIdParamsSchema.parse(request.params)
     const { password } = sceneUnlockBodySchema.parse(request.body)
-    const navigation = await readNavigationConfig()
-    const scene = navigation.scenes.find((item) => item.id === sceneId)
-    if (!scene) {
-      return reply.code(404).send('场景不存在')
-    }
-    if (!scene.protected || !scene.passwordHash) {
-      return { token: null, expiresAt: null }
-    }
-
-    const sessionKey = authService.getSessionKey(request)
-    if (!sessionKey) {
-      return reply.code(401).send('请先登录')
-    }
-    const connectionAddress = getConnectionAddress(request)
-    if (!sceneAccessService.ensureCanAttempt(sessionKey, sceneId, connectionAddress)) {
+    const initial = await inspectAppConfig((current) => {
+      const sessionKey = authService.getSessionKey(request)
+      if (!sessionKey || !authService.isSessionCurrent(request, current.system.auth, sessionKey)) {
+        return { error: '请先登录', status: 401 } as const
+      }
+      const scene = current.navigation.scenes.find((item) => item.id === sceneId)
+      if (!scene) return { error: '场景不存在', status: 404 } as const
+      return { scene, sessionKey, access: sceneAccessService.capture(sessionKey, sceneId) }
+    })
+    if (initial.status !== undefined) return reply.code(initial.status).send(initial.error)
+    const { scene, sessionKey, access } = initial
+    if (!scene.protected || !scene.passwordHash) return { token: null, expiresAt: null }
+    const attempt = sceneAccessService.beginAttempt(sceneId, request.ip)
+    if (!attempt.finish) {
+      reply.header('Retry-After', String(attempt.retryAfter))
       return reply.code(429).send('尝试过于频繁，请稍后再试')
     }
-    if (!(await verifyPassword(password, scene.passwordHash))) {
-      sceneAccessService.registerFailure(sessionKey, sceneId, connectionAddress)
-      return reply.code(401).send('场景密码错误')
+    let outcome: PasswordAttemptResult = 'cancelled'
+    try {
+      if (!(await verifyPassword(password, scene.passwordHash))) {
+        outcome = 'failure'
+        return reply.code(401).send('场景密码错误')
+      }
+      const result = await inspectAppConfig((current) => {
+        if (!authService.isSessionCurrent(request, current.system.auth, sessionKey)) {
+          return { error: '请先登录', status: 401 } as const
+        }
+        const latest = current.navigation.scenes.find((item) => item.id === sceneId)
+        if (!latest?.protected || latest.passwordHash !== scene.passwordHash) {
+          return { error: '场景状态已变化，请重新解锁', status: 409 } as const
+        }
+        const issued = sceneAccessService.issue(access, scene.passwordHash!)
+        return issued ?? ({ error: '场景已重新锁定，请重新解锁', status: 409 } as const)
+      })
+      if ('error' in result) return reply.code(result.status).send(result.error)
+      outcome = 'success'
+      return result
+    } finally {
+      attempt.finish(outcome)
     }
-
-    sceneAccessService.clearFailures(sessionKey, sceneId, connectionAddress)
-    return sceneAccessService.issue(sessionKey, sceneId)
   })
 
   app.post('/api/navigation/scenes/:sceneId/lock', async (request, reply) => {
-    if (!(await authService.requireAuthenticated(request, reply))) {
-      return reply
-    }
-    sceneIdParamsSchema.parse(request.params)
-    const sceneToken = request.headers['x-scene-token']
-    sceneAccessService.lock(typeof sceneToken === 'string' ? sceneToken : undefined)
+    if (!(await authService.requireAuthenticated(request, reply))) return reply
+    const { sceneId } = sceneIdParamsSchema.parse(request.params)
+    const status = await inspectAppConfig((current) => {
+      const sessionKey = authService.getSessionKey(request)
+      if (!sessionKey || !authService.isSessionCurrent(request, current.system.auth, sessionKey))
+        return 401
+      if (!current.navigation.scenes.some((scene) => scene.id === sceneId)) return 404
+      sceneAccessService.lock(sessionKey, sceneId)
+      return 200
+    })
+    if (status !== 200) return reply.code(status).send(status === 401 ? '请先登录' : '场景不存在')
     return { ok: true }
   })
 
@@ -1056,9 +1157,8 @@ export async function buildServer() {
       const result = await webdavBackupManager.restoreVersion(versionId)
 
       if (result.requiresReauth) {
-        authService.invalidateAllSessions(reply, request)
+        authService.clearSessionCookie(reply, request)
       }
-      sceneAccessService.clear()
 
       return {
         requiresReauth: result.requiresReauth,

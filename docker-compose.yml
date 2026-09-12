@@ -1,6 +1,6 @@
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.19
+    image: ghcr.io/sagesang/harbor-deck:1.4.20
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -15,6 +15,8 @@ services:
       # AI 书签管理接口。留空时接口关闭；启用时请直接填写至少 32 位随机 Token。
       HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN: ''
       HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
+      HARBORDECK_TRUSTED_EXTENSION_IDS: ${HARBORDECK_TRUSTED_EXTENSION_IDS:-}
+      HARBORDECK_WEBDAV_TIMEOUT_MS: ${HARBORDECK_WEBDAV_TIMEOUT_MS:-15000}
     volumes:
       - /volume1/docker/harbor-deck/config:/app/config
     security_opt:

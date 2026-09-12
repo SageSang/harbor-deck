@@ -58,7 +58,7 @@ HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.19
+    image: ghcr.io/sagesang/harbor-deck:1.4.20
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -73,6 +73,8 @@ services:
       # 留空时书签管理 API 关闭；启用时直接填写至少 32 位随机 Token。
       HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN: ''
       HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
+      HARBORDECK_TRUSTED_EXTENSION_IDS: ${HARBORDECK_TRUSTED_EXTENSION_IDS:-}
+      HARBORDECK_WEBDAV_TIMEOUT_MS: ${HARBORDECK_WEBDAV_TIMEOUT_MS:-15000}
     volumes:
       - ./config:/app/config
     security_opt:
@@ -99,10 +101,16 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
   -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
-  ghcr.io/sagesang/harbor-deck:1.4.19
+  ghcr.io/sagesang/harbor-deck:1.4.20
 ```
 
 HTTPS 可以支持。应用容器内部监听 HTTP，可使用任意反向代理（包括群晖反向代理、Caddy 或 Nginx Proxy Manager）终止 TLS，再把 HTTPS 域名转发到宿主机 `127.0.0.1:8080`。默认只信任回环、链路本地和私有网络代理；代理不在这些网段时，用 `HARBORDECK_TRUST_PROXY` 明确填写其 IP 或 CIDR。只有确实需要绕过反向代理从局域网直连时，才把端口绑定改回 `8080:80`。
+
+### 升级到 1.4.20
+
+本版修复保护场景隔离、并发改密、编辑草稿和 WebDAV 可靠性。升级前备份完整配置；服务重启后需重新登录、解锁场景。现有搜索与管理 Token、书签标识继续有效。
+
+`HARBORDECK_TRUSTED_EXTENSION_IDS` 可选，填写允许内嵌 HTML 入口的 Chrome 扩展 ID，多个用逗号分隔；每项必须为 32 个 a–p 字符，留空仍禁止内嵌。`HARBORDECK_WEBDAV_TIMEOUT_MS` 可选，设置单个 WebDAV 请求完整超时（默认 15000，整数范围 100–300000 毫秒），不是多步骤备份的总耗时。使用内嵌时还需验证反代最终响应头与 Chrome 权限/Cookie 行为。
 
 ## 场景、分组与导入规则
 

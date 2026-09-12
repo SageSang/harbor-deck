@@ -1,120 +1,126 @@
 import { createHash, randomBytes } from 'node:crypto'
+import { createPasswordAttemptLimiter } from './passwordAttempts.js'
 
 const SCENE_UNLOCK_TTL_MS = 1000 * 60 * 60
-const ATTEMPT_WINDOW_MS = 1000 * 60 * 10
-const MAX_ATTEMPTS = 5
-const BLOCK_MS = 1000 * 60 * 30
-const ATTEMPT_CAPACITY = 10_000
 
 interface UnlockRecord {
   sessionKey: string
   sceneId: string
+  passwordFingerprint: string
   expiresAt: number
 }
 
-interface AttemptRecord {
-  count: number
-  firstAttemptAt: number
-  blockedUntil?: number
+interface ScopeGeneration {
+  version: number
+  expiresAt: number
+}
+
+interface UnlockAttempt {
+  sessionKey: string
+  sceneId: string
+  generation: number
+  scope: ScopeGeneration
+  version: number
 }
 
 function hashToken(token: string) {
   return createHash('sha256').update(token).digest('base64url')
 }
 
+function scopeKey(sessionKey: string, sceneId: string) {
+  return JSON.stringify([sessionKey, sceneId])
+}
+
 export function createSceneAccessService() {
   const unlocks = new Map<string, UnlockRecord>()
-  const attempts = new Map<string, AttemptRecord>()
+  const scopes = new Map<string, ScopeGeneration>()
+  const attempts = createPasswordAttemptLimiter()
+  let generation = 0
 
   function prune() {
     const now = Date.now()
     unlocks.forEach((record, key) => {
-      if (record.expiresAt <= now) {
-        unlocks.delete(key)
-      }
+      if (record.expiresAt <= now) unlocks.delete(key)
     })
-    attempts.forEach((record, key) => {
-      if (
-        (!record.blockedUntil || record.blockedUntil <= now) &&
-        record.firstAttemptAt + ATTEMPT_WINDOW_MS <= now
-      ) {
-        attempts.delete(key)
-      }
+    scopes.forEach((record, key) => {
+      if (record.expiresAt <= now) scopes.delete(key)
     })
   }
 
-  function getAttemptKey(sessionKey: string, sceneId: string, ip: string) {
-    return `${sessionKey}:${sceneId}:${ip}`
-  }
-
-  function ensureCanAttempt(sessionKey: string, sceneId: string, ip: string) {
+  function capture(sessionKey: string, sceneId: string): UnlockAttempt {
     prune()
-    const record = attempts.get(getAttemptKey(sessionKey, sceneId, ip))
-    return !record?.blockedUntil || record.blockedUntil <= Date.now()
-  }
-
-  function registerFailure(sessionKey: string, sceneId: string, ip: string) {
-    const key = getAttemptKey(sessionKey, sceneId, ip)
-    const now = Date.now()
-    const current = attempts.get(key)
-    if (!current || current.firstAttemptAt + ATTEMPT_WINDOW_MS <= now) {
-      if (!current && attempts.size >= ATTEMPT_CAPACITY) {
-        const oldestKey = attempts.keys().next().value
-        if (oldestKey) attempts.delete(oldestKey)
-      }
-      attempts.set(key, { count: 1, firstAttemptAt: now })
-      return
+    const key = scopeKey(sessionKey, sceneId)
+    let scope = scopes.get(key)
+    if (!scope) {
+      scope = { version: 0, expiresAt: Date.now() + SCENE_UNLOCK_TTL_MS }
+      scopes.set(key, scope)
     }
-
-    const count = current.count + 1
-    attempts.set(key, {
-      count,
-      firstAttemptAt: current.firstAttemptAt,
-      blockedUntil: count >= MAX_ATTEMPTS ? now + BLOCK_MS : current.blockedUntil,
-    })
+    scope.expiresAt = Date.now() + SCENE_UNLOCK_TTL_MS
+    return { sessionKey, sceneId, generation, scope, version: scope.version }
   }
 
-  function clearFailures(sessionKey: string, sceneId: string, ip: string) {
-    attempts.delete(getAttemptKey(sessionKey, sceneId, ip))
+  function isCurrent(attempt: UnlockAttempt) {
+    return (
+      attempt.generation === generation &&
+      scopes.get(scopeKey(attempt.sessionKey, attempt.sceneId)) === attempt.scope &&
+      attempt.version === attempt.scope.version &&
+      attempt.scope.expiresAt > Date.now()
+    )
   }
 
-  function issue(sessionKey: string, sceneId: string) {
+  function issue(attempt: UnlockAttempt, passwordHash: string) {
     prune()
+    if (!isCurrent(attempt)) return null
     const token = randomBytes(32).toString('base64url')
     const expiresAt = Date.now() + SCENE_UNLOCK_TTL_MS
-    unlocks.set(hashToken(token), { sessionKey, sceneId, expiresAt })
+    unlocks.set(hashToken(token), {
+      sessionKey: attempt.sessionKey,
+      sceneId: attempt.sceneId,
+      passwordFingerprint: hashToken(passwordHash),
+      expiresAt,
+    })
     return { token, expiresAt }
   }
 
-  function validate(token: string | undefined, sessionKey: string, sceneId: string) {
+  function validate(
+    token: string | undefined,
+    sessionKey: string,
+    sceneId: string,
+    passwordHash: string | undefined
+  ) {
     prune()
-    if (!token) {
-      return false
-    }
+    if (!token || !passwordHash) return false
     const record = unlocks.get(hashToken(token))
     return Boolean(
       record &&
       record.sessionKey === sessionKey &&
       record.sceneId === sceneId &&
+      record.passwordFingerprint === hashToken(passwordHash) &&
       record.expiresAt > Date.now()
     )
   }
 
-  function lock(token: string | undefined) {
-    if (token) {
-      unlocks.delete(hashToken(token))
-    }
+  function lock(sessionKey: string, sceneId: string) {
+    const attempt = capture(sessionKey, sceneId)
+    attempt.scope.version += 1
+    unlocks.forEach((record, token) => {
+      if (record.sessionKey === sessionKey && record.sceneId === sceneId) unlocks.delete(token)
+    })
   }
 
   return {
-    ensureCanAttempt,
-    registerFailure,
-    clearFailures,
+    capture,
+    isCurrent,
+    beginAttempt(sceneId: string, ip: string) {
+      return attempts.begin(JSON.stringify([sceneId, ip]))
+    },
     issue,
     validate,
     lock,
     clear() {
+      generation += 1
       unlocks.clear()
+      scopes.clear()
       attempts.clear()
     },
   }

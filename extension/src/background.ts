@@ -1,103 +1,48 @@
-import { fetchRemoteTheme, resolveAvailableTarget } from '@extension/network'
-import {
-  clearNewTabBootSnapshot,
-  clearResolutionCache,
-  readSettings,
-  writeExtensionTheme,
-  writeNewTabBootSnapshot,
-} from '@extension/storage'
+import { createResolutionCoordinator, SettingsChangedError } from './resolutionCoordinator'
+import { STORAGE_KEY } from './storage'
 
-const RESOLUTION_REFRESH_MESSAGE = 'harbordeck:refresh-resolution'
-const REFRESH_COOLDOWN_MS = 10_000
-
-let lastRefreshStartedAt = 0
-let refreshInFlight: Promise<void> | null = null
-
-async function refreshResolutionCache(force = false): Promise<void> {
-  const now = Date.now()
-  if (refreshInFlight) {
-    return refreshInFlight
-  }
-
-  if (!force && now - lastRefreshStartedAt < REFRESH_COOLDOWN_MS) {
-    return
-  }
-
-  lastRefreshStartedAt = now
-  refreshInFlight = (async () => {
-    try {
-      const settings = await readSettings()
-      const target = await resolveAvailableTarget(
-        settings.primaryUrl,
-        settings.fallbackUrl,
-        settings.probeTimeoutMs,
-        true
-      )
-      const skin = target.activeUrl
-        ? await fetchRemoteTheme(target.activeUrl, settings.apiToken)
-        : null
-      if (skin) {
-        await writeExtensionTheme(skin)
-      }
-      await writeNewTabBootSnapshot({
-        primaryUrl: settings.primaryUrl,
-        fallbackUrl: settings.fallbackUrl,
-        openMode: settings.openMode,
-        activeUrl: target.activeUrl,
-        reason: target.reason,
-        resolvedAt: Date.now(),
-      })
-    } catch (error) {
-      await clearResolutionCache()
-      await clearNewTabBootSnapshot()
-      throw error
-    }
-  })().finally(() => {
-    refreshInFlight = null
-  })
-
-  return refreshInFlight
+const coordinator = createResolutionCoordinator()
+const warm = () => {
+  void coordinator.refresh({ force: true }).catch(() => undefined)
 }
-
 chrome.action.onClicked.addListener(() => {
-  chrome.runtime.openOptionsPage()
+  void chrome.runtime.openOptionsPage()
 })
-
-// Warm the last known network target before the first new-tab request. These
-// lifecycle hooks are optional in the local Chrome type shim so older test
-// doubles can continue to run without implementing them.
-const runtimeLifecycle = chrome.runtime as typeof chrome.runtime & {
-  onInstalled?: { addListener(callback: () => void): void }
-  onStartup?: { addListener(callback: () => void): void }
+chrome.runtime.onInstalled?.addListener(warm)
+chrome.runtime.onStartup?.addListener(warm)
+chrome.storage.onChanged?.addListener((changes, area) => {
+  if (area !== 'sync' || !(STORAGE_KEY in changes || 'smartHarborNewTabSettings' in changes)) return
+  coordinator.invalidate()
+  warm()
+})
+const permissionsChanged = () => {
+  coordinator.invalidate()
+  warm()
 }
-
-runtimeLifecycle.onInstalled?.addListener(() => {
-  void refreshResolutionCache()
-})
-
-runtimeLifecycle.onStartup?.addListener(() => {
-  void refreshResolutionCache()
-})
+chrome.permissions.onRemoved?.addListener(permissionsChanged)
+chrome.permissions.onAdded?.addListener(permissionsChanged)
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (
+    !message ||
     typeof message !== 'object' ||
-    message === null ||
     !('type' in message) ||
-    message.type !== RESOLUTION_REFRESH_MESSAGE
-  ) {
+    message.type !== 'harbordeck:refresh-resolution'
+  )
     return
-  }
-
-  const force =
-    typeof message === 'object' &&
-    message !== null &&
-    'force' in message &&
-    message.force === true
-
-  void refreshResolutionCache(force)
-    .then(() => sendResponse({ ok: true }))
-    .catch(() => sendResponse({ ok: false }))
-
+  const options = message as { force?: boolean; failedUrl?: unknown; verifySingle?: boolean }
+  void coordinator
+    .refresh({
+      force: options.force === true,
+      verifySingle: options.verifySingle === true,
+      failedUrl: typeof options.failedUrl === 'string' ? options.failedUrl : undefined,
+    })
+    .then((snapshot) => sendResponse({ ok: true, snapshot }))
+    .catch((error: unknown) =>
+      sendResponse({
+        ok: false,
+        error: error instanceof SettingsChangedError ? 'settings-changed' : 'resolution-failed',
+      })
+    )
   return true
 })

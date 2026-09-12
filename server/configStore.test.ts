@@ -1,6 +1,7 @@
 // @vitest-environment node
 
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,6 +23,110 @@ describe('configStore', () => {
   afterEach(async () => {
     delete process.env.CONFIG_DIR
     await rm(tempConfigDir, { recursive: true, force: true })
+  })
+
+  it('inspects committed state in queue order without rewriting the file', async () => {
+    const configStore = await loadConfigStore()
+    await configStore.readAppConfig()
+    const file = path.join(tempConfigDir, 'config.json')
+    const before = await stat(file)
+    const content = await readFile(file, 'utf8')
+    expect(await configStore.inspectAppConfig((current) => current.system.appName)).toBe(
+      'HarborDeck'
+    )
+    expect((await stat(file)).mtimeMs).toBe(before.mtimeMs)
+    expect(await readFile(file, 'utf8')).toBe(content)
+    const events: string[] = []
+    const write = configStore.commitAuthConfig({
+      expectedAuth: null,
+      auth: { username: 'review-admin', passwordHash: 'new-hash' },
+      onCommitted() {
+        expect(JSON.parse(readFileSync(file, 'utf8')).system.auth.passwordHash).toBe('new-hash')
+        events.push('invalidated')
+      },
+    })
+    const inspected = configStore.inspectAppConfig((current) => {
+      events.push('inspected')
+      return current.system.auth?.passwordHash
+    })
+    await write
+    expect(await inspected).toBe('new-hash')
+    expect(events).toEqual(['invalidated', 'inspected'])
+  })
+
+  it('does not change auth or sessions when final validation fails before rename', async () => {
+    const configStore = await loadConfigStore()
+    await configStore.readAppConfig()
+    const original = await readFile(path.join(tempConfigDir, 'config.json'), 'utf8')
+    const onCommitted = vi.fn()
+    let checks = 0
+    await expect(
+      configStore.commitAuthConfig({
+        expectedAuth: null,
+        auth: { username: 'review-admin', passwordHash: 'new-hash' },
+        assertSessionValid() {
+          if (++checks === 2) throw new Error('session cancelled')
+        },
+        onCommitted,
+      })
+    ).rejects.toThrow('session cancelled')
+    expect(checks).toBe(2)
+    expect(onCommitted).not.toHaveBeenCalled()
+    expect(await readFile(path.join(tempConfigDir, 'config.json'), 'utf8')).toBe(original)
+  })
+
+  it('compares restore auth to the latest queued state and invalidates before releasing the queue', async () => {
+    const configStore = await loadConfigStore()
+    const original = await configStore.readAppConfig()
+    const replacement = {
+      ...original,
+      system: {
+        ...original.system,
+        auth: { username: 'review-admin', passwordHash: 'replacement-hash' },
+      },
+    }
+    const write = configStore.writeAppConfig(replacement)
+    let invalidated = false
+    const restored = configStore.commitRestoredAppConfig(
+      original,
+      () => true,
+      (requiresReauth) => {
+        expect(requiresReauth).toBe(true)
+        invalidated = true
+      }
+    )
+    const read = configStore.inspectAppConfig(() => invalidated)
+    await write
+    expect((await restored).requiresReauth).toBe(true)
+    expect(await read).toBe(true)
+    const sameAuth = vi.fn()
+    expect(
+      (await configStore.commitRestoredAppConfig(original, () => true, sameAuth)).requiresReauth
+    ).toBe(false)
+    expect(sameAuth).toHaveBeenCalledWith(false)
+  })
+
+  it('cancels restore immediately before rename and reports post-commit failures truthfully', async () => {
+    const configStore = await loadConfigStore()
+    const original = await configStore.readAppConfig()
+    const replacement = { ...original, system: { ...original.system, appName: 'Restored name' } }
+    const onCommitted = vi.fn()
+    let checks = 0
+    await expect(
+      configStore.commitRestoredAppConfig(replacement, () => ++checks === 1, onCommitted)
+    ).rejects.toThrow('恢复已取消')
+    expect(onCommitted).not.toHaveBeenCalled()
+    expect(await configStore.readAppConfig()).toEqual(original)
+    await expect(
+      configStore.commitRestoredAppConfig(
+        replacement,
+        () => true,
+        () => {
+          throw new Error('invalidation failed')
+        }
+      )
+    ).rejects.toMatchObject({ committed: true })
+    expect((await configStore.readAppConfig()).system.appName).toBe('Restored name')
   })
 
   it('creates a clean default navigation config when no file exists', async () => {

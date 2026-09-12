@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Eye, EyeOff } from 'lucide-react'
-import { getMessages } from '@extension/i18n'
-import { requestOriginPermissions, resolveAvailableTarget } from '@extension/network'
+import { getMessages } from './i18n'
+import { hasOriginPermission, requestOriginPermissions } from './network'
+import { requestResolution } from './resolutionClient'
 import {
   DEFAULT_PROBE_TIMEOUT_MS,
   defaultLanguage,
@@ -14,9 +15,9 @@ import {
   RESOLUTION_CACHE_TTL_MS,
   writeLanguage,
   writeSettings,
-} from '@extension/storage'
-import { restoreExtensionTheme, syncExtensionTheme } from '@extension/theme'
-import type { ExtensionLanguage, ExtensionSettings, OpenMode } from '@extension/types'
+} from './storage'
+import { restoreExtensionTheme } from './theme'
+import type { ExtensionLanguage, ExtensionSettings, OpenMode } from './types'
 import './styles.css'
 
 const REPOSITORY_URL = 'https://github.com/SageSang/harbor-deck'
@@ -61,6 +62,15 @@ export function OptionsApp() {
   const [status, setStatus] = useState<SaveStatus>({ tone: 'idle', kind: 'idle' })
   const [saving, setSaving] = useState(false)
   const [showApiToken, setShowApiToken] = useState(false)
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({})
+
+  async function refreshPermissions(settings: ExtensionSettings) {
+    const urls = [settings.primaryUrl, settings.fallbackUrl].filter(Boolean)
+    const entries = await Promise.all(
+      urls.map(async (url) => [url, await hasOriginPermission(url).catch(() => false)] as const)
+    )
+    setPermissions(Object.fromEntries(entries))
+  }
 
   const messages = getMessages(language)
   const cacheDuration =
@@ -83,19 +93,10 @@ export function OptionsApp() {
         setLanguage(nextLanguage)
       }
 
-      if (settings.apiToken && (settings.primaryUrl || settings.fallbackUrl)) {
-        const target = await resolveAvailableTarget(
-          settings.primaryUrl,
-          settings.fallbackUrl,
-          settings.probeTimeoutMs
-        )
-        if (!cancelled && target.activeUrl) {
-          await syncExtensionTheme(target.activeUrl, settings.apiToken)
-        }
-      }
+      if (!cancelled) await refreshPermissions(settings)
     }
 
-    void load()
+    void load().catch(() => setStatus({ tone: 'error', kind: 'save-failed' }))
 
     return () => {
       delete document.body.dataset.page
@@ -108,7 +109,7 @@ export function OptionsApp() {
     setSaving(true)
 
     try {
-      const nextSettings: ExtensionSettings = {
+      let nextSettings: ExtensionSettings = {
         primaryUrl: normalizeUrl(form.primaryUrl),
         fallbackUrl: normalizeUrl(form.fallbackUrl),
         apiToken: form.apiToken.trim(),
@@ -121,28 +122,10 @@ export function OptionsApp() {
         nextSettings.fallbackUrl,
       ])
 
-      await writeSettings(nextSettings)
-      try {
-        await chrome.runtime.sendMessage({
-          type: 'harbordeck:refresh-resolution',
-          force: true,
-        })
-      } catch {
-        // The settings are already saved; the next extension startup will
-        // rebuild the boot snapshot if the service worker is unavailable.
-      }
+      nextSettings = await writeSettings(nextSettings)
+      void requestResolution(nextSettings, { force: true }).catch(() => undefined)
       setForm(nextSettings)
-      if (nextSettings.apiToken && (nextSettings.primaryUrl || nextSettings.fallbackUrl)) {
-        const target = await resolveAvailableTarget(
-          nextSettings.primaryUrl,
-          nextSettings.fallbackUrl,
-          nextSettings.probeTimeoutMs,
-          true
-        )
-        if (target.activeUrl) {
-          await syncExtensionTheme(target.activeUrl, nextSettings.apiToken)
-        }
-      }
+      await refreshPermissions(nextSettings)
       setStatus(
         permissionGranted
           ? { tone: 'success', kind: 'saved' }
@@ -172,7 +155,7 @@ export function OptionsApp() {
 
   async function handleLanguageChange(nextLanguage: ExtensionLanguage) {
     setLanguage(nextLanguage)
-    await writeLanguage(nextLanguage)
+    await writeLanguage(nextLanguage).catch(() => setStatus({ tone: 'error', kind: 'save-failed' }))
   }
 
   return (
@@ -253,7 +236,9 @@ export function OptionsApp() {
                 className="input"
                 type={showApiToken ? 'text' : 'password'}
                 autoComplete="off"
-                placeholder={language === 'zh-CN' ? 'HARBORDECK_SEARCH_TOKEN' : 'HARBORDECK_SEARCH_TOKEN'}
+                placeholder={
+                  language === 'zh-CN' ? 'HARBORDECK_SEARCH_TOKEN' : 'HARBORDECK_SEARCH_TOKEN'
+                }
                 value={form.apiToken}
                 onChange={(event) => updateField('apiToken', event.target.value)}
               />
@@ -297,6 +282,37 @@ export function OptionsApp() {
               </button>
             </div>
             <p className="field-help">{messages.options.openModeHint}</p>
+            <div className="field-help">
+              <p>
+                {language === 'zh-CN' ? '当前扩展 ID：' : 'This extension ID: '}
+                <code>{chrome.runtime.id}</code>
+              </p>
+              <p>
+                {language === 'zh-CN'
+                  ? '内嵌模式需在服务端 HARBORDECK_TRUSTED_EXTENSION_IDS 登记此 ID。商店版与解压版请分别核对；重装或更换解压目录后 ID 可能变化。'
+                  : 'For embedded mode, register this ID in HARBORDECK_TRUSTED_EXTENSION_IDS on the server. Check store and unpacked IDs separately; reinstalling or moving an unpacked copy can change its ID.'}
+              </p>
+              <p>
+                {language === 'zh-CN'
+                  ? '主备地址需分别授权，HTTP 与 HTTPS 权限分开。反向代理不能额外添加禁止内嵌的 CSP。登录状态是否与直接访问共用，取决于浏览器与 Cookie 设置。'
+                  : 'Grant each address permission, including both HTTP and HTTPS when used. A reverse proxy must not add a conflicting frame-ancestors policy. Login sharing depends on browser and cookie settings.'}
+              </p>
+              {Object.entries(permissions).map(([url, allowed]) => (
+                <p key={url}>
+                  {url} —{' '}
+                  {allowed
+                    ? language === 'zh-CN'
+                      ? '已授权'
+                      : 'Granted'
+                    : language === 'zh-CN'
+                      ? '未授权，保存时可申请'
+                      : 'Not granted; save to request'}
+                </p>
+              ))}
+              <button type="button" className="btn" onClick={() => void refreshPermissions(form)}>
+                {language === 'zh-CN' ? '刷新授权状态' : 'Refresh permissions'}
+              </button>
+            </div>
           </div>
 
           <div className="field">

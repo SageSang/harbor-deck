@@ -8,6 +8,7 @@ import { useAppStore } from '@/store/appStore'
 import { useI18n } from '@/i18n/runtime'
 import { useFeedback } from '@/features/feedback/useFeedback'
 import { quickRecordMatchesSearch } from './quickRecordSearch'
+import { NavigationSyncNotice } from '@/features/navigation/NavigationSyncNotice'
 const QuickRecordEditDialog = lazy(() =>
   import('./QuickRecordEditDialog').then((module) => ({ default: module.QuickRecordEditDialog }))
 )
@@ -20,12 +21,12 @@ export function QuickRecordInbox() {
 
 function InboxContent({ sceneId }: { sceneId: string | null }) {
   const { data: navigation } = useNavigationConfig()
-  const save = useSaveNavigationConfig()
   const { showToast } = useFeedback()
   const { language, messages } = useI18n()
   const zh = language === 'zh-CN'
   const title = zh ? '快速记录' : 'Quick records'
   const [open, setOpen] = useState(false)
+  const save = useSaveNavigationConfig(`${sceneId}:${open}`)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [groupId, setGroupId] = useState('')
@@ -57,6 +58,7 @@ function InboxContent({ sceneId }: { sceneId: string | null }) {
         icon={Inbox}
         widthClassName="max-w-3xl"
       >
+        <NavigationSyncNotice save={save} />
         <div className="min-h-0 overflow-auto p-4">
           <Input
             value={query}
@@ -65,7 +67,7 @@ function InboxContent({ sceneId }: { sceneId: string | null }) {
           />
           <div className="my-3 flex flex-wrap gap-2">
             <select
-              disabled={save.isPending}
+              disabled={save.isSaveBlocked}
               aria-label={zh ? '目标分组' : 'Target group'}
               className="config-panel-select"
               value={groupId}
@@ -79,7 +81,7 @@ function InboxContent({ sceneId }: { sceneId: string | null }) {
               ))}
             </select>
             <Button
-              disabled={!selected.length || !groupId || save.isPending}
+              disabled={!selected.length || !groupId || save.isSaveBlocked}
               onClick={async () => {
                 if (!navigation || !sceneId) return
                 try {

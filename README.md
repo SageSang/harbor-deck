@@ -56,7 +56,7 @@ The repository includes a generic Docker Compose configuration for Docker Compos
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.19
+    image: ghcr.io/sagesang/harbor-deck:1.4.20
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -71,6 +71,8 @@ services:
       # Leave empty to disable the management API; otherwise use a random token of 32+ characters.
       HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN: ''
       HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
+      HARBORDECK_TRUSTED_EXTENSION_IDS: ${HARBORDECK_TRUSTED_EXTENSION_IDS:-}
+      HARBORDECK_WEBDAV_TIMEOUT_MS: ${HARBORDECK_WEBDAV_TIMEOUT_MS:-15000}
     volumes:
       - ./config:/app/config
     security_opt:
@@ -84,7 +86,7 @@ Deployment steps:
 3. Point an HTTPS reverse proxy at `127.0.0.1:8080`, then open the HTTPS domain and create the administrator account.
 4. Create scenes and groups in Bookmark Management, then add or import bookmarks.
 
-The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.19` with `latest` only when you intentionally want automatic image updates.
+The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.20` with `latest` only when you intentionally want automatic image updates.
 
 For a direct Docker command:
 
@@ -97,10 +99,16 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
   -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
-  ghcr.io/sagesang/harbor-deck:1.4.19
+  ghcr.io/sagesang/harbor-deck:1.4.20
 ```
 
 HTTPS is supported by putting the container behind any reverse proxy, including Synology Reverse Proxy, Caddy, or Nginx Proxy Manager. The application listens on HTTP inside the container; point the proxy at host `127.0.0.1:8080`. By default it trusts forwarded headers only from loopback, link-local, and private-network proxies. Set `HARBORDECK_TRUST_PROXY` to an explicit IP or CIDR when the proxy is elsewhere. Change the port binding back to `8080:80` only when direct LAN access is intentionally required.
+
+### Upgrading to 1.4.20
+
+This release fixes protected-scene isolation, concurrent credential changes, editing drafts, and WebDAV reliability. Back up the complete configuration before upgrading; restarting the service requires signing in and unlocking scenes again. Existing search and management tokens and bookmark identifiers remain valid.
+
+`HARBORDECK_TRUSTED_EXTENSION_IDS` optionally lists comma-separated Chrome extension IDs allowed to embed the HTML entry. Each ID must contain exactly 32 letters from a–p; leaving it empty keeps embedding blocked. `HARBORDECK_WEBDAV_TIMEOUT_MS` optionally sets the complete per-request WebDAV timeout (default 15000; integer 100–300000), not the total duration of a multi-step backup. Verify the final reverse-proxy headers and Chrome permissions/Cookie behavior when using embedded mode.
 
 ## Scenes, groups, and imports
 

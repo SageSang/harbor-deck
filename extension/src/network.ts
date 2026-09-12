@@ -1,12 +1,6 @@
-import type { ResolvedTarget } from '@extension/types'
+import type { ExtensionSettings, NewTabBootSnapshot } from './types'
 import { isAppSkin, type AppSkin } from '@shared/theme'
-import {
-  clearResolutionCache,
-  normalizeProbeTimeoutMs,
-  readResolutionCache,
-  RESOLUTION_CACHE_TTL_MS,
-  writeResolutionCache,
-} from '@extension/storage'
+import { emptyResolution, matchesSettings, MANUAL_CACHE_TTL_MS } from './resolutionState'
 
 function getOriginPattern(url: string): string {
   const parsed = new URL(url)
@@ -14,16 +8,10 @@ function getOriginPattern(url: string): string {
 }
 
 export function getPermissionOrigins(urls: string[]): string[] {
-  return Array.from(
-    new Set(
-      urls
-        .filter(Boolean)
-        .map((url) => getOriginPattern(url))
-    )
-  )
+  return Array.from(new Set(urls.filter(Boolean).map((url) => getOriginPattern(url))))
 }
 
-async function hasOriginPermission(url: string): Promise<boolean> {
+export async function hasOriginPermission(url: string): Promise<boolean> {
   return chrome.permissions.contains({
     origins: [getOriginPattern(url)],
   })
@@ -39,7 +27,9 @@ export async function requestOriginPermissions(urls: string[]): Promise<boolean>
 }
 
 async function probe(baseUrl: string, timeoutMs: number): Promise<boolean | null> {
-  if (!(await hasOriginPermission(baseUrl))) {
+  try {
+    if (!(await hasOriginPermission(baseUrl))) return null
+  } catch {
     return null
   }
 
@@ -97,104 +87,67 @@ export async function fetchRemoteTheme(
   }
 }
 
-function isFreshCache(resolvedAt: number) {
-  return Date.now() - resolvedAt <= RESOLUTION_CACHE_TTL_MS
-}
-
-async function cacheResolvedTarget(
-  primaryUrl: string,
-  fallbackUrl: string,
-  target: ResolvedTarget,
-  cacheable: boolean
-) {
-  if (!cacheable || !target.activeUrl || target.reason === 'unconfigured') {
-    return
+/** Pure network selection. Storage is owned by the service worker. */
+export async function probeAvailableTarget(
+  settings: ExtensionSettings,
+  previous: NewTabBootSnapshot | null,
+  options: { failedUrl?: string; verifySingle?: boolean } = {}
+): Promise<NewTabBootSnapshot> {
+  const now = Date.now()
+  const current = matchesSettings(previous, settings) ? previous : null
+  const urls = [settings.primaryUrl, settings.fallbackUrl].filter(Boolean)
+  const failed = new Set(current?.failedUrls ?? [])
+  if (options.failedUrl && urls.includes(options.failedUrl)) failed.add(options.failedUrl)
+  const result = { ...emptyResolution(settings), lastAttemptAt: now }
+  if (current?.lastSuccessAt && now - current.lastSuccessAt <= MANUAL_CACHE_TTL_MS) {
+    result.lastSuccessfulUrl = current.lastSuccessfulUrl
+    result.lastSuccessAt = current.lastSuccessAt
   }
+  if (!urls.length) return result
 
-  await writeResolutionCache({
-    primaryUrl,
-    fallbackUrl,
-    activeUrl: target.activeUrl,
-    reason: target.reason,
-    resolvedAt: Date.now(),
+  const finish = (url: string, verified: boolean): NewTabBootSnapshot => {
+    const primary = url === settings.primaryUrl
+    return {
+      ...result,
+      activeUrl: url,
+      status: verified ? 'success' : 'unverified',
+      reason: primary
+        ? verified
+          ? 'primary'
+          : 'primary-unverified'
+        : verified
+          ? 'fallback'
+          : 'fallback-unverified',
+      verifiedAt: verified ? Date.now() : null,
+      failedUrls: [...failed],
+      ...(verified ? { lastSuccessfulUrl: url, lastSuccessAt: Date.now() } : {}),
+    }
+  }
+  const unavailable = (): NewTabBootSnapshot => ({
+    ...result,
+    status: 'failed',
+    reason: 'unreachable',
+    failedUrls: [...failed],
   })
-}
+  if (urls.length === 1 && !failed.has(urls[0]) && !options.verifySingle)
+    return finish(urls[0], false)
 
-export async function resolveAvailableTarget(
-  primaryUrl: string,
-  fallbackUrl: string,
-  probeTimeoutMs?: number,
-  forceRefresh = false
-): Promise<ResolvedTarget> {
-  const cached = await readResolutionCache()
-  if (
-    !forceRefresh &&
-    cached &&
-    cached.primaryUrl === primaryUrl &&
-    cached.fallbackUrl === fallbackUrl &&
-    isFreshCache(cached.resolvedAt)
-  ) {
-    return {
-      activeUrl: cached.activeUrl,
-      reason: cached.reason,
-    }
+  const check = async (url: string): Promise<boolean | null> => {
+    if (!url) return null
+    const reachable = await probe(url, settings.probeTimeoutMs)
+    if (reachable === true) failed.delete(url)
+    else if (reachable === false) failed.add(url)
+    return reachable
   }
-
-  if (!primaryUrl && !fallbackUrl) {
-    await clearResolutionCache()
-    return {
-      activeUrl: '',
-      reason: 'unconfigured',
-    }
-  }
-
-  if (!primaryUrl) {
-    const result: ResolvedTarget = {
-      activeUrl: fallbackUrl,
-      reason: 'fallback-unverified',
-    }
-    await cacheResolvedTarget(primaryUrl, fallbackUrl, result, true)
-    return result
-  }
-
-  if (!fallbackUrl) {
-    const result: ResolvedTarget = {
-      activeUrl: primaryUrl,
-      reason: 'primary-unverified',
-    }
-    await cacheResolvedTarget(primaryUrl, fallbackUrl, result, true)
-    return result
-  }
-
-  const timeoutMs = normalizeProbeTimeoutMs(probeTimeoutMs)
-  const [primaryReachable, fallbackReachable] = await Promise.all([
-    probe(primaryUrl, timeoutMs),
-    probe(fallbackUrl, timeoutMs),
-  ])
-
-  if (primaryReachable !== false) {
-    const result: ResolvedTarget = {
-      activeUrl: primaryUrl,
-      reason: primaryReachable === null ? 'primary-unverified' : 'primary',
-    }
-    await cacheResolvedTarget(primaryUrl, fallbackUrl, result, true)
-    return result
-  }
-
-  if (fallbackReachable !== false) {
-    const result: ResolvedTarget = {
-      activeUrl: fallbackUrl,
-      reason: fallbackReachable === null ? 'fallback-unverified' : 'fallback',
-    }
-    await cacheResolvedTarget(primaryUrl, fallbackUrl, result, true)
-    return result
-  }
-
-  const result: ResolvedTarget = {
-    activeUrl: fallbackUrl,
-    reason: 'fallback',
-  }
-  await clearResolutionCache()
-  await cacheResolvedTarget(primaryUrl, fallbackUrl, result, false)
-  return result
+  const fallbackTask = check(settings.fallbackUrl)
+  const primaryReachable = await check(settings.primaryUrl)
+  // Primary success can be published without waiting for a slow secondary.
+  if (primaryReachable === true) return finish(settings.primaryUrl, true)
+  const fallbackReachable = await fallbackTask
+  if (fallbackReachable === true) return finish(settings.fallbackUrl, true)
+  if (settings.primaryUrl && primaryReachable === null && !failed.has(settings.primaryUrl))
+    return finish(settings.primaryUrl, false)
+  if (settings.fallbackUrl && fallbackReachable === null && !failed.has(settings.fallbackUrl))
+    return finish(settings.fallbackUrl, false)
+  return unavailable()
 }

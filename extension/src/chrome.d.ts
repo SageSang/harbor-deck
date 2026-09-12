@@ -5,16 +5,24 @@ interface ChromeStorageArea {
 }
 
 interface ChromeStorageNamespace {
+  onChanged?: {
+    addListener(callback: (changes: Record<string, unknown>, area: string) => void): void
+  }
   sync: ChromeStorageArea
   local: ChromeStorageArea
 }
 
 interface ChromePermissionsNamespace {
+  onRemoved?: { addListener(callback: () => void): void }
+  onAdded?: { addListener(callback: () => void): void }
   contains(details: { origins: string[] }): Promise<boolean>
   request(details: { origins: string[] }): Promise<boolean>
 }
 
 interface ChromeRuntimeNamespace {
+  id: string
+  onInstalled?: { addListener(callback: () => void): void }
+  onStartup?: { addListener(callback: () => void): void }
   openOptionsPage(): Promise<void>
   sendMessage(message: unknown): Promise<unknown>
   onMessage: {

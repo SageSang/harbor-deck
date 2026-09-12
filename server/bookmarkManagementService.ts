@@ -1,3 +1,4 @@
+import { buildUniqueIdentifier, MAX_NEW_ID_LENGTH } from '../shared/identifiers.js'
 import { createHash, randomInt } from 'node:crypto'
 import dynamicIconImports from 'lucide-react/dynamicIconImports.js'
 import { ZodError } from 'zod'
@@ -147,11 +148,13 @@ function buildUniqueId(source: string, occupied: Iterable<string>, fallback: str
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
   const base = normalized || fallback
-  const used = new Set(occupied)
-  if (!used.has(base)) return base
-  let suffix = 2
-  while (used.has(`${base}-${suffix}`)) suffix += 1
-  return `${base}-${suffix}`
+  return buildUniqueIdentifier(base, occupied)
+}
+
+function assertNewId(id: string) {
+  if (id.length > MAX_NEW_ID_LENGTH) {
+    error(422, 'INVALID_NEW_ID', `新标识不能超过 ${MAX_NEW_ID_LENGTH} 个字符`)
+  }
 }
 
 function chooseRandomIcon() {
@@ -281,10 +284,7 @@ export function getManagementCounts(navigation: NavigationConfig) {
     scenes: navigation.scenes.length,
     groups: navigation.scenes.reduce((count, scene) => count + scene.groups.length, 0),
     bookmarks: navigation.bookmarks.length,
-    quickRecords: navigation.scenes.reduce(
-      (count, scene) => count + scene.quickRecords.length,
-      0
-    ),
+    quickRecords: navigation.scenes.reduce((count, scene) => count + scene.quickRecords.length, 0),
   }
 }
 
@@ -313,7 +313,9 @@ export function searchManagedNavigation(
           ]
             .join('\n')
             .toLocaleLowerCase()
-          return haystack.includes(needle) ? [{ type: 'bookmark' as const, ...bookmark, placements }] : []
+          return haystack.includes(needle)
+            ? [{ type: 'bookmark' as const, ...bookmark, placements }]
+            : []
         })
   const scenes = selectedScene ? [selectedScene] : navigation.scenes
   const quickRecordResults =
@@ -339,7 +341,10 @@ export function searchManagedNavigation(
 }
 
 export function listManagedIcons(query: string, limit: number) {
-  const needle = query.trim().toLocaleLowerCase().replace(/[\s_]+/g, '-')
+  const needle = query
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[\s_]+/g, '-')
   return availableIconIds
     .filter((id) => !needle || id.includes(needle))
     .slice(0, limit)
@@ -360,6 +365,7 @@ export function createManagedGroup(
   const next = cloneNavigation(navigation)
   const scene = findScene(next, sceneId)
   const name = input.name.trim()
+  if (input.id) assertNewId(input.id)
   if (scene.groups.some((group) => group.name === name)) {
     error(409, 'GROUP_NAME_CONFLICT', `分组名称已存在：${name}`)
   }
@@ -367,7 +373,13 @@ export function createManagedGroup(
     error(409, 'GROUP_ID_CONFLICT', `分组 ID 已存在：${input.id}`)
   }
   const group = {
-    id: input.id ?? buildUniqueId(name, scene.groups.map((item) => item.id), 'group'),
+    id:
+      input.id ??
+      buildUniqueId(
+        name,
+        scene.groups.map((item) => item.id),
+        'group'
+      ),
     name,
     bookmarkIds: [],
   }
@@ -439,9 +451,7 @@ export function deleteManagedGroup(
   }
   scene.groups = scene.groups.filter((item) => item.id !== groupId)
   const deletedBookmarks =
-    input.bookmarkDisposition === 'remove'
-      ? removeOrphanBookmarks(next, removedBookmarkIds)
-      : []
+    input.bookmarkDisposition === 'remove' ? removeOrphanBookmarks(next, removedBookmarkIds) : []
   return {
     navigation: next,
     result: { groupId, removedBookmarkIds, deletedBookmarks },
@@ -452,7 +462,13 @@ export function createManagedBookmark(navigation: NavigationConfig, input: Bookm
   const next = cloneNavigation(navigation)
   assertUniquePlacements(input.placements)
   const slug =
-    input.slug ?? buildUniqueId(input.name, next.bookmarks.map((item) => item.slug), 'bookmark')
+    input.slug ??
+    buildUniqueId(
+      input.name,
+      next.bookmarks.map((item) => item.slug),
+      'bookmark'
+    )
+  assertNewId(slug)
   if (next.bookmarks.some((bookmark) => bookmark.slug === slug)) {
     error(409, 'BOOKMARK_SLUG_CONFLICT', `书签 slug 已存在：${slug}`)
   }
@@ -473,10 +489,8 @@ export function updateManagedBookmark(
   const next = cloneNavigation(navigation)
   const current = findBookmark(next, currentSlug)
   const nextSlug = patch.slug ?? current.slug
-  if (
-    nextSlug !== current.slug &&
-    next.bookmarks.some((bookmark) => bookmark.slug === nextSlug)
-  ) {
+  if (nextSlug !== current.slug) assertNewId(nextSlug)
+  if (nextSlug !== current.slug && next.bookmarks.some((bookmark) => bookmark.slug === nextSlug)) {
     error(409, 'BOOKMARK_SLUG_CONFLICT', `书签 slug 已存在：${nextSlug}`)
   }
   const merged = cleanBookmark({
@@ -488,7 +502,8 @@ export function updateManagedBookmark(
     secondaryUrl:
       patch.secondaryUrl === null ? undefined : (patch.secondaryUrl ?? current.secondaryUrl),
     probes: patch.probes === null ? undefined : (patch.probes ?? current.probes),
-    forceNewTab: patch.forceNewTab === null ? undefined : (patch.forceNewTab ?? current.forceNewTab),
+    forceNewTab:
+      patch.forceNewTab === null ? undefined : (patch.forceNewTab ?? current.forceNewTab),
   })
   const index = next.bookmarks.findIndex((bookmark) => bookmark.slug === currentSlug)
   next.bookmarks[index] = merged
@@ -514,7 +529,12 @@ export function duplicateManagedBookmark(
   const source = findBookmark(next, sourceSlug)
   const slug =
     input.slug ??
-    buildUniqueId(`${source.slug}-copy`, next.bookmarks.map((item) => item.slug), 'bookmark-copy')
+    buildUniqueId(
+      `${source.slug}-copy`,
+      next.bookmarks.map((item) => item.slug),
+      'bookmark-copy'
+    )
+  assertNewId(slug)
   if (next.bookmarks.some((bookmark) => bookmark.slug === slug)) {
     error(409, 'BOOKMARK_SLUG_CONFLICT', `书签 slug 已存在：${slug}`)
   }
@@ -567,7 +587,9 @@ export function setManagedPlacement(
   insertPlacement(next, slug, { sceneId, ...input }, 'move')
   return {
     navigation: next,
-    result: { placement: getBookmarkPlacements(next, slug).find((item) => item.sceneId === sceneId) },
+    result: {
+      placement: getBookmarkPlacements(next, slug).find((item) => item.sceneId === sceneId),
+    },
   }
 }
 
@@ -618,7 +640,11 @@ export function batchMoveManagedBookmarks(
   scene.groups.forEach((group) => {
     group.bookmarkIds = group.bookmarkIds.filter((slug) => !requested.has(slug))
   })
-  target.bookmarkIds.splice(assertInsertPosition(position, target.bookmarkIds.length), 0, ...ordered)
+  target.bookmarkIds.splice(
+    assertInsertPosition(position, target.bookmarkIds.length),
+    0,
+    ...ordered
+  )
   return { navigation: next, result: { bookmarkIds: ordered, targetGroupId } }
 }
 
@@ -654,7 +680,10 @@ export function batchPlaceManagedBookmarks(
   return {
     navigation: next,
     result: {
-      bookmarks: bookmarkIds.map((slug) => ({ slug, placements: getBookmarkPlacements(next, slug) })),
+      bookmarks: bookmarkIds.map((slug) => ({
+        slug,
+        placements: getBookmarkPlacements(next, slug),
+      })),
     },
   }
 }
@@ -684,8 +713,7 @@ export function batchRemoveManagedBookmarks(
   scene.groups.forEach((group) => {
     group.bookmarkIds = group.bookmarkIds.filter((slug) => !ids.has(slug))
   })
-  const deletedBookmarks =
-    orphanPolicy === 'delete' ? removeOrphanBookmarks(next, bookmarkIds) : []
+  const deletedBookmarks = orphanPolicy === 'delete' ? removeOrphanBookmarks(next, bookmarkIds) : []
   return { navigation: next, result: { removedBookmarkIds: bookmarkIds, deletedBookmarks } }
 }
 
@@ -792,7 +820,13 @@ export function promoteManagedQuickRecord(
   let created = false
   if (!bookmark) {
     const slug =
-      input.slug ?? buildUniqueId(record.name, next.bookmarks.map((item) => item.slug), 'bookmark')
+      input.slug ??
+      buildUniqueId(
+        record.name,
+        next.bookmarks.map((item) => item.slug),
+        'bookmark'
+      )
+    assertNewId(slug)
     if (next.bookmarks.some((item) => item.slug === slug)) {
       error(409, 'BOOKMARK_SLUG_CONFLICT', `书签 slug 已存在：${slug}`)
     }
@@ -820,10 +854,7 @@ export function promoteManagedQuickRecord(
   }
 }
 
-export function fillMissingManagedIcons(
-  navigation: NavigationConfig,
-  sceneIds?: string[]
-) {
+export function fillMissingManagedIcons(navigation: NavigationConfig, sceneIds?: string[]) {
   const next = cloneNavigation(navigation)
   const selectedScenes = sceneIds?.map((sceneId) => findScene(next, sceneId)) ?? next.scenes
   const selectedSceneIds = new Set(selectedScenes.map((scene) => scene.id))

@@ -52,6 +52,7 @@ import { preloadServiceIcons } from './iconRegistry'
 import { quickRecordMatchesSearch } from './quickRecordSearch'
 import { getPreferredBookmarkCopyUrl } from './bookmarkUrl'
 import { useServices } from './useServices'
+import { NavigationSyncNotice } from '@/features/navigation/NavigationSyncNotice'
 
 interface DragOverState {
   groupIndex: number
@@ -196,7 +197,7 @@ export function ServiceGrid() {
   const navigationQuery = useNavigationConfig()
   const activeSceneId = useAppStore((state) => state.activeSceneId)
   const sceneTokens = useAppStore((state) => state.sceneTokens)
-  const saveMutation = useSaveNavigationConfig()
+  const saveMutation = useSaveNavigationConfig(activeSceneId ?? '')
   const {
     expandedGroupKeys,
     isReady: isGroupExpansionReady,
@@ -245,7 +246,7 @@ export function ServiceGrid() {
 
   const activeConfig = useMemo(() => cloneServicesConfig(config ?? defaultServicesConfig), [config])
   const isSearchActive = searchKeyword.trim().length > 0
-  const canDrag = !isSearchActive && !saveMutation.isPending
+  const canDrag = !isSearchActive && !saveMutation.isSaveBlocked
   const canDragGroups = canDrag && !selectionMode && Boolean(activeSceneId)
 
   const quickRecordServices = useMemo(() => {
@@ -1002,6 +1003,7 @@ export function ServiceGrid() {
   if (error || navigationQuery.error)
     return (
       <div role="alert" className="p-5 text-center">
+        <NavigationSyncNotice save={saveMutation} />
         <p>{messages.common.requestFailed}</p>
         <button
           type="button"
@@ -1050,6 +1052,7 @@ export function ServiceGrid() {
 
   return (
     <>
+      <NavigationSyncNotice save={saveMutation} />
       {!isGroupExpansionReady && (
         <div role="status" className="mb-3 rounded-xl border border-amber-500/30 p-3 text-sm">
           {messages.serviceGrid.groupPreferenceLoadFailed}
@@ -1532,7 +1535,7 @@ export function ServiceGrid() {
         selectedSlugs={Array.from(selectedSlugs)}
         activeSceneId={activeSceneId}
         sceneTokens={sceneTokens}
-        saving={saveMutation.isPending}
+        saving={saveMutation.isSaveBlocked}
         onClose={() => setBatchDialogOpen(false)}
         onConfirm={(placements) => void handleBatchAdd(placements)}
       />
@@ -1540,7 +1543,7 @@ export function ServiceGrid() {
       <GroupRenameDialog
         open={renamingGroup !== null}
         currentName={renamingGroup?.groupName ?? ''}
-        saving={saveMutation.isPending}
+        saving={saveMutation.isSaveBlocked}
         onClose={() => setRenamingGroup(null)}
         onSave={(name) => {
           if (renamingGroup) {

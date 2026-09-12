@@ -292,3 +292,80 @@ describe('webdav backup helpers', () => {
     }
   })
 })
+
+describe('WebDAV response lifetime', () => {
+  it.each([207, 500])(
+    'times out a stalled %i response body and cancels its reader',
+    async (status) => {
+      vi.useFakeTimers()
+      const cancel = vi.fn()
+      try {
+        const config = createAppConfig('https://dav.example.test', { remotePath: '' })
+        const fetchImpl = vi.fn(
+          async () => new Response(new ReadableStream({ cancel }), { status })
+        ) as typeof fetch
+        const pending = listWebdavBackupVersions(config.system.webdavBackup, { fetchImpl })
+        const rejected = expect(pending).rejects.toThrow('WebDAV 请求超时（15 秒）')
+        await vi.advanceTimersByTimeAsync(15_000)
+        await rejected
+        expect(cancel).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+  )
+
+  it('cancels a body during shutdown without waiting for its timeout', async () => {
+    const config = createAppConfig('https://dav.example.test', { remotePath: '' })
+    const controller = new AbortController()
+    const cancel = vi.fn()
+    const fetchImpl = vi.fn(
+      async () => new Response(new ReadableStream({ cancel }), { status: 207 })
+    ) as typeof fetch
+    const pending = listWebdavBackupVersions(config.system.webdavBackup, {
+      fetchImpl,
+      signal: controller.signal,
+    })
+    const rejected = expect(pending).rejects.toThrow('WebDAV 操作已取消')
+    await Promise.resolve()
+    await Promise.resolve()
+    controller.abort()
+    await rejected
+    expect(cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a confirmed upload successful when listing versions fails', async () => {
+    const config = createAppConfig('https://dav.example.test', { remotePath: '' })
+    const cancel = vi.fn()
+    const fetchImpl = vi.fn(async (_url, init) =>
+      init?.method === 'PUT'
+        ? new Response(new ReadableStream({ cancel }), { status: 201 })
+        : new Response('listing unavailable', { status: 503 })
+    ) as typeof fetch
+    const result = await createWebdavBackup(config.system.webdavBackup, config, { fetchImpl })
+    expect(result.version.filename).toMatch(/^harbor-deck-config-/)
+    expect(result.removedVersionIds).toEqual([])
+    expect(result.warnings?.[0]).toContain('备份已上传')
+    expect(result.warnings?.[0]).toContain('503')
+    expect(cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports an upload timeout as an uncertain remote outcome', async () => {
+    vi.useFakeTimers()
+    try {
+      const config = createAppConfig('https://dav.example.test', { remotePath: '' })
+      const fetchImpl = vi.fn(
+        (_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+          })
+      ) as typeof fetch
+      const pending = createWebdavBackup(config.system.webdavBackup, config, { fetchImpl })
+      const rejected = expect(pending).rejects.toThrow('远端状态可能已变化')
+      await vi.advanceTimersByTimeAsync(15_000)
+      await rejected
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

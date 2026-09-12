@@ -138,15 +138,21 @@ describe('integrationApi', () => {
       ],
     })
     const privateMerge = createIntegrationBookmark(privateExisting, {
-      name: 'New title is ignored',
+      name: 'New public title',
       primaryUrl: 'https://secret.example.com',
       secondaryUrl: 'https://secret.example.com/remote',
       note: 'Added note',
       existingBookmarkSlug: 'secret',
       placements: [{ sceneId: 'default', groupId: 'tools' }],
     })
+    expect(privateMerge.created).toBe(true)
+    expect(privateMerge.bookmark.slug).not.toBe('secret')
+    expect(privateMerge.navigation.bookmarks.find((item) => item.slug === 'secret')).toEqual(
+      privateExisting.bookmarks[0]
+    )
+    expect(privateMerge.navigation.scenes[1]).toEqual(privateExisting.scenes[1])
     expect(privateMerge.bookmark).toMatchObject({
-      name: 'Private title',
+      name: 'New public title',
       secondaryUrl: 'https://secret.example.com/remote',
       note: 'Added note',
     })
@@ -158,6 +164,84 @@ describe('integrationApi', () => {
         placements: [{ sceneId: 'private', groupId: 'private-tools' }],
       })
     ).toThrow()
+  })
+
+  it('filters hidden URL candidates before selecting public bookmarks or quick records', () => {
+    const config = parseNavigationConfig({
+      defaultSceneId: 'public',
+      bookmarks: [
+        {
+          slug: 'hidden',
+          name: 'Hidden',
+          primaryUrl: 'https://example.com/shared',
+          secondaryUrl: 'https://example.com/other',
+          note: 'secret',
+        },
+        { slug: 'visible', name: 'Visible', primaryUrl: 'https://example.com/shared' },
+      ],
+      scenes: [
+        {
+          id: 'public',
+          name: 'Public',
+          groups: [{ id: 'main', name: 'Main', bookmarkIds: ['visible'] }],
+          quickRecords: [
+            {
+              id: 'quick',
+              name: 'Public record',
+              primaryUrl: 'https://example.com/other',
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+        },
+        {
+          id: 'private',
+          name: 'Private',
+          protected: true,
+          passwordHash: 'hash',
+          groups: [{ id: 'secrets', name: 'Secrets', bookmarkIds: ['hidden'] }],
+        },
+      ],
+    })
+    expect(lookupIntegrationBookmark(config, 'https://example.com/shared').bookmark?.slug).toBe(
+      'visible'
+    )
+    expect(lookupIntegrationBookmark(config, 'https://example.com/other')).toMatchObject({
+      bookmark: null,
+      quickRecord: { id: 'quick' },
+    })
+    const placed = createIntegrationBookmark(config, {
+      name: 'Submitted',
+      primaryUrl: 'https://example.com/shared',
+      placements: [{ sceneId: 'public', groupId: 'main' }],
+    })
+    expect(placed.bookmark.slug).toBe('visible')
+    expect(placed.navigation.bookmarks[0]).toEqual(config.bookmarks[0])
+    const onlyHidden = parseNavigationConfig({
+      ...config,
+      bookmarks: [config.bookmarks[0]],
+      scenes: [
+        {
+          ...config.scenes[0],
+          groups: [{ id: 'main', name: 'Main', bookmarkIds: [] }],
+          quickRecords: [],
+        },
+        config.scenes[1],
+      ],
+    })
+    const created = createIntegrationBookmark(onlyHidden, {
+      name: 'Submitted',
+      primaryUrl: 'https://example.com/other',
+      placements: [{ sceneId: 'public', groupId: 'main' }],
+    })
+    expect(created.created).toBe(true)
+    expect(created.bookmark).toMatchObject({
+      name: 'Submitted',
+      primaryUrl: 'https://example.com/other',
+    })
+    expect(created.bookmark.note).toBeUndefined()
+    expect(created.bookmark.secondaryUrl).toBeUndefined()
+    expect(created.navigation.bookmarks[0]).toEqual(onlyHidden.bookmarks[0])
   })
 
   it('fully updates an existing unlocked bookmark when its lookup slug is supplied', () => {

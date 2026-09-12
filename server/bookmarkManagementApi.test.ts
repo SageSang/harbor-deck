@@ -203,7 +203,9 @@ describe('bookmark management API', () => {
       protected: true,
       quickRecords: [{ id: 'quick-private', note: 'secret scratch note' }],
     })
-    expect(state.bookmarks.find((bookmark: { slug: string }) => bookmark.slug === 'secret-tool')).toMatchObject({
+    expect(
+      state.bookmarks.find((bookmark: { slug: string }) => bookmark.slug === 'secret-tool')
+    ).toMatchObject({
       note: 'private note',
       placements: [{ sceneId: 'private', groupId: 'secrets', position: 0 }],
     })
@@ -345,7 +347,9 @@ describe('bookmark management API', () => {
     expect(updated.statusCode).toBe(200)
     state = (await getState(server)).state
     expect(JSON.stringify(state.scenes)).not.toContain('"beta"')
-    expect(state.bookmarks.find((bookmark: { slug: string }) => bookmark.slug === 'beta-renamed')).toMatchObject({
+    expect(
+      state.bookmarks.find((bookmark: { slug: string }) => bookmark.slug === 'beta-renamed')
+    ).toMatchObject({
       name: 'Beta Updated',
       forceNewTab: true,
     })
@@ -502,7 +506,10 @@ describe('bookmark management API', () => {
       },
     })
     expect(reused.statusCode).toBe(200)
-    expect(reused.json().result).toMatchObject({ created: false, removedQuickRecordId: matchingRecordId })
+    expect(reused.json().result).toMatchObject({
+      created: false,
+      removedQuickRecordId: matchingRecordId,
+    })
     expect(reused.json().result.bookmark.slug).toBe('alpha')
   })
 
@@ -520,9 +527,15 @@ describe('bookmark management API', () => {
     expect(filled.json().result).toMatchObject({ updatedBookmarks: 1, updatedQuickRecords: 1 })
 
     state = (await getState(server)).state
-    expect(state.bookmarks.find((bookmark: { slug: string }) => bookmark.slug === 'alpha').icon).toBe('server')
-    expect(state.bookmarks.find((bookmark: { slug: string }) => bookmark.slug === 'secret-tool').icon).toBeTruthy()
-    expect(state.scenes.find((scene: { id: string }) => scene.id === 'private').quickRecords[0].icon).toBeTruthy()
+    expect(
+      state.bookmarks.find((bookmark: { slug: string }) => bookmark.slug === 'alpha').icon
+    ).toBe('server')
+    expect(
+      state.bookmarks.find((bookmark: { slug: string }) => bookmark.slug === 'secret-tool').icon
+    ).toBeTruthy()
+    expect(
+      state.scenes.find((scene: { id: string }) => scene.id === 'private').quickRecords[0].icon
+    ).toBeTruthy()
   })
 
   it('accepts legacy long bookmark slugs for management updates', async () => {
@@ -633,7 +646,9 @@ describe('bookmark management API', () => {
       payload: { username: 'admin-user', password: 'strong-password-123' },
     })
     const cookieHeader = setup.headers['set-cookie']
-    const cookie = String(Array.isArray(cookieHeader) ? cookieHeader[0] : cookieHeader).split(';')[0]
+    const cookie = String(Array.isArray(cookieHeader) ? cookieHeader[0] : cookieHeader).split(
+      ';'
+    )[0]
     const webRead = await server.inject({
       method: 'GET',
       url: '/api/config/navigation',
@@ -690,5 +705,105 @@ describe('bookmark management API', () => {
     expect(response.statusCode).toBe(429)
     expect(response.json().error.code).toBe('RATE_LIMITED')
     expect(response.headers['retry-after']).toBeDefined()
+  })
+  it.each([257, 4096])(
+    'manages a historical %i-character slug through bounded body aliases',
+    async (length) => {
+      const server = await buildTestServer()
+      const legacy = 'a'.repeat(length)
+      const config = baseConfig()
+      config.navigation.bookmarks[0].slug = legacy
+      config.navigation.scenes[0].groups[0].bookmarkIds = [legacy]
+      await writeFile(path.join(tempConfigDir, 'config.json'), JSON.stringify(config))
+      const initial = await getState(server)
+      expect(
+        initial.state.bookmarks.some((bookmark: { slug: string }) => bookmark.slug === legacy)
+      ).toBe(true)
+      const before = await readFile(path.join(tempConfigDir, 'config.json'), 'utf8')
+      const preview = await managementWrite(server, {
+        method: 'POST',
+        url: '/api/management/v1/bookmarks/update',
+        revision: initial.state.revision,
+        payload: { slug: legacy, patch: { name: 'Preview' } },
+        dryRun: true,
+      })
+      expect(preview.statusCode).toBe(200)
+      expect(preview.json().committed).toBe(false)
+      expect(await readFile(path.join(tempConfigDir, 'config.json'), 'utf8')).toBe(before)
+      const update = await managementWrite(server, {
+        method: 'POST',
+        url: '/api/management/v1/bookmarks/update',
+        revision: initial.state.revision,
+        payload: { slug: legacy, patch: { slug: legacy, name: 'Renamed' } },
+      })
+      expect(update.statusCode).toBe(200)
+      expect(update.json().result.bookmark.slug).toBe(legacy)
+      const placement = await managementWrite(server, {
+        method: 'POST',
+        url: '/api/management/v1/bookmarks/set-placement',
+        revision: update.json().revision,
+        payload: { slug: legacy, sceneId: 'private', groupId: 'secrets', position: 0 },
+      })
+      expect(placement.statusCode).toBe(200)
+      const copy = await managementWrite(server, {
+        method: 'POST',
+        url: '/api/management/v1/bookmarks/duplicate',
+        revision: placement.json().revision,
+        payload: { slug: legacy, options: {} },
+      })
+      expect(copy.statusCode).toBe(201)
+      expect(copy.json().result.bookmark.slug.length).toBeLessThanOrEqual(256)
+      const stale = await managementWrite(server, {
+        method: 'POST',
+        url: '/api/management/v1/bookmarks/delete',
+        revision: initial.state.revision,
+        payload: { slug: legacy },
+      })
+      expect(stale.statusCode).toBe(412)
+      const deleted = await managementWrite(server, {
+        method: 'POST',
+        url: '/api/management/v1/bookmarks/delete',
+        revision: copy.json().revision,
+        payload: { slug: legacy },
+      })
+      expect(deleted.statusCode).toBe(200)
+      const saved = JSON.parse(await readFile(path.join(tempConfigDir, 'config.json'), 'utf8'))
+      expect(JSON.stringify(saved.navigation)).not.toContain(legacy)
+      expect(
+        saved.navigation.bookmarks.some(
+          (bookmark: { slug: string }) => bookmark.slug === copy.json().result.bookmark.slug
+        )
+      ).toBe(true)
+    }
+  )
+
+  it('bounds new IDs without tightening persisted or referenced IDs', async () => {
+    const server = await buildTestServer()
+    const initial = await getState(server)
+    const create = (slug: string, revision: string) =>
+      managementWrite(server, {
+        method: 'POST',
+        url: '/api/management/v1/bookmarks',
+        revision,
+        payload: {
+          slug,
+          name: 'Boundary',
+          primaryUrl: 'https://example.com/new',
+          placements: [{ sceneId: 'public', groupId: 'main' }],
+        },
+      })
+    expect((await create('b'.repeat(257), initial.state.revision)).statusCode).toBe(422)
+    const valid = await create('b'.repeat(256), initial.state.revision)
+    expect(valid.statusCode).toBe(201)
+    const before = await readFile(path.join(tempConfigDir, 'config.json'), 'utf8')
+    const oversized = await managementWrite(server, {
+      method: 'POST',
+      url: '/api/management/v1/bookmarks/update',
+      revision: valid.json().revision,
+      payload: { slug: 'alpha', patch: { note: '界'.repeat(360_000) } },
+    })
+    expect(oversized.statusCode).toBe(413)
+    expect(oversized.json().error.code).toBe('PAYLOAD_TOO_LARGE')
+    expect(await readFile(path.join(tempConfigDir, 'config.json'), 'utf8')).toBe(before)
   })
 })

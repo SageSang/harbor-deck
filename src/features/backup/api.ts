@@ -13,6 +13,7 @@ const webdavBackupVersionSchema = z.object({
 const runWebdavBackupResponseSchema = z.object({
   version: webdavBackupVersionSchema,
   removedVersionIds: z.array(z.string()),
+  warnings: z.array(z.string()).optional().default([]),
 })
 
 const restoreWebdavBackupResponseSchema = z.object({

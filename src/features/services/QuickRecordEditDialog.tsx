@@ -26,6 +26,7 @@ import { formatBookmarkError } from '@/features/services/bookmarkForm'
 import { bookmarkMatchesAnyUrl } from '@/features/services/bookmarkUrl'
 import { getRandomBookmarkIcon } from '@/features/services/randomBookmarkIcon'
 import { useAppStore } from '@/store/appStore'
+import { NavigationSyncNotice } from '@/features/navigation/NavigationSyncNotice'
 
 interface QuickRecordEditDialogProps {
   open: boolean
@@ -59,7 +60,7 @@ export function QuickRecordEditDialog({
   onClose,
 }: QuickRecordEditDialogProps) {
   const navigationQuery = useNavigationConfig()
-  const saveMutation = useSaveNavigationConfig()
+  const saveMutation = useSaveNavigationConfig(`${open}:${sceneId}:${recordId}`)
   const sceneTokens = useAppStore((state) => state.sceneTokens)
   const { showToast } = useFeedback()
   const accessVersion = useAppStore((state) => state.sceneAccessVersion)
@@ -201,6 +202,7 @@ export function QuickRecordEditDialog({
       icon={Pencil}
       widthClassName="max-w-2xl"
     >
+      <NavigationSyncNotice save={saveMutation} />
       <DraftNotice
         changed={editor.changed}
         current={{ name, primaryUrl, secondaryUrl, note }}
@@ -280,7 +282,7 @@ export function QuickRecordEditDialog({
           <Button type="button" variant="outline" onClick={close} disabled={saveMutation.isPending}>
             取消
           </Button>
-          <Button type="submit" disabled={saveMutation.isPending}>
+          <Button type="submit" disabled={saveMutation.isSaveBlocked}>
             保存
           </Button>
         </div>

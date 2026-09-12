@@ -1,4 +1,4 @@
-import type { ExtensionLanguage, ResolutionReason } from '@extension/types'
+import type { ExtensionLanguage, ResolutionReason } from './types'
 
 const messages = {
   'zh-CN': {
@@ -22,13 +22,12 @@ const messages = {
         '建议选“直接跳转”。“内嵌显示”下，部分页面可能无法正常显示；遇到这类书签，可在导航页里开启“强制新标签页打开”。',
       probeTimeoutLabel: '检测超时（毫秒）',
       probeTimeoutHint: (defaultTimeoutMs: number, cacheDuration: string) =>
-        `默认 ${defaultTimeoutMs}ms。越小越快，越大越稳。最近成功地址会缓存 ${cacheDuration}。`,
+        `默认 ${defaultTimeoutMs}ms。越小越快，越大越稳。成功验证在 ${cacheDuration} 内可快速打开；切网后窗口内首次打开仍可能使用旧地址。冷路径默认约 400ms。`,
       saveButton: '保存配置',
       savingButton: '保存中...',
       statusIdle: '填好地址后保存即可。',
       statusSaved: '已保存，新标签页会按这个设置打开。',
-      statusSavedNoPermission:
-        '已保存，但没有授予地址访问权限，插件可能无法准确判断哪个地址可用。',
+      statusSavedNoPermission: '已保存，但没有授予地址访问权限，插件可能无法准确判断哪个地址可用。',
       statusInvalidUrl: '地址格式无效，请输入完整地址或 IP:端口。',
       statusSaveFailed: '保存失败，请稍后再试。',
     },
@@ -49,6 +48,7 @@ const messages = {
         'primary-unverified': '无法验证主地址，已直接尝试打开。',
         'fallback-unverified': '已切换到切换地址，但扩展没有权限验证其连通性。',
         unconfigured: '尚未配置导航页地址。',
+        unreachable: '暂时没有已验证可用的地址，请手动打开或重新检测。',
       } satisfies Record<ResolutionReason, string>,
     },
   },
@@ -73,7 +73,7 @@ const messages = {
         'Direct is recommended. In embedded mode, some pages may not display correctly. For those bookmarks, turn on "Force open in new tab" in HarborDeck.',
       probeTimeoutLabel: 'Check timeout (ms)',
       probeTimeoutHint: (defaultTimeoutMs: number, cacheDuration: string) =>
-        `Default ${defaultTimeoutMs}ms. Lower is faster, higher is safer. The last successful address is cached for ${cacheDuration}.`,
+        `Default ${defaultTimeoutMs}ms. Lower is faster, higher is safer. Verified addresses can open immediately for ${cacheDuration}; switching networks during that window may still use the old address. The default cold budget is about 400ms.`,
       saveButton: 'Save',
       savingButton: 'Saving...',
       statusIdle: 'Fill in the addresses and save.',
@@ -99,10 +99,12 @@ const messages = {
       statusByReason: {
         primary: 'Primary address is available. Opening HarborDeck.',
         fallback: 'Primary address is unavailable. Switched to the secondary URL.',
-        'primary-unverified': 'The primary address could not be verified, so it is being opened directly.',
+        'primary-unverified':
+          'The primary address could not be verified, so it is being opened directly.',
         'fallback-unverified':
           'Switched to the secondary URL, but the extension cannot verify its availability.',
         unconfigured: 'No navigation page address has been configured yet.',
+        unreachable: 'No address is verified as available. Open manually or check again.',
       } satisfies Record<ResolutionReason, string>,
     },
   },

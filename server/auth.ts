@@ -2,15 +2,17 @@ import { createHash, randomBytes } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { authUsernameSchema } from '../src/config/schema.js'
-import { readSystemConfig, writeSystemConfig } from './configStore.js'
+import {
+  AuthConfigConflictError,
+  commitAuthConfig,
+  inspectAppConfig,
+  readSystemConfig,
+} from './configStore.js'
+import { createPasswordAttemptLimiter, type PasswordAttemptResult } from './passwordAttempts.js'
 import { createDeterministicPasswordHash, hashPassword, verifyPassword } from './password.js'
 
 const SESSION_COOKIE_NAME = 'harbordeck_session'
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7
-const LOGIN_ATTEMPT_WINDOW_MS = 1000 * 60 * 10
-const LOGIN_MAX_ATTEMPTS = 5
-const LOGIN_BLOCK_MS = 1000 * 60 * 30
-const LOGIN_ATTEMPT_CAPACITY = 10_000
 const DUMMY_PASSWORD_HASH = createDeterministicPasswordHash(
   'harbordeck-dummy-password',
   'harbordeck-dummy-salt'
@@ -33,13 +35,16 @@ const updateCredentialsBodySchema = z.object({
 
 interface SessionRecord {
   username: string
+  authFingerprint: string
   expiresAt: number
 }
 
-interface LoginAttemptRecord {
-  count: number
-  firstAttemptAt: number
-  blockedUntil?: number
+type AuthConfig = NonNullable<Awaited<ReturnType<typeof readSystemConfig>>['auth']>
+
+class AuthSessionExpiredError extends Error {}
+
+function authFingerprint(auth: AuthConfig) {
+  return sha256Base64Url(JSON.stringify([auth.username, auth.passwordHash]))
 }
 
 export interface AuthStatusResponse {
@@ -91,7 +96,7 @@ function parseCookies(cookieHeader?: string) {
 
 export function createAuthService() {
   const sessions = new Map<string, SessionRecord>()
-  const loginAttempts = new Map<string, LoginAttemptRecord>()
+  const loginAttempts = createPasswordAttemptLimiter()
 
   function isSecureRequest(request: FastifyRequest) {
     return request.protocol === 'https'
@@ -135,66 +140,6 @@ export function createAuthService() {
     })
   }
 
-  function pruneLoginAttempts() {
-    const now = Date.now()
-    loginAttempts.forEach((record, key) => {
-      if (record.blockedUntil && record.blockedUntil > now) {
-        return
-      }
-
-      if (record.firstAttemptAt + LOGIN_ATTEMPT_WINDOW_MS <= now) {
-        loginAttempts.delete(key)
-      }
-    })
-  }
-
-  function getAttemptKey(request: FastifyRequest) {
-    return request.socket.remoteAddress ?? 'unknown'
-  }
-
-  function ensureNotRateLimited(request: FastifyRequest, reply: FastifyReply) {
-    pruneLoginAttempts()
-    const record = loginAttempts.get(getAttemptKey(request))
-    const now = Date.now()
-
-    if (record?.blockedUntil && record.blockedUntil > now) {
-      setNoStore(reply)
-      reply.code(429)
-      return reply.send('尝试过于频繁，请稍后再试')
-    }
-
-    return null
-  }
-
-  function registerLoginFailure(request: FastifyRequest) {
-    const now = Date.now()
-    const key = getAttemptKey(request)
-    const current = loginAttempts.get(key)
-
-    if (!current || current.firstAttemptAt + LOGIN_ATTEMPT_WINDOW_MS <= now) {
-      if (!current && loginAttempts.size >= LOGIN_ATTEMPT_CAPACITY) {
-        const oldestKey = loginAttempts.keys().next().value
-        if (oldestKey) loginAttempts.delete(oldestKey)
-      }
-      loginAttempts.set(key, {
-        count: 1,
-        firstAttemptAt: now,
-      })
-      return
-    }
-
-    const nextCount = current.count + 1
-    loginAttempts.set(key, {
-      count: nextCount,
-      firstAttemptAt: current.firstAttemptAt,
-      blockedUntil: nextCount >= LOGIN_MAX_ATTEMPTS ? now + LOGIN_BLOCK_MS : current.blockedUntil,
-    })
-  }
-
-  function clearLoginFailures(request: FastifyRequest) {
-    loginAttempts.delete(getAttemptKey(request))
-  }
-
   function getSessionFromRequest(request: FastifyRequest) {
     pruneSessions()
 
@@ -220,13 +165,34 @@ export function createAuthService() {
     return session ? sha256Base64Url(session.token) : null
   }
 
-  function createSession(reply: FastifyReply, request: FastifyRequest, username: string) {
+  function prepareSession(auth: AuthConfig) {
     const token = randomBytes(32).toString('base64url')
-    sessions.set(sha256Base64Url(token), {
-      username,
-      expiresAt: Date.now() + SESSION_TTL_MS,
-    })
-    setSessionCookie(reply, request, token, SESSION_TTL_MS)
+    return {
+      token,
+      record: {
+        username: auth.username,
+        authFingerprint: authFingerprint(auth),
+        expiresAt: Date.now() + SESSION_TTL_MS,
+      },
+    }
+  }
+
+  function installSession(prepared: ReturnType<typeof prepareSession>) {
+    sessions.set(sha256Base64Url(prepared.token), prepared.record)
+  }
+
+  function isSessionCurrent(
+    request: FastifyRequest,
+    auth: AuthConfig | undefined,
+    sessionKey?: string
+  ) {
+    const current = getSessionFromRequest(request)
+    return Boolean(
+      auth &&
+      current &&
+      current.session.authFingerprint === authFingerprint(auth) &&
+      (!sessionKey || sha256Base64Url(current.token) === sessionKey)
+    )
   }
 
   async function getConfiguredAuth() {
@@ -244,7 +210,7 @@ export function createAuthService() {
     }
 
     const session = getSessionFromRequest(request)
-    if (!session || session.session.username !== auth.username) {
+    if (!session || session.session.authFingerprint !== authFingerprint(auth)) {
       return {
         setupRequired: false,
         authenticated: false,
@@ -285,65 +251,70 @@ export function createAuthService() {
 
   async function handleSetup(request: FastifyRequest, reply: FastifyReply) {
     setNoStore(reply)
-    const existingAuth = await getConfiguredAuth()
-    if (existingAuth) {
-      reply.code(409)
-      return reply.send('管理员账号已存在')
-    }
-
+    if (await getConfiguredAuth()) return reply.code(409).send('管理员账号已存在')
     const { username, password } = setupBodySchema.parse(request.body)
-    const system = await readSystemConfig()
-    const passwordHash = await hashPassword(password)
-    const nextSystem = {
-      ...system,
-      auth: {
-        username,
-        passwordHash,
-      },
+    const auth = { username, passwordHash: await hashPassword(password) }
+    const prepared = prepareSession(auth)
+    try {
+      await commitAuthConfig({
+        expectedAuth: null,
+        auth,
+        onCommitted() {
+          sessions.clear()
+          installSession(prepared)
+        },
+      })
+    } catch (error) {
+      if (error instanceof AuthConfigConflictError) return reply.code(409).send(error.message)
+      throw error
     }
-
-    await writeSystemConfig(nextSystem)
-    createSession(reply, request, username)
-    return {
-      setupRequired: false,
-      authenticated: true,
-      username,
-    } satisfies AuthStatusResponse
+    setSessionCookie(reply, request, prepared.token, SESSION_TTL_MS)
+    return { setupRequired: false, authenticated: true, username } satisfies AuthStatusResponse
   }
 
   async function handleLogin(request: FastifyRequest, reply: FastifyReply) {
     setNoStore(reply)
     const configuredAuth = await getConfiguredAuth()
-    if (!configuredAuth) {
-      reply.code(409)
-      return reply.send('请先创建管理员账号')
-    }
-
+    if (!configuredAuth) return reply.code(409).send('请先创建管理员账号')
     const { username, password } = loginBodySchema.parse(request.body)
-    const limitedReply = ensureNotRateLimited(request, reply)
-    if (limitedReply) {
-      return limitedReply
+    const attempt = loginAttempts.begin(request.ip)
+    if (!attempt.finish) {
+      reply.header('Retry-After', String(attempt.retryAfter))
+      return reply.code(429).send('尝试过于频繁，请稍后再试')
     }
-
-    const usernameMatches = configuredAuth.username === username
-    const passwordMatches = usernameMatches
-      ? await verifyPassword(password, configuredAuth.passwordHash)
-      : await verifyPassword(password, DUMMY_PASSWORD_HASH)
-
-    if (!usernameMatches || !passwordMatches) {
-      registerLoginFailure(request)
-      reply.code(401)
-      return reply.send('账号或密码错误')
+    let outcome: PasswordAttemptResult = 'cancelled'
+    try {
+      const usernameMatches = configuredAuth.username === username
+      const passwordMatches = await verifyPassword(
+        password,
+        usernameMatches ? configuredAuth.passwordHash : DUMMY_PASSWORD_HASH
+      )
+      if (!usernameMatches || !passwordMatches) {
+        outcome = 'failure'
+        return reply.code(401).send('账号或密码错误')
+      }
+      const prepared = prepareSession(configuredAuth)
+      const installed = await inspectAppConfig((current) => {
+        if (
+          !current.system.auth ||
+          authFingerprint(current.system.auth) !== authFingerprint(configuredAuth)
+        ) {
+          return false
+        }
+        installSession(prepared)
+        return true
+      })
+      if (!installed) return reply.code(409).send('认证状态已变化，请重新登录后重试')
+      outcome = 'success'
+      setSessionCookie(reply, request, prepared.token, SESSION_TTL_MS)
+      return {
+        setupRequired: false,
+        authenticated: true,
+        username: configuredAuth.username,
+      } satisfies AuthStatusResponse
+    } finally {
+      attempt.finish(outcome)
     }
-
-    clearLoginFailures(request)
-    createSession(reply, request, configuredAuth.username)
-
-    return {
-      setupRequired: false,
-      authenticated: true,
-      username: configuredAuth.username,
-    } satisfies AuthStatusResponse
   }
 
   async function handleLogout(request: FastifyRequest, reply: FastifyReply) {
@@ -381,18 +352,29 @@ export function createAuthService() {
       return reply.send('当前密码不正确')
     }
 
-    const system = await readSystemConfig()
-    const nextSystem = {
-      ...system,
-      auth: {
-        username: nextUsername,
-        passwordHash: await hashPassword(nextPassword),
-      },
+    const sessionKey = getSessionKey(request)
+    const nextAuth = { username: nextUsername, passwordHash: await hashPassword(nextPassword) }
+    const prepared = prepareSession(nextAuth)
+    try {
+      await commitAuthConfig({
+        expectedAuth: configuredAuth,
+        auth: nextAuth,
+        assertSessionValid() {
+          if (!sessionKey || !isSessionCurrent(request, configuredAuth, sessionKey)) {
+            throw new AuthSessionExpiredError('登录状态已失效，请重新登录')
+          }
+        },
+        onCommitted() {
+          sessions.clear()
+          installSession(prepared)
+        },
+      })
+    } catch (error) {
+      if (error instanceof AuthConfigConflictError) return reply.code(409).send(error.message)
+      if (error instanceof AuthSessionExpiredError) return reply.code(401).send(error.message)
+      throw error
     }
-
-    await writeSystemConfig(nextSystem)
-    sessions.clear()
-    createSession(reply, request, nextUsername)
+    setSessionCookie(reply, request, prepared.token, SESSION_TTL_MS)
 
     return {
       setupRequired: false,
@@ -404,6 +386,8 @@ export function createAuthService() {
   return {
     getStatus,
     getSessionKey,
+    isSessionCurrent,
+    clearSessionCookie,
     requireAuthenticated,
     invalidateAllSessions(reply?: FastifyReply, request?: FastifyRequest) {
       sessions.clear()

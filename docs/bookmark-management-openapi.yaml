@@ -76,7 +76,7 @@ paths:
           in: query
           schema:
             oneOf:
-              - $ref: '#/components/schemas/Slug'
+              - $ref: '#/components/schemas/PathSlug'
               - const: all
             default: all
         - name: type
@@ -178,7 +178,7 @@ paths:
                 groupIds:
                   type: array
                   items:
-                    $ref: '#/components/schemas/Slug'
+                    $ref: '#/components/schemas/PathSlug'
       responses:
         '200':
           $ref: '#/components/responses/Mutation'
@@ -229,7 +229,7 @@ paths:
         - name: targetGroupId
           in: query
           schema:
-            $ref: '#/components/schemas/Slug'
+            $ref: '#/components/schemas/PathSlug'
         - name: targetPosition
           in: query
           schema:
@@ -260,6 +260,104 @@ paths:
           $ref: '#/components/responses/Created'
         '200':
           $ref: '#/components/responses/DryRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/bookmarks/update:
+    post:
+      tags: [Bookmarks]
+      operationId: updateManagedBookmarkByBody
+      summary: Update a historical bookmark using its original slug in JSON
+      description: >-
+        Compatibility alias with a 1 MiB UTF-8 JSON body limit. Original identifiers
+        may exceed the 256-character path limit. Uses the existing service,
+        management authentication, write quota, If-Match and dry-run semantics.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookmarkBodyUpdate'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/bookmarks/delete:
+    post:
+      tags: [Bookmarks]
+      operationId: deleteManagedBookmarkByBody
+      summary: Atomically delete a bookmark and all placements using its original slug
+      description: >-
+        Compatibility alias with a 1 MiB UTF-8 JSON body limit. Original identifiers
+        may exceed the 256-character path limit. Uses the existing service,
+        management authentication, write quota, If-Match and dry-run semantics.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookmarkBodyDelete'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/bookmarks/duplicate:
+    post:
+      tags: [Bookmarks]
+      operationId: duplicateManagedBookmarkByBody
+      summary: Duplicate a historical bookmark using its original slug
+      description: >-
+        Compatibility alias with a 1 MiB UTF-8 JSON body limit. Original identifiers
+        may exceed the 256-character path limit. Uses the existing service,
+        management authentication, write quota, If-Match and dry-run semantics.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookmarkBodyDuplicate'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '200':
+          $ref: '#/components/responses/DryRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/management/v1/bookmarks/set-placement:
+    post:
+      tags: [Bookmarks]
+      operationId: setManagedBookmarkPlacementByBody
+      summary: Place or move a bookmark including an optional position
+      description: >-
+        Compatibility alias with a 1 MiB UTF-8 JSON body limit. Original identifiers
+        may exceed the 256-character path limit. Uses the existing service,
+        management authentication, write quota, If-Match and dry-run semantics.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookmarkBodyPlacement'
+      responses:
+        '200':
+          $ref: '#/components/responses/Mutation'
         default:
           $ref: '#/components/responses/Error'
 
@@ -365,7 +463,7 @@ paths:
               required: [groupId]
               properties:
                 groupId:
-                  $ref: '#/components/schemas/Slug'
+                  $ref: '#/components/schemas/PathSlug'
                 position:
                   type: integer
                   minimum: 0
@@ -479,7 +577,7 @@ paths:
                 bookmarkIds:
                   type: array
                   items:
-                    $ref: '#/components/schemas/Slug'
+                    $ref: '#/components/schemas/PathSlug'
       responses:
         '200':
           $ref: '#/components/responses/Mutation'
@@ -588,7 +686,7 @@ paths:
                   minItems: 1
                   maxItems: 100
                   items:
-                    $ref: '#/components/schemas/Slug'
+                    $ref: '#/components/schemas/PathSlug'
       responses:
         '200':
           $ref: '#/components/responses/Mutation'
@@ -615,19 +713,19 @@ components:
       in: path
       required: true
       schema:
-        $ref: '#/components/schemas/Slug'
+        $ref: '#/components/schemas/PathSlug'
     GroupId:
       name: groupId
       in: path
       required: true
       schema:
-        $ref: '#/components/schemas/Slug'
+        $ref: '#/components/schemas/PathSlug'
     BookmarkSlug:
       name: slug
       in: path
       required: true
       schema:
-        $ref: '#/components/schemas/Slug'
+        $ref: '#/components/schemas/PathSlug'
     RecordId:
       name: recordId
       in: path
@@ -705,7 +803,18 @@ components:
   schemas:
     Slug:
       type: string
+      description: Historical identifier or reference; JSON request size still applies.
       pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+    NewSlug:
+      allOf:
+        - $ref: '#/components/schemas/Slug'
+      maxLength: 256
+      description: New identifiers reserve space for uniqueness suffixes.
+    PathSlug:
+      allOf:
+        - $ref: '#/components/schemas/Slug'
+      maxLength: 256
+      description: Decoded path parameter limit; use body aliases for longer bookmark slugs.
     Name:
       type: string
       minLength: 1
@@ -934,7 +1043,7 @@ components:
       required: [name]
       properties:
         id:
-          $ref: '#/components/schemas/Slug'
+          $ref: '#/components/schemas/NewSlug'
         name:
           $ref: '#/components/schemas/Name'
         position:
@@ -946,7 +1055,7 @@ components:
       required: [name, primaryUrl, placements]
       properties:
         slug:
-          $ref: '#/components/schemas/Slug'
+          $ref: '#/components/schemas/NewSlug'
         name:
           $ref: '#/components/schemas/Name'
         note:
@@ -981,6 +1090,7 @@ components:
       properties:
         slug:
           $ref: '#/components/schemas/Slug'
+          description: Unchanged historical slug is accepted; a different new slug must be at most 256 characters.
         name:
           $ref: '#/components/schemas/Name'
         note:
@@ -1007,7 +1117,7 @@ components:
       additionalProperties: false
       properties:
         slug:
-          $ref: '#/components/schemas/Slug'
+          $ref: '#/components/schemas/NewSlug'
         name:
           $ref: '#/components/schemas/Name'
         placements:
@@ -1117,7 +1227,7 @@ components:
       required: [placements]
       properties:
         slug:
-          $ref: '#/components/schemas/Slug'
+          $ref: '#/components/schemas/NewSlug'
         placements:
           type: array
           minItems: 1
@@ -1179,3 +1289,33 @@ components:
             code: { type: string }
             message: { type: string }
             requestId: { type: string }
+
+    BookmarkBodyUpdate:
+      type: object
+      additionalProperties: false
+      required: [slug, patch]
+      properties:
+        slug: { $ref: '#/components/schemas/Slug' }
+        patch: { $ref: '#/components/schemas/BookmarkPatch' }
+    BookmarkBodyDelete:
+      type: object
+      additionalProperties: false
+      required: [slug]
+      properties:
+        slug: { $ref: '#/components/schemas/Slug' }
+    BookmarkBodyDuplicate:
+      type: object
+      additionalProperties: false
+      required: [slug]
+      properties:
+        slug: { $ref: '#/components/schemas/Slug' }
+        options: { $ref: '#/components/schemas/BookmarkDuplicate' }
+    BookmarkBodyPlacement:
+      type: object
+      additionalProperties: false
+      required: [slug, sceneId, groupId]
+      properties:
+        slug: { $ref: '#/components/schemas/Slug' }
+        sceneId: { $ref: '#/components/schemas/Slug' }
+        groupId: { $ref: '#/components/schemas/Slug' }
+        position: { $ref: '#/components/schemas/Position' }

@@ -18,6 +18,7 @@ export interface WebdavBackupVersion {
 export interface WebdavBackupResult {
   version: WebdavBackupVersion
   removedVersionIds: string[]
+  warnings?: string[]
 }
 
 interface WebdavRequestOptions {
@@ -138,32 +139,98 @@ function createAuthHeaders(config: WebdavBackupConfig) {
   }
 }
 
+export function getWebdavRequestTimeoutMs() {
+  const raw = process.env.HARBORDECK_WEBDAV_TIMEOUT_MS
+  if (raw === undefined || raw.trim() === '') return WEBDAV_REQUEST_TIMEOUT_MS
+  const timeout = Number(raw)
+  if (!Number.isInteger(timeout) || timeout < 100 || timeout > 300_000) {
+    throw new Error('HARBORDECK_WEBDAV_TIMEOUT_MS 必须是 100–300000 之间的整数')
+  }
+  return timeout
+}
+
+async function readResponseText(response: Response, signal: AbortSignal) {
+  if (!response.body) return ''
+  const reader = response.body.getReader()
+  const cancel = () => {
+    void reader.cancel(signal.reason).catch(() => undefined)
+  }
+  signal.addEventListener('abort', cancel, { once: true })
+  const decoder = new TextDecoder()
+  let text = ''
+  try {
+    signal.throwIfAborted()
+    while (true) {
+      const chunk = await reader.read()
+      signal.throwIfAborted()
+      if (chunk.done) return text + decoder.decode()
+      text += decoder.decode(chunk.value, { stream: true })
+    }
+  } finally {
+    signal.removeEventListener('abort', cancel)
+    reader.releaseLock()
+  }
+}
+
 async function requestWebdav(
   config: WebdavBackupConfig,
   url: URL,
   options: WebdavRequestOptions,
-  fetchImpl: FetchLike
+  fetchImpl: FetchLike,
+  signal?: AbortSignal
 ) {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), WEBDAV_REQUEST_TIMEOUT_MS)
+  const timeoutMs = getWebdavRequestTimeoutMs()
+  let timedOut = false
+  const cancel = () => controller.abort(new Error('WebDAV 操作已取消'))
+  signal?.addEventListener('abort', cancel, { once: true })
+  if (signal?.aborted) cancel()
+  const timeoutId = setTimeout(() => {
+    timedOut = true
+    controller.abort(new Error('WebDAV 请求超时'))
+  }, timeoutMs)
 
+  let response: Response | undefined
   try {
-    return await fetchImpl(url, {
+    controller.signal.throwIfAborted()
+    response = await fetchImpl(url, {
       method: options.method,
-      headers: {
-        ...createAuthHeaders(config),
-        ...(options.headers ?? {}),
-      },
+      headers: { ...createAuthHeaders(config), ...(options.headers ?? {}) },
       body: options.body,
       signal: controller.signal,
     })
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(`WebDAV 请求超时（${WEBDAV_REQUEST_TIMEOUT_MS / 1000} 秒）`)
+    controller.signal.throwIfAborted()
+    const expectedStatuses: Record<string, number[]> = {
+      GET: [200],
+      PROPFIND: [207],
+      MKCOL: [...DIRECTORY_EXISTS_STATUS],
+      PUT: [200, 201, 204],
+      DELETE: [200, 204],
     }
+    const needsBody =
+      options.method === 'GET' ||
+      options.method === 'PROPFIND' ||
+      !expectedStatuses[options.method]?.includes(response.status)
+    const body = needsBody ? await readResponseText(response, controller.signal) : ''
+    // Successful writes need no response body. Cancellation releases it without
+    // making upload success depend on the server finishing an irrelevant stream.
+    if (!needsBody) void response.body?.cancel().catch(() => undefined)
+    return { status: response.status, text: async () => body }
+  } catch (error) {
+    if (timedOut) {
+      const uncertain = ['PUT', 'DELETE', 'MKCOL'].includes(options.method)
+        ? '；远端状态可能已变化，请先核对结果'
+        : ''
+      throw new Error(`WebDAV 请求超时（${timeoutMs / 1000} 秒）${uncertain}`)
+    }
+    if (signal?.aborted) throw new Error('WebDAV 操作已取消')
     throw error
   } finally {
     clearTimeout(timeoutId)
+    signal?.removeEventListener('abort', cancel)
+    if (response?.body && !response.bodyUsed) {
+      void response.body.cancel().catch(() => undefined)
+    }
   }
 }
 
@@ -197,7 +264,11 @@ export function assertWebdavBackupConfigured(config: WebdavBackupConfig) {
   }
 }
 
-async function ensureRemoteDirectory(config: WebdavBackupConfig, fetchImpl: FetchLike = fetch) {
+async function ensureRemoteDirectory(
+  config: WebdavBackupConfig,
+  fetchImpl: FetchLike = fetch,
+  signal?: AbortSignal
+) {
   const baseDirectoryUrl = createDirectoryUrl(config)
   const remoteSegments = normalizeRemoteSegments(config.remotePath)
 
@@ -209,7 +280,8 @@ async function ensureRemoteDirectory(config: WebdavBackupConfig, fetchImpl: Fetc
       {
         method: 'MKCOL',
       },
-      fetchImpl
+      fetchImpl,
+      signal
     )
 
     if (!DIRECTORY_EXISTS_STATUS.has(response.status)) {
@@ -289,12 +361,17 @@ export async function listWebdavBackupVersions(
   config: WebdavBackupConfig,
   options?: {
     fetchImpl?: FetchLike
+    signal?: AbortSignal
   }
 ) {
   assertWebdavBackupConfigured(config)
 
   const fetchImpl = options?.fetchImpl ?? fetch
-  const { baseDirectoryUrl, remoteSegments } = await ensureRemoteDirectory(config, fetchImpl)
+  const { baseDirectoryUrl, remoteSegments } = await ensureRemoteDirectory(
+    config,
+    fetchImpl,
+    options?.signal
+  )
   const directoryUrl = buildRemoteUrl(baseDirectoryUrl, remoteSegments)
   const response = await requestWebdav(
     config,
@@ -314,7 +391,8 @@ export async function listWebdavBackupVersions(
   </prop>
 </propfind>`,
     },
-    fetchImpl
+    fetchImpl,
+    options?.signal
   )
 
   if (response.status !== 207) {
@@ -328,7 +406,8 @@ export async function listWebdavBackupVersions(
 async function deleteWebdavBackupFile(
   config: WebdavBackupConfig,
   versionId: string,
-  fetchImpl: FetchLike = fetch
+  fetchImpl: FetchLike = fetch,
+  signal?: AbortSignal
 ) {
   if (!BACKUP_FILENAME_PATTERN.test(versionId)) {
     throw new Error('无效的备份版本标识')
@@ -343,7 +422,8 @@ async function deleteWebdavBackupFile(
     {
       method: 'DELETE',
     },
-    fetchImpl
+    fetchImpl,
+    signal
   )
 
   if (![200, 204].includes(response.status)) {
@@ -357,6 +437,7 @@ export async function createWebdavBackup(
   appConfig: AppConfig,
   options?: {
     fetchImpl?: FetchLike
+    signal?: AbortSignal
     now?: Date
   }
 ) {
@@ -364,7 +445,11 @@ export async function createWebdavBackup(
 
   const fetchImpl = options?.fetchImpl ?? fetch
   const now = options?.now ?? new Date()
-  const { baseDirectoryUrl, remoteSegments } = await ensureRemoteDirectory(config, fetchImpl)
+  const { baseDirectoryUrl, remoteSegments } = await ensureRemoteDirectory(
+    config,
+    fetchImpl,
+    options?.signal
+  )
   const filename = createBackupFilename(now)
   const fileUrl = buildRemoteUrl(baseDirectoryUrl, remoteSegments, filename)
   const body = `${JSON.stringify(appConfig, null, 2)}\n`
@@ -378,7 +463,8 @@ export async function createWebdavBackup(
       },
       body,
     },
-    fetchImpl
+    fetchImpl,
+    options?.signal
   )
 
   if (![200, 201, 204].includes(response.status)) {
@@ -386,24 +472,29 @@ export async function createWebdavBackup(
     throw new Error(`上传 WebDAV 备份失败（${response.status}）：${message || filename}`)
   }
 
-  const versions = await listWebdavBackupVersions(config, { fetchImpl })
-  const removedVersionIds = versions.slice(config.maxVersions).map((version) => version.id)
-
-  for (const versionId of removedVersionIds) {
-    await deleteWebdavBackupFile(config, versionId, fetchImpl)
+  let version = createVersionFromFilename(
+    filename,
+    Buffer.byteLength(body, 'utf8'),
+    now.toISOString()
+  )!
+  const removedVersionIds: string[] = []
+  const warnings: string[] = []
+  try {
+    const versions = await listWebdavBackupVersions(config, { fetchImpl, signal: options?.signal })
+    version = versions.find((item) => item.id === filename) ?? version
+    for (const oldVersion of versions.slice(config.maxVersions)) {
+      await deleteWebdavBackupFile(config, oldVersion.id, fetchImpl, options?.signal)
+      removedVersionIds.push(oldVersion.id)
+    }
+  } catch (error) {
+    warnings.push(
+      `备份已上传，但版本核对或清理未完成：${error instanceof Error ? error.message : '未知错误'}`
+    )
   }
-
-  const version =
-    versions.find((item) => item.id === filename) ??
-    createVersionFromFilename(filename, Buffer.byteLength(body, 'utf8'), now.toISOString())
-
-  if (!version) {
-    throw new Error('创建 WebDAV 备份成功，但未能生成备份版本信息')
-  }
-
   return {
     version,
     removedVersionIds,
+    ...(warnings.length ? { warnings } : {}),
   } satisfies WebdavBackupResult
 }
 
@@ -412,6 +503,7 @@ export async function restoreWebdavBackup(
   versionId: string,
   options?: {
     fetchImpl?: FetchLike
+    signal?: AbortSignal
   }
 ) {
   assertWebdavBackupConfigured(config)
@@ -430,7 +522,8 @@ export async function restoreWebdavBackup(
     {
       method: 'GET',
     },
-    fetchImpl
+    fetchImpl,
+    options?.signal
   )
 
   if (response.status !== 200) {

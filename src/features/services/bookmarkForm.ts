@@ -1,3 +1,4 @@
+import { MAX_NEW_ID_LENGTH } from '../../../shared/identifiers'
 import { ZodError } from 'zod'
 import type { NavigationConfig, ServiceConfig } from '@/config/schema'
 import { getCurrentMessages } from '@/i18n/runtime'
@@ -152,6 +153,11 @@ export function validateBookmarkForm(
   const messages = getCurrentMessages()
   const nextSlug =
     values.slug.trim() || buildSuggestedSlug(values.name, config, options?.currentSlug)
+  if (nextSlug !== options?.currentSlug && nextSlug.length > MAX_NEW_ID_LENGTH) {
+    throw new Error(
+      `新标识不能超过 ${MAX_NEW_ID_LENGTH} 个字符 / New identifiers must be at most ${MAX_NEW_ID_LENGTH} characters`
+    )
+  }
   const bookmark = cleanServiceConfig({
     slug: nextSlug,
     name: values.name.trim(),

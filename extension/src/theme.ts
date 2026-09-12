@@ -1,6 +1,5 @@
 import { skinUsesDarkMode, type AppSkin } from '@shared/theme'
-import { fetchRemoteTheme } from '@extension/network'
-import { readExtensionTheme, writeExtensionTheme } from '@extension/storage'
+import { readExtensionTheme } from './storage'
 
 const SYNCHRONOUS_THEME_KEY = 'harborDeckExtensionTheme'
 
@@ -18,18 +17,5 @@ export function applyExtensionTheme(skin: AppSkin): void {
 export async function restoreExtensionTheme(): Promise<AppSkin> {
   const skin = await readExtensionTheme()
   applyExtensionTheme(skin)
-  return skin
-}
-
-export async function syncExtensionTheme(
-  baseUrl: string,
-  apiToken: string,
-  timeoutMs?: number
-): Promise<AppSkin | null> {
-  const skin = await fetchRemoteTheme(baseUrl, apiToken, timeoutMs)
-  if (!skin) return null
-
-  applyExtensionTheme(skin)
-  await writeExtensionTheme(skin)
   return skin
 }

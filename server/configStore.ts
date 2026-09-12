@@ -17,6 +17,18 @@ const configFilename = 'config.json'
 let ensureConfigPromise: Promise<string> | null = null
 let writeQueue: Promise<void> = Promise.resolve()
 
+type AuthConfig = NonNullable<AppConfig['system']['auth']>
+
+export class AuthConfigConflictError extends Error {}
+
+export class ConfigCommitError extends Error {
+  readonly committed = true
+}
+
+function sameAuth(left: AuthConfig | null | undefined, right: AuthConfig | null | undefined) {
+  return left?.username === right?.username && left?.passwordHash === right?.passwordHash
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -57,7 +69,11 @@ async function readJsonFile<TSchema extends z.ZodTypeAny>(
   return schema.parse(json ?? undefined)
 }
 
-async function writeJsonFile(filePath: string, value: unknown) {
+async function writeJsonFile(
+  filePath: string,
+  value: unknown,
+  commit?: { beforeRename?: () => void; onCommitted: () => void }
+) {
   // Revisions belong to client snapshots, never to the durable configuration.
   if (isRecord(value) && isRecord(value.system) && isRecord(value.navigation)) {
     const system = { ...value.system }
@@ -67,12 +83,20 @@ async function writeJsonFile(filePath: string, value: unknown) {
     value = { ...value, system, navigation }
   }
   const tempPath = `${filePath}.${randomUUID()}.tmp`
+  let committed = false
 
   try {
     await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+    commit?.beforeRename?.()
     await rename(tempPath, filePath)
+    committed = true
+    try {
+      commit?.onCommitted()
+    } catch (cause) {
+      throw new ConfigCommitError('配置已保存，但访问状态更新失败', { cause })
+    }
   } finally {
-    if (await exists(tempPath)) {
+    if (!committed && (await exists(tempPath))) {
       await unlink(tempPath)
     }
   }
@@ -116,6 +140,88 @@ export async function readAppConfig() {
   const config = await readJsonFile(filePath, configFilename, appConfigSchema)
   storedNavigationConfigSchema.parse(config.navigation)
   return cleanAppGroupExpansionPreference(config)
+}
+
+/** Inspect and synchronously use the latest state in the existing commit queue, without writing. */
+export async function inspectAppConfig<TResult>(inspect: (current: AppConfig) => TResult) {
+  return withWriteLock(async () => inspect(await readAppConfig()))
+}
+
+export async function commitAuthConfig(input: {
+  expectedAuth: AuthConfig | null
+  auth: AuthConfig
+  assertSessionValid?: () => void
+  onCommitted: () => void
+}) {
+  return withWriteLock(async () => {
+    const current = await readAppConfig()
+    if (!sameAuth(current.system.auth, input.expectedAuth)) {
+      throw new AuthConfigConflictError(
+        input.expectedAuth ? '认证状态已变化，请重新登录后重试' : '管理员账号已存在'
+      )
+    }
+    input.assertSessionValid?.()
+    const next = appConfigSchema.parse({
+      ...current,
+      system: { ...current.system, auth: input.auth },
+    })
+    const filePath = await ensureAppConfigFile()
+    await writeJsonFile(filePath, next, {
+      beforeRename: input.assertSessionValid,
+      onCommitted: input.onCommitted,
+    })
+    return next.system.auth!
+  })
+}
+
+/** A scene password commit owns the synchronous invalidation of scene access. */
+export async function commitScenePasswordConfig(
+  sceneId: string,
+  passwordHash: string | undefined,
+  assertCurrentAccess: (current: AppConfig) => void,
+  onCommitted: () => void
+) {
+  return withWriteLock(async () => {
+    const current = await readAppConfig()
+    assertCurrentAccess(current)
+    const navigation = storedNavigationConfigSchema.parse({
+      ...current.navigation,
+      scenes: current.navigation.scenes.map((scene) =>
+        scene.id === sceneId ? { ...scene, protected: Boolean(passwordHash), passwordHash } : scene
+      ),
+    })
+    const next = { ...current, navigation }
+    const filePath = await ensureAppConfigFile()
+    await writeJsonFile(filePath, next, {
+      beforeRename: () => assertCurrentAccess(current),
+      onCommitted,
+    })
+    return navigation
+  })
+}
+
+/** Restore authorization is decided against the state immediately before this commit. */
+export async function commitRestoredAppConfig(
+  value: unknown,
+  canCommit: () => boolean,
+  onCommitted: (requiresReauth: boolean) => void
+) {
+  const restoredConfig = cleanAppGroupExpansionPreference(appConfigSchema.parse(value))
+  storedNavigationConfigSchema.parse(restoredConfig.navigation)
+  return withWriteLock(async () => {
+    const assertNotCancelled = () => {
+      if (!canCommit()) throw new Error('恢复已取消')
+    }
+    assertNotCancelled()
+    const current = await readAppConfig()
+    const requiresReauth = !sameAuth(current.system.auth, restoredConfig.system.auth)
+    const filePath = await ensureAppConfigFile()
+    await writeJsonFile(filePath, restoredConfig, {
+      beforeRename: assertNotCancelled,
+      onCommitted: () => onCommitted(requiresReauth),
+    })
+    return { restoredConfig, requiresReauth }
+  })
 }
 
 export async function writeAppConfig(value: unknown) {

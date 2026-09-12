@@ -25,6 +25,7 @@ import {
 } from '@/features/navigation/navigationConfig'
 import { useNavigationConfig, useSaveNavigationConfig } from '@/features/navigation/useNavigation'
 import { useAppStore } from '@/store/appStore'
+import { NavigationSyncNotice } from '@/features/navigation/NavigationSyncNotice'
 
 interface FeedbackState {
   type: 'success' | 'error'
@@ -51,7 +52,9 @@ export function BookmarkEditDialog({
   onClose,
 }: BookmarkEditDialogProps) {
   const navigationQuery = useNavigationConfig()
-  const saveMutation = useSaveNavigationConfig()
+  const saveMutation = useSaveNavigationConfig(
+    `${open}:${mode}:${serviceSlug}:${initialSceneId}:${initialGroupId}`
+  )
   const { showToast } = useFeedback()
   const { messages } = useI18n()
   const sceneTokens = useAppStore((state) => state.sceneTokens)
@@ -220,6 +223,7 @@ export function BookmarkEditDialog({
       icon={isCreate ? Plus : isDuplicate ? Copy : Pencil}
       widthClassName="max-w-3xl"
     >
+      <NavigationSyncNotice save={saveMutation} />
       <DraftNotice
         changed={editor.changed}
         current={draft}
@@ -238,7 +242,7 @@ export function BookmarkEditDialog({
                 ? messages.bookmarkEdit.duplicateSubmitButton
                 : messages.bookmarkEdit.submitButton
           }
-          submitDisabled={saveMutation.isPending}
+          submitDisabled={saveMutation.isSaveBlocked}
           onSubmit={handleSubmit}
           onCancel={close}
           onFieldChange={handleFieldChange}

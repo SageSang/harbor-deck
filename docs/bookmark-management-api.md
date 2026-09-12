@@ -556,3 +556,21 @@ curl --fail-with-body \
 ```
 
 自动化客户端建议遵循“读取 `/state` → 本地规划 → dry-run → 人工或策略确认 → 提交 → 保存新 revision”的流程。若任何一步返回 `412`，丢弃旧规划并重新读取。
+
+
+## 历史长标识兼容
+
+新建或主动改成的新标识最多 256 字符；自动生成器为唯一性后缀预留空间。已有标识不截断、不迁移，普通编辑未改变原标识时仍接受；完整 JSON 导入及备份恢复保留历史值。
+
+路径参数仍限制为 256 字符。长书签从 `GET /api/management/v1/state` 读取，并可通过以下固定路径传递原始标识：
+
+| 方法与路径 | JSON 请求体 |
+| --- | --- |
+| `POST /api/management/v1/bookmarks/update` | `{ "slug": "原标识", "patch": { "name": "新名称" } }` |
+| `POST /api/management/v1/bookmarks/delete` | `{ "slug": "原标识" }` |
+| `POST /api/management/v1/bookmarks/duplicate` | `{ "slug": "原标识", "options": {} }` |
+| `POST /api/management/v1/bookmarks/set-placement` | `{ "slug": "原标识", "sceneId": "场景", "groupId": "分组", "position": 0 }` |
+
+这四个入口复用原业务语义、管理 Token、写额度、`If-Match` 和 dry-run。`patch.slug` / `options.slug` 是拟使用的新标识。全局删除一次原子移除全部引用；没有新增 `orphanPolicy` 参数。普通父 ID 下的单项移除沿用 `batch-remove` 的 `orphanPolicy`。
+
+请求体限制是完整 JSON 的 1 MiB UTF-8 字节，超限返回 413 且不写入；不承诺任意长度在线编辑。请求体中的历史 scene/group 标识可用于放置，但其他仍以父 ID 为路径参数的接口没有一并扩展。旧路径接口继续保留，新入口在旧服务版本上不可用。

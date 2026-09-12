@@ -814,7 +814,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
 
     runWebdavBackupMutation.mutate(undefined, {
       onSuccess: (result) => {
-        const message =
+        const successMessage =
           result.removedVersionIds.length > 0
             ? messages.settings.webdavSection.manualBackupTrimmed(
                 result.version.filename,
@@ -822,6 +822,7 @@ export function ServiceSettingsButton({ initialOpen = false }: ServiceSettingsBu
               )
             : messages.settings.webdavSection.manualBackupSuccess(result.version.filename)
 
+        const message = [successMessage, ...(result.warnings ?? [])].join("\n")
         setBackupFeedback({
           type: 'success',
           message,

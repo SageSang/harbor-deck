@@ -4,14 +4,14 @@ import type {
   OpenMode,
   PopupDraft,
   ResolutionCache,
-  ResolutionReason,
   NewTabBootSnapshot,
-} from '@extension/types'
+} from './types'
+import { normalizeResolution, VERIFIED_CACHE_TTL_MS } from './resolutionState'
 import { normalizeAppSkin, type AppSkin } from '@shared/theme'
 
-const STORAGE_KEY = 'harborDeckNewTabSettings'
+export const STORAGE_KEY = 'harborDeckNewTabSettings'
 const LANGUAGE_STORAGE_KEY = 'harborDeckNewTabLanguage'
-const RESOLUTION_CACHE_KEY = 'harborDeckNewTabResolutionCache'
+export const RESOLUTION_CACHE_KEY = 'harborDeckNewTabResolutionCache'
 export const NEW_TAB_BOOT_SNAPSHOT_KEY = 'harborDeckNewTabBootSnapshot'
 const POPUP_DRAFT_KEY = 'harborDeckPopupDraft'
 const POPUP_COLLAPSED_SCENES_KEY = 'harborDeckPopupCollapsedScenes'
@@ -23,10 +23,7 @@ const LEGACY_RESOLUTION_CACHE_KEY = ['smart', 'Harbor', 'NewTabResolutionCache']
 export const MIN_PROBE_TIMEOUT_MS = 50
 export const MAX_PROBE_TIMEOUT_MS = 5000
 export const DEFAULT_PROBE_TIMEOUT_MS = 200
-// Keep the last successful address for a full day. New-tab startup can use it
-// immediately, while the background service worker refreshes it asynchronously
-// so LAN/WAN changes are picked up without adding launch latency.
-export const RESOLUTION_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+export const RESOLUTION_CACHE_TTL_MS = VERIFIED_CACHE_TTL_MS
 export const defaultLanguage = detectPreferredLanguage()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -63,15 +60,6 @@ function detectPreferredLanguage(): ExtensionLanguage {
 
 function normalizeLanguage(value: unknown): ExtensionLanguage {
   return value === 'en' ? 'en' : 'zh-CN'
-}
-
-function isCacheReason(value: unknown): value is Exclude<ResolutionReason, 'unconfigured'> {
-  return (
-    value === 'primary' ||
-    value === 'fallback' ||
-    value === 'primary-unverified' ||
-    value === 'fallback-unverified'
-  )
 }
 
 export function normalizeProbeTimeoutMs(value: unknown): number {
@@ -121,13 +109,17 @@ export async function readSettings(): Promise<ExtensionSettings> {
     apiToken: typeof nextSettings.apiToken === 'string' ? nextSettings.apiToken : '',
     openMode: normalizeOpenMode(nextSettings.openMode),
     probeTimeoutMs: normalizeProbeTimeoutMs(nextSettings.probeTimeoutMs),
+    ...(typeof nextSettings.settingsRevision === 'string'
+      ? { settingsRevision: nextSettings.settingsRevision }
+      : {}),
   }
 }
 
-export async function writeSettings(settings: ExtensionSettings): Promise<void> {
+export async function writeSettings(settings: ExtensionSettings): Promise<ExtensionSettings> {
   const normalized: ExtensionSettings = {
-    primaryUrl: settings.primaryUrl,
-    fallbackUrl: settings.fallbackUrl,
+    primaryUrl: normalizeUrl(settings.primaryUrl),
+    fallbackUrl: normalizeUrl(settings.fallbackUrl),
+    settingsRevision: crypto.randomUUID(),
     apiToken: settings.apiToken.trim(),
     openMode: normalizeOpenMode(settings.openMode),
     probeTimeoutMs: normalizeProbeTimeoutMs(settings.probeTimeoutMs),
@@ -136,6 +128,7 @@ export async function writeSettings(settings: ExtensionSettings): Promise<void> 
   await chrome.storage.sync.set({
     [STORAGE_KEY]: normalized,
   })
+  return normalized
 }
 
 export async function readLanguage(): Promise<ExtensionLanguage> {
@@ -165,54 +158,22 @@ export async function writeExtensionTheme(skin: AppSkin): Promise<void> {
 }
 
 export async function readResolutionCache(): Promise<ResolutionCache | null> {
-  const nextCache = await readMigratedValue(
-    chrome.storage.local,
-    RESOLUTION_CACHE_KEY,
-    LEGACY_RESOLUTION_CACHE_KEY
-  )
-
-  if (!isRecord(nextCache)) {
-    return null
-  }
-
-  if (
-    typeof nextCache.primaryUrl !== 'string' ||
-    typeof nextCache.fallbackUrl !== 'string' ||
-    typeof nextCache.activeUrl !== 'string' ||
-    !isCacheReason(nextCache.reason) ||
-    typeof nextCache.resolvedAt !== 'number' ||
-    !Number.isFinite(nextCache.resolvedAt)
-  ) {
-    return null
-  }
-
-  return {
-    primaryUrl: nextCache.primaryUrl,
-    fallbackUrl: nextCache.fallbackUrl,
-    activeUrl: nextCache.activeUrl,
-    reason: nextCache.reason,
-    resolvedAt: nextCache.resolvedAt,
-  }
+  const stored = await chrome.storage.local.get(NEW_TAB_BOOT_SNAPSHOT_KEY)
+  const snapshot = normalizeResolution(stored[NEW_TAB_BOOT_SNAPSHOT_KEY])
+  if (snapshot) return snapshot
+  const current = await chrome.storage.local.get(RESOLUTION_CACHE_KEY)
+  if (current[RESOLUTION_CACHE_KEY] !== undefined)
+    return normalizeResolution(current[RESOLUTION_CACHE_KEY])
+  const legacy = await chrome.storage.local.get(LEGACY_RESOLUTION_CACHE_KEY)
+  return normalizeResolution(legacy[LEGACY_RESOLUTION_CACHE_KEY])
 }
 
-export async function writeResolutionCache(cache: ResolutionCache): Promise<void> {
+/** Only the background coordinator commits resolution state. */
+export async function writeResolutionSnapshot(snapshot: NewTabBootSnapshot): Promise<void> {
   await chrome.storage.local.set({
-    [RESOLUTION_CACHE_KEY]: cache,
-  })
-}
-
-export async function clearResolutionCache(): Promise<void> {
-  await chrome.storage.local.remove([RESOLUTION_CACHE_KEY, LEGACY_RESOLUTION_CACHE_KEY])
-}
-
-export async function writeNewTabBootSnapshot(snapshot: NewTabBootSnapshot): Promise<void> {
-  await chrome.storage.local.set({
+    [RESOLUTION_CACHE_KEY]: snapshot,
     [NEW_TAB_BOOT_SNAPSHOT_KEY]: snapshot,
   })
-}
-
-export async function clearNewTabBootSnapshot(): Promise<void> {
-  await chrome.storage.local.remove(NEW_TAB_BOOT_SNAPSHOT_KEY)
 }
 
 function normalizePopupDraft(value: unknown): PopupDraft | null {
@@ -238,6 +199,10 @@ function normalizePopupDraft(value: unknown): PopupDraft | null {
     secondaryUrl: typeof value.secondaryUrl === 'string' ? value.secondaryUrl : '',
     note: typeof value.note === 'string' ? value.note : '',
     selectedGroups,
+    ...(typeof value.instanceKey === 'string' ? { instanceKey: value.instanceKey } : {}),
+    ...(isRecord(value.pendingSubmission)
+      ? { pendingSubmission: value.pendingSubmission as unknown as PopupDraft['pendingSubmission'] }
+      : {}),
     ...(typeof value.recordSceneId === 'string' ? { recordSceneId: value.recordSceneId } : {}),
     ...(typeof value.existingBookmarkSlug === 'string'
       ? { existingBookmarkSlug: value.existingBookmarkSlug }
@@ -245,17 +210,72 @@ function normalizePopupDraft(value: unknown): PopupDraft | null {
   }
 }
 
-export async function readPopupDraft(): Promise<PopupDraft | null> {
+const POPUP_DRAFTS_KEY = 'harborDeckPopupDrafts'
+let draftWrites: Promise<void> = Promise.resolve()
+function draftKey(instanceKey: string, sourceTabUrl: string) {
+  return JSON.stringify([instanceKey, sourceTabUrl])
+}
+
+export async function readPopupDraft(
+  instanceKey?: string,
+  sourceTabUrl?: string
+): Promise<PopupDraft | null> {
+  if (instanceKey && sourceTabUrl) {
+    const stored = await chrome.storage.local.get(POPUP_DRAFTS_KEY)
+    const drafts = stored[POPUP_DRAFTS_KEY]
+    if (isRecord(drafts)) {
+      const matching = normalizePopupDraft(drafts[draftKey(instanceKey, sourceTabUrl)])
+      if (matching) return matching
+    }
+  }
   const stored = await chrome.storage.local.get(POPUP_DRAFT_KEY)
-  return normalizePopupDraft(stored[POPUP_DRAFT_KEY])
+  const legacy = normalizePopupDraft(stored[POPUP_DRAFT_KEY])
+  return legacy && (!legacy.instanceKey || !instanceKey || legacy.instanceKey === instanceKey)
+    ? legacy
+    : null
 }
 
-export async function writePopupDraft(draft: PopupDraft): Promise<void> {
-  await chrome.storage.local.set({ [POPUP_DRAFT_KEY]: draft })
+export function writePopupDraft(draft: PopupDraft): Promise<void> {
+  draftWrites = draftWrites
+    .catch(() => undefined)
+    .then(async () => {
+      if (!draft.instanceKey) {
+        await chrome.storage.local.set({ [POPUP_DRAFT_KEY]: draft })
+        return
+      }
+      const stored = await chrome.storage.local.get(POPUP_DRAFTS_KEY)
+      const drafts = isRecord(stored[POPUP_DRAFTS_KEY]) ? stored[POPUP_DRAFTS_KEY] : {}
+      await chrome.storage.local.set({
+        [POPUP_DRAFTS_KEY]: {
+          ...drafts,
+          [draftKey(draft.instanceKey, draft.sourceTabUrl)]: draft,
+        },
+      })
+    })
+  return draftWrites
 }
 
-export async function clearPopupDraft(): Promise<void> {
-  await chrome.storage.local.set({ [POPUP_DRAFT_KEY]: null })
+export function clearPopupDraft(instanceKey?: string, sourceTabUrl?: string): Promise<void> {
+  draftWrites = draftWrites
+    .catch(() => undefined)
+    .then(async () => {
+      if (instanceKey && sourceTabUrl) {
+        const stored = await chrome.storage.local.get(POPUP_DRAFTS_KEY)
+        const drafts = isRecord(stored[POPUP_DRAFTS_KEY]) ? { ...stored[POPUP_DRAFTS_KEY] } : {}
+        delete drafts[draftKey(instanceKey, sourceTabUrl)]
+        await chrome.storage.local.set({ [POPUP_DRAFTS_KEY]: drafts })
+      }
+      const stored = await chrome.storage.local.get(POPUP_DRAFT_KEY)
+      const legacy = normalizePopupDraft(stored[POPUP_DRAFT_KEY])
+      if (
+        !sourceTabUrl ||
+        (legacy?.sourceTabUrl === sourceTabUrl &&
+          (!legacy.instanceKey || legacy.instanceKey === instanceKey))
+      ) {
+        await chrome.storage.local.set({ [POPUP_DRAFT_KEY]: null })
+      }
+    })
+  return draftWrites
 }
 
 export async function readPopupCollapsedSceneIds(): Promise<string[]> {

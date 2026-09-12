@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { NavigationConfig } from '@/config/schema'
 import {
@@ -27,24 +27,177 @@ export function useNavigationConfig(options?: { enabled?: boolean }) {
   })
 }
 
-export function useSaveNavigationConfig() {
+interface NavigationSaveCallbacks {
+  onSuccess?: (saved: NavigationConfig, current: NavigationConfig) => void
+  onError?: (error: Error) => void
+}
+
+/** scopeKey identifies the editing surface, independently of the access version. */
+export function useSaveNavigationConfig(scopeKey = '') {
   const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (config: NavigationConfig) => saveNavigationConfig(config),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: navigationConfigQueryKey })
-      void queryClient.invalidateQueries({ queryKey: appConfigQueryKey })
-      void queryClient.invalidateQueries({ queryKey: sceneListQueryKey })
-      void queryClient.invalidateQueries({ queryKey: ['navigation', 'services'] })
-    },
-    onError: (error) => {
-      if (error instanceof ApiError && error.status === 412) {
-        void queryClient.invalidateQueries({ queryKey: navigationConfigQueryKey })
-        void queryClient.invalidateQueries({ queryKey: appConfigQueryKey })
-        void queryClient.invalidateQueries({ queryKey: ['navigation', 'services'] })
+  const accessVersion = useAppStore((state) => state.sceneAccessVersion)
+  const scopeRef = useRef({ key: scopeKey, operation: 0, mounted: true })
+  if (scopeRef.current.key !== scopeKey) {
+    scopeRef.current = { key: scopeKey, operation: scopeRef.current.operation + 1, mounted: true }
+  }
+
+  function capture(config: NavigationConfig, callbacks?: NavigationSaveCallbacks) {
+    const version = useAppStore.getState().sceneAccessVersion
+    const queryKey = [...navigationConfigQueryKey, version] as const
+    const query = queryClient.getQueryCache().find({ queryKey, exact: true })
+    return {
+      config,
+      callbacks,
+      queryKey,
+      query,
+      dataUpdateCount: query?.state.dataUpdateCount,
+      accessVersion: version,
+      scopeKey,
+      operation: ++scopeRef.current.operation,
+    }
+  }
+  type SaveRequest = ReturnType<typeof capture>
+  type SaveResult = {
+    request: SaveRequest
+    saved?: NavigationConfig
+    current?: NavigationConfig
+    syncError?: Error
+  }
+  const [syncFailure, setSyncFailure] = useState<SaveResult | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
+
+  function isCurrent(request: SaveRequest) {
+    return (
+      scopeRef.current.mounted &&
+      request.accessVersion === useAppStore.getState().sceneAccessVersion &&
+      request.scopeKey === scopeRef.current.key &&
+      request.operation === scopeRef.current.operation
+    )
+  }
+
+  function invalidateDerived() {
+    void queryClient.invalidateQueries({ queryKey: appConfigQueryKey })
+    void queryClient.invalidateQueries({ queryKey: sceneListQueryKey })
+    void queryClient.invalidateQueries({ queryKey: ['navigation', 'services'] })
+  }
+
+  function refreshAfterObsoleteForm(request: SaveRequest) {
+    // The server may have committed even though this form was closed or replaced.
+    // Refresh the still-current access scope; never adopt its old response body.
+    if (request.accessVersion !== useAppStore.getState().sceneAccessVersion) return
+    void queryClient.invalidateQueries({ queryKey: request.queryKey, exact: true })
+    invalidateDerived()
+  }
+
+  async function synchronize(
+    request: SaveRequest,
+    saved: NavigationConfig,
+    forceRead = false
+  ): Promise<SaveResult> {
+    const result: SaveResult = { request }
+    if (!isCurrent(request)) {
+      refreshAfterObsoleteForm(request)
+      return result
+    }
+    await queryClient.cancelQueries({ queryKey: request.queryKey, exact: true })
+    // Lock/logout can remove this query while cancellation is settling.
+    if (!isCurrent(request)) {
+      refreshAfterObsoleteForm(request)
+      return result
+    }
+    result.saved = saved
+    const query = queryClient.getQueryCache().find({ queryKey: request.queryKey, exact: true })
+    const cached = query?.state.data as NavigationConfig | undefined
+    const unchanged =
+      query === request.query &&
+      query?.state.dataUpdateCount === request.dataUpdateCount &&
+      cached?._revision !== undefined &&
+      cached._revision === request.config._revision
+
+    if (!forceRead && unchanged) {
+      queryClient.setQueryData(request.queryKey, saved)
+      result.current = saved
+    } else if (!forceRead && cached?._revision === saved._revision && saved._revision) {
+      result.current = cached
+    } else {
+      try {
+        // Hash revisions have no ordering. Read again when another result was observed,
+        // including A -> B -> A, instead of overwriting it with this PUT response.
+        result.current = await queryClient.fetchQuery({
+          queryKey: request.queryKey,
+          queryFn: ({ signal }) => fetchNavigationConfig(signal),
+          staleTime: 0,
+          retry: false,
+        })
+      } catch (error) {
+        if (isCurrent(request)) {
+          result.syncError =
+            error instanceof Error ? error : new Error('页面同步失败 / Page synchronization failed')
+        }
       }
+    }
+    if (!isCurrent(request)) return { request }
+    invalidateDerived()
+    return result
+  }
+
+  function deliver(result: SaveResult) {
+    if (!isCurrent(result.request)) return
+    if (result.syncError) {
+      setSyncFailure(result)
+    } else if (result.saved && result.current) {
+      setSyncFailure(null)
+      result.request.callbacks?.onSuccess?.(result.saved, result.current)
+    }
+  }
+
+  const mutation = useMutation({
+    mutationFn: async (request: SaveRequest) => {
+      if (!isCurrent(request)) return { request }
+      const saved = await saveNavigationConfig(request.config)
+      return synchronize(request, saved)
+    },
+    onSuccess: deliver,
+    onError: (error: Error, request) => {
+      if (!isCurrent(request)) return
+      if (error instanceof ApiError && error.status === 412) {
+        void queryClient.invalidateQueries({ queryKey: request.queryKey, exact: true })
+        invalidateDerived()
+      }
+      request.callbacks?.onError?.(error)
     },
   })
+
+  useEffect(() => {
+    scopeRef.current.mounted = true
+    return () => {
+      scopeRef.current.mounted = false
+    }
+  }, [])
+  useEffect(() => {
+    setSyncFailure(null)
+    setIsSyncing(false)
+  }, [scopeKey, accessVersion])
+
+  const currentFailure = syncFailure && isCurrent(syncFailure.request) ? syncFailure : null
+  return {
+    isPending: mutation.isPending,
+    isSaveBlocked: mutation.isPending || isSyncing || Boolean(currentFailure),
+    syncError: currentFailure?.syncError ?? null,
+    isSyncing,
+    mutate: (config: NavigationConfig, callbacks?: NavigationSaveCallbacks) => {
+      if (mutation.isPending || isSyncing || currentFailure) return
+      mutation.mutate(capture(config, callbacks))
+    },
+    retrySync: async () => {
+      if (!currentFailure?.saved || isSyncing) return
+      setIsSyncing(true)
+      const result = await synchronize(currentFailure.request, currentFailure.saved, true)
+      if (!isCurrent(currentFailure.request)) return
+      setIsSyncing(false)
+      deliver(result)
+    },
+  }
 }
 
 export function useSceneList() {

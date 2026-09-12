@@ -1,364 +1,308 @@
-/**
- * The new-tab critical path intentionally has no React, CSS bundle, i18n, or
- * network imports. It only reads the small public boot snapshot maintained by
- * the service worker and decides whether to redirect or load the full app.
- */
+/** Lightweight local shell: no React, CSS bundle or direct network imports. */
+import { createNewTabController, type PauseReason } from './newtabController'
+import {
+  readLanguage,
+  readResolutionCache,
+  readSettings,
+  EXTENSION_THEME_STORAGE_KEY,
+  NEW_TAB_BOOT_SNAPSHOT_KEY,
+  STORAGE_KEY,
+} from './storage'
+import {
+  matchesSettings,
+  normalizeResolution,
+  MANUAL_CACHE_TTL_MS,
+  emptyResolution,
+} from './resolutionState'
+import type { ExtensionLanguage, ExtensionSettings, NewTabBootSnapshot } from './types'
 
-const BOOT_SNAPSHOT_KEY = 'harborDeckNewTabBootSnapshot'
-const SETTINGS_KEY = 'harborDeckNewTabSettings'
-const THEME_KEY = 'harborDeckExtensionTheme'
-const BOOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000
-const CACHED_REDIRECT_GRACE_MS = 120
-const UNCACHED_REDIRECT_GRACE_MS = 180
-const REFRESH_MESSAGE = 'harbordeck:refresh-resolution'
-
-const SHELL_ID = 'harbordeck-instant-shell'
-const FORM_ID = 'harbordeck-instant-form'
-const INPUT_ID = 'harbordeck-instant-input'
-const STATUS_ID = 'harbordeck-instant-status'
-const ACTION_ID = 'harbordeck-instant-action'
-
-type OpenMode = 'direct' | 'embedded'
-type ResolutionReason =
-  | 'primary'
-  | 'fallback'
-  | 'primary-unverified'
-  | 'fallback-unverified'
-  | 'unconfigured'
-type AppSkin = 'midnight' | 'frost' | 'ember'
-
-let activeSkin: AppSkin = readAppliedTheme()
-
-interface BootState {
-  primaryUrl: string
-  fallbackUrl: string
-  openMode: OpenMode
-  activeUrl: string
-  reason: ResolutionReason
-  resolvedAt: number
+declare global {
+  interface Window {
+    __harborDeckBootSnapshot?: NewTabBootSnapshot
+  }
 }
+let language: ExtensionLanguage = navigator.language.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
+const zh = () => language === 'zh-CN'
+const shell = document.getElementById('harbordeck-instant-shell')!
+const form = document.getElementById('harbordeck-instant-form') as HTMLFormElement
+const input = document.getElementById('harbordeck-instant-input') as HTMLInputElement
+const status = document.getElementById('harbordeck-instant-status')!
+const action = document.getElementById('harbordeck-instant-action') as HTMLButtonElement
+const links = document.createElement('div')
+links.className = 'harbordeck-manual-links'
+form.appendChild(links)
+let controller: ReturnType<typeof createNewTabController> | null = null
+let settings: ExtensionSettings | null = null
+let cancelled: PauseReason | null =
+  document.visibilityState === 'hidden' ? 'hidden' : navigator.onLine === false ? 'offline' : null
+let selected: NewTabBootSnapshot | null = null
+let published: NewTabBootSnapshot | null = null
+let navigationStarted = false
+let skin = 'midnight'
 
-type LoaderWindow = Window & {
-  __harborDeckLoaderInstalled?: boolean
-  __harborDeckInstantInputValue?: string
-  __harborDeckInstantInputActive?: boolean
-  __harborDeckBootSnapshot?: BootState
-}
-
-function getWindow(): LoaderWindow {
-  return window as LoaderWindow
-}
-
-function isAppSkin(value: unknown): value is AppSkin {
-  return value === 'midnight' || value === 'frost' || value === 'ember'
-}
-
-function readAppliedTheme(): AppSkin {
-  const skin = document.documentElement.dataset.skin
-  if (isAppSkin(skin)) return skin
-  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'frost' : 'midnight'
-}
-
-function applyCachedTheme(value: unknown): AppSkin | null {
-  if (!isAppSkin(value)) return null
-  activeSkin = value
+function applyTheme(value: unknown) {
+  if (value !== 'midnight' && value !== 'frost' && value !== 'ember') return
+  skin = value
   document.documentElement.dataset.skin = value
   document.documentElement.classList.toggle('dark', value !== 'frost')
   try {
-    window.localStorage.setItem(THEME_KEY, value)
+    localStorage.setItem(EXTENSION_THEME_STORAGE_KEY, value)
   } catch {
-    // Chrome storage remains the durable source when localStorage is unavailable.
-  }
-  return value
-}
-
-function restoreSynchronousTheme(): AppSkin {
-  try {
-    return applyCachedTheme(window.localStorage.getItem(THEME_KEY)) ?? activeSkin
-  } catch {
-    return activeSkin
+    /* Optional synchronous cache. */
   }
 }
-
-async function restoreCachedTheme(): Promise<AppSkin> {
-  try {
-    const stored = await chrome.storage.local.get(THEME_KEY)
-    return applyCachedTheme(stored[THEME_KEY]) ?? activeSkin
-  } catch {
-    return activeSkin
-  }
+try {
+  applyTheme(localStorage.getItem(EXTENSION_THEME_STORAGE_KEY))
+} catch {
+  /* Optional. */
 }
+void chrome.storage.local
+  .get(EXTENSION_THEME_STORAGE_KEY)
+  .then((stored) => applyTheme(stored[EXTENSION_THEME_STORAGE_KEY]))
+  .catch(() => undefined)
 
-function getElements() {
-  return {
-    shell: document.getElementById(SHELL_ID),
-    form: document.getElementById(FORM_ID) as HTMLFormElement | null,
-    input: document.getElementById(INPUT_ID) as HTMLInputElement | null,
-    status: document.getElementById(STATUS_ID),
-    action: document.getElementById(ACTION_ID) as HTMLButtonElement | null,
-  }
-}
-
-function getInputValue() {
-  const { input } = getElements()
-  return input?.value ?? getWindow().__harborDeckInstantInputValue ?? ''
-}
-
-function setShell(options: {
-  visible?: boolean
-  paused?: boolean
-  status?: string
-  actionLabel?: string
-  actionDisabled?: boolean
-}) {
-  const { shell, status, action } = getElements()
-  if (!shell) return
-
-  if (options.visible !== undefined) {
-    shell.toggleAttribute('hidden', !options.visible)
-  }
-  shell.classList.toggle('harbordeck-instant-shell-paused', options.paused === true)
-  if (status && options.status !== undefined) status.textContent = options.status
-  if (action) {
-    if (options.actionLabel !== undefined) action.textContent = options.actionLabel
-    action.disabled = options.actionDisabled === true
-  }
-}
-
-function withHandoffState(url: string, query: string) {
-  const trimmed = query.trim()
+function withHandoff(url: string) {
   const parsed = new URL(url)
-  parsed.searchParams.set('harbordeckSkin', activeSkin)
-  if (trimmed) {
-    parsed.searchParams.set('harbordeckQuery', trimmed.slice(0, 2000))
-  }
+  parsed.searchParams.set('harbordeckSkin', skin)
+  if (input.value.trim())
+    parsed.searchParams.set('harbordeckQuery', input.value.trim().slice(0, 2000))
   return parsed.toString()
 }
-
-function isReason(value: unknown): value is ResolutionReason {
-  return (
-    value === 'primary' ||
-    value === 'fallback' ||
-    value === 'primary-unverified' ||
-    value === 'fallback-unverified' ||
-    value === 'unconfigured'
+function navigate(snapshot: NewTabBootSnapshot, manual = false) {
+  if (navigationStarted || (!manual && cancelled) || !snapshot.activeUrl) return
+  navigationStarted = true
+  controller?.dispose()
+  if (snapshot.openMode === 'embedded') {
+    window.__harborDeckBootSnapshot = { ...snapshot, activeUrl: withHandoff(snapshot.activeUrl) }
+    shell.hidden = true
+    const stylesheet = document.createElement('link')
+    stylesheet.rel = 'stylesheet'
+    stylesheet.href = new URL('./assets/styles.css', document.baseURI).toString()
+    document.head.appendChild(stylesheet)
+    const script = document.createElement('script')
+    script.type = 'module'
+    script.src = new URL('./assets/newtab-app.js', document.baseURI).toString()
+    script.onerror = () => {
+      navigationStarted = false
+      shell.hidden = false
+      pause('failed')
+    }
+    document.head.appendChild(script)
+  } else window.location.replace(withHandoff(snapshot.activeUrl))
+}
+function pause(reason: PauseReason) {
+  cancelled ??= reason
+  controller?.pause(reason)
+  render(selected, cancelled)
+}
+function render(snapshot: NewTabBootSnapshot | null, paused: PauseReason | null) {
+  selected = snapshot
+  const reason = cancelled ?? paused
+  shell.classList.toggle('harbordeck-instant-shell-paused', Boolean(reason))
+  const texts: Record<PauseReason, [string, string]> = {
+    input: ['检测到输入，已暂停自动打开。', 'Typing detected. Automatic opening is paused.'],
+    hidden: [
+      '已暂停自动打开，请选择地址继续。',
+      'Automatic opening is paused. Choose an address to continue.',
+    ],
+    offline: ['当前离线。恢复网络后可重新检测。', 'You are offline. Check again when connected.'],
+    deadline: [
+      '检测已超时，请重新检测或手动打开。',
+      'Detection timed out. Check again or open an address manually.',
+    ],
+    failed: [
+      '暂时无法验证可用地址，请重新检测或手动打开。',
+      'No address is verified as available. Check again or open manually.',
+    ],
+    unconfigured: ['请先配置导航页地址。', 'Configure your navigation addresses first.'],
+  }
+  status.textContent =
+    reason && snapshot?.status === 'success' && (reason === 'failed' || reason === 'deadline')
+      ? zh()
+        ? '已检测到可用地址，请选择入口继续。'
+        : 'An address is available. Choose an entry to continue.'
+      : reason
+        ? texts[reason][zh() ? 0 : 1]
+        : snapshot?.status === 'unverified'
+          ? zh()
+            ? '地址尚未验证，正在尝试打开…'
+            : 'Address is unverified. Opening…'
+          : zh()
+            ? '正在打开导航页…'
+            : 'Opening HarborDeck…'
+  input.placeholder = zh() ? '搜索词或网址' : 'Search or enter a URL'
+  action.textContent =
+    settings?.primaryUrl || settings?.fallbackUrl
+      ? zh()
+        ? '打开导航页'
+        : 'Open HarborDeck'
+      : zh()
+        ? '打开设置'
+        : 'Open settings'
+  action.disabled = false
+  links.replaceChildren()
+  if (!reason) return
+  const urls = new Set(
+    [snapshot?.activeUrl, settings?.primaryUrl, settings?.fallbackUrl].filter(
+      (url): url is string => Boolean(url)
+    )
   )
+  if (snapshot?.lastSuccessAt && Date.now() - snapshot.lastSuccessAt <= MANUAL_CACHE_TTL_MS)
+    urls.add(snapshot.lastSuccessfulUrl)
+  for (const url of urls) {
+    const link = document.createElement('a')
+    link.href = url
+    link.textContent = url
+    link.addEventListener('click', (event) => {
+      event.preventDefault()
+      if (settings) navigate({ ...(snapshot ?? baseSnapshot(settings)), activeUrl: url }, true)
+    })
+    links.appendChild(link)
+  }
+  const retry = document.createElement('button')
+  retry.type = 'button'
+  retry.textContent = zh() ? '重新检测' : 'Check again'
+  retry.addEventListener('click', () => {
+    void refresh(true)
+  })
+  links.appendChild(retry)
+  const configure = document.createElement('button')
+  configure.type = 'button'
+  configure.textContent = zh() ? '设置' : 'Settings'
+  configure.addEventListener('click', () => {
+    void chrome.runtime.openOptionsPage()
+  })
+  links.appendChild(configure)
 }
-
-function normalizeBootState(value: unknown): BootState | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const record = value as Record<string, unknown>
-  if (
-    typeof record.primaryUrl !== 'string' ||
-    typeof record.fallbackUrl !== 'string' ||
-    typeof record.activeUrl !== 'string' ||
-    (record.openMode !== 'direct' && record.openMode !== 'embedded') ||
-    !isReason(record.reason) ||
-    typeof record.resolvedAt !== 'number' ||
-    !Number.isFinite(record.resolvedAt)
-  ) {
-    return null
-  }
-
-  return {
-    primaryUrl: record.primaryUrl,
-    fallbackUrl: record.fallbackUrl,
-    openMode: record.openMode,
-    activeUrl: record.activeUrl,
-    reason: record.reason,
-    resolvedAt: record.resolvedAt,
-  }
+function baseSnapshot(value: ExtensionSettings) {
+  return emptyResolution(value)
 }
-
-function normalizeSettings(
-  value: unknown
-): Pick<BootState, 'primaryUrl' | 'fallbackUrl' | 'openMode'> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const record = value as Record<string, unknown>
-  if (typeof record.primaryUrl !== 'string' || typeof record.fallbackUrl !== 'string') {
-    return null
-  }
-
-  return {
-    primaryUrl: record.primaryUrl,
-    fallbackUrl: record.fallbackUrl,
-    openMode: record.openMode === 'embedded' ? 'embedded' : 'direct',
-  }
-}
-
-async function readBootState(): Promise<BootState | null> {
+async function refresh(manual = false) {
   try {
-    const stored = await chrome.storage.local.get(BOOT_SNAPSHOT_KEY)
-    const snapshot = normalizeBootState(stored[BOOT_SNAPSHOT_KEY])
-    if (snapshot) {
-      return snapshot
+    const response = await chrome.runtime.sendMessage({
+      type: 'harbordeck:refresh-resolution',
+      force: true,
+      verifySingle: manual,
+    })
+    if (!response || typeof response !== 'object' || !('snapshot' in response) || !settings) return
+    const next = normalizeResolution(response.snapshot)
+    const current = await readSettings()
+    if (!matchesSettings(next, current) || !matchesSettings(next, settings)) {
+      pause('failed')
+      return
     }
+    controller?.accept(next)
   } catch {
-    // Fall through to the one-time settings fallback below.
-  }
-
-  try {
-    const stored = await chrome.storage.sync.get(SETTINGS_KEY)
-    const settings = normalizeSettings(stored[SETTINGS_KEY])
-    if (!settings) return null
-    const activeUrl = settings.primaryUrl || settings.fallbackUrl
-    return {
-      ...settings,
-      activeUrl,
-      reason: activeUrl
-        ? settings.primaryUrl
-          ? 'primary-unverified'
-          : 'fallback-unverified'
-        : 'unconfigured',
-      resolvedAt: 0,
-    }
-  } catch {
-    return null
+    if (manual) render(selected, cancelled ?? 'failed')
   }
 }
-
-function requestResolutionRefresh() {
-  try {
-    void chrome.runtime.sendMessage({ type: REFRESH_MESSAGE }).catch(() => undefined)
-  } catch {
-    // The cached/optimistic target remains usable without the worker.
+for (const event of [
+  'input',
+  'keydown',
+  'beforeinput',
+  'compositionstart',
+  'paste',
+  'pointerdown',
+]) {
+  input.addEventListener(event, () => pause('input'), { passive: true })
+}
+chrome.storage.onChanged?.addListener((changes, area) => {
+  if (navigationStarted) return
+  if (area === 'sync' && STORAGE_KEY in changes && settings) {
+    pause('failed')
+    return
   }
-}
-
-function preconnectTarget(url: string) {
-  try {
-    const origin = new URL(url).origin
-    if (document.head.querySelector(`link[data-harbordeck-preconnect="${origin}"]`)) return
-
-    const link = document.createElement('link')
-    link.rel = 'preconnect'
-    link.href = origin
-    link.dataset.harbordeckPreconnect = origin
-    document.head.appendChild(link)
-  } catch {
-    // URL validation also runs on the options page; ignore stale invalid snapshots here.
+  if (area !== 'local') return
+  const change = changes[NEW_TAB_BOOT_SNAPSHOT_KEY]
+  if (!change || typeof change !== 'object' || !('newValue' in change)) return
+  const snapshot = normalizeResolution(change.newValue)
+  if (snapshot && settings && matchesSettings(snapshot, settings)) {
+    published = snapshot
+    // The controller may already be waiting for the last asynchronous storage
+    // check. A failure observed during that wait must still cancel navigation.
+    if (snapshot.status === 'failed' || snapshot.failedUrls.includes(snapshot.activeUrl)) {
+      selected = snapshot
+      pause('failed')
+    } else controller?.accept(snapshot)
   }
-}
-
-function loadFullNewTabApp() {
-  if (document.documentElement.dataset.harborDeckAppLoading === 'true') return
-  document.documentElement.dataset.harborDeckAppLoading = 'true'
-
-  const script = document.createElement('script')
-  script.type = 'module'
-  script.src = new URL('./assets/newtab-app.js', document.baseURI).toString()
-  document.head.appendChild(script)
-}
-
-let redirectTimer: number | null = null
-let redirectStarted = false
-let targetUrl = ''
-
-function cancelRedirect() {
-  if (redirectStarted) return
-  if (redirectTimer !== null) {
-    window.clearTimeout(redirectTimer)
-    redirectTimer = null
+})
+window.addEventListener('offline', () => pause('offline'))
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') pause('hidden')
+})
+window.addEventListener('pagehide', () => pause('hidden'))
+form.addEventListener('submit', (event) => {
+  event.preventDefault()
+  if (!settings || (!settings.primaryUrl && !settings.fallbackUrl)) {
+    void chrome.runtime.openOptionsPage()
+    return
   }
-  getWindow().__harborDeckInstantInputActive = true
-  setShell({
-    visible: true,
-    paused: true,
-    status: '检测到你正在输入，已暂停自动跳转。',
-    actionLabel: '打开导航页',
-    actionDisabled: false,
-  })
-}
-
-function navigate() {
-  if (redirectStarted || !targetUrl) return
-  redirectStarted = true
-  window.location.replace(withHandoffState(targetUrl, getInputValue()))
-}
-
-function installShellListeners() {
-  const { form, input, action } = getElements()
-  if (!form || !input) return
-
-  const loaderWindow = getWindow()
-  loaderWindow.__harborDeckLoaderInstalled = true
-  loaderWindow.__harborDeckInstantInputValue = input.value
-  loaderWindow.__harborDeckInstantInputActive = false
-
-  const markInput = () => {
-    loaderWindow.__harborDeckInstantInputValue = input.value
-    cancelRedirect()
-  }
-
-  const protectInput = () => cancelRedirect()
-
-  input.addEventListener('input', markInput, { passive: true })
-  input.addEventListener('keydown', protectInput, { passive: true })
-  input.addEventListener('beforeinput', protectInput, { passive: true })
-  input.addEventListener('compositionstart', protectInput, { passive: true })
-  input.addEventListener('paste', protectInput, { passive: true })
-  input.addEventListener('pointerdown', protectInput, { passive: true })
-  form.addEventListener('submit', (event) => {
-    event.preventDefault()
-    loaderWindow.__harborDeckInstantInputValue = input.value
-    if (targetUrl) {
-      navigate()
-    } else {
-      void chrome.runtime.openOptionsPage()
-    }
-  })
-  action?.addEventListener('click', (event) => {
-    if (!targetUrl) return
-    event.preventDefault()
-    navigate()
-  })
-  window.addEventListener('pagehide', () => {
-    if (!redirectStarted) cancelRedirect()
-  })
-}
+  navigate(
+    {
+      ...(selected ?? baseSnapshot(settings)),
+      activeUrl: selected?.activeUrl || settings.primaryUrl || settings.fallbackUrl,
+    },
+    true
+  )
+})
 
 async function bootstrap() {
-  restoreSynchronousTheme()
-  installShellListeners()
-  const loaderWindow = getWindow()
-  const [, state] = await Promise.all([restoreCachedTheme(), readBootState()])
-  if (!state) {
-    setShell({
-      visible: false,
-      status: '',
-    })
-    loadFullNewTabApp()
-    return
+  const [current, initial, nextLanguage] = await Promise.all([
+    readSettings(),
+    readResolutionCache(),
+    readLanguage(),
+  ])
+  settings = current
+  language = nextLanguage
+  const target = matchesSettings(initial, current)
+    ? initial.activeUrl
+    : current.primaryUrl || current.fallbackUrl
+  if (target) {
+    const link = document.createElement('link')
+    link.rel = 'preconnect'
+    link.href = new URL(target).origin
+    document.head.appendChild(link)
   }
-
-  loaderWindow.__harborDeckBootSnapshot = state
-  targetUrl = state.activeUrl
-  if (targetUrl) preconnectTarget(targetUrl)
-  requestResolutionRefresh()
-
-  if (!targetUrl) {
-    setShell({ visible: false })
-    loadFullNewTabApp()
-    return
-  }
-
-  if (state.openMode === 'embedded') {
-    setShell({ visible: false })
-    loadFullNewTabApp()
-    return
-  }
-
-  if (loaderWindow.__harborDeckInstantInputActive || getInputValue().trim()) {
-    cancelRedirect()
-    return
-  }
-
-  setShell({ visible: true, status: '正在打开导航页…', actionDisabled: true })
-  const isFresh = state.resolvedAt > 0 && Date.now() - state.resolvedAt <= BOOT_CACHE_TTL_MS
-  redirectTimer = window.setTimeout(
-    navigate,
-    isFresh ? CACHED_REDIRECT_GRACE_MS : UNCACHED_REDIRECT_GRACE_MS
-  )
+  const decisionDeadline = Date.now() + current.probeTimeoutMs + 200
+  controller = createNewTabController({
+    settings: current,
+    initial,
+    navigate: (snapshot) => {
+      const remaining = decisionDeadline - Date.now()
+      if (remaining <= 0) {
+        pause('deadline')
+        return
+      }
+      const checkTimer = window.setTimeout(() => pause('deadline'), remaining)
+      void Promise.all([readSettings(), readResolutionCache()])
+        .then(([latestSettings, latestSnapshot]) => {
+          if (!matchesSettings(snapshot, latestSettings)) {
+            pause('failed')
+            return
+          }
+          const storedCandidate =
+            matchesSettings(latestSnapshot, latestSettings) &&
+            latestSnapshot.lastAttemptAt >= snapshot.lastAttemptAt
+              ? latestSnapshot
+              : snapshot
+          const candidate =
+            matchesSettings(published, latestSettings) &&
+            published.lastAttemptAt >= storedCandidate.lastAttemptAt
+              ? published
+              : storedCandidate
+          if (candidate.status === 'failed' || candidate.failedUrls.includes(candidate.activeUrl)) {
+            selected = candidate
+            pause('failed')
+          } else navigate(candidate)
+        })
+        .catch(() => pause('failed'))
+        .finally(() => window.clearTimeout(checkTimer))
+    },
+    changed: render,
+  })
+  if (cancelled) controller.pause(cancelled)
+  void refresh()
 }
-
-void bootstrap()
+void bootstrap().catch(() => {
+  pause('failed')
+})
