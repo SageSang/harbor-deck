@@ -50,8 +50,8 @@ export function App() {
           <>
             <p>
               {zh
-                ? '若页面未显示，请检查服务端可信扩展 ID、地址权限和反向代理设置。登录状态可能与直接访问不同。'
-                : 'If the page is not visible, check trusted extension IDs, site permissions and your reverse proxy. Login state can differ from a direct visit.'}
+                ? '若页面未显示，请检查地址权限和反向代理设置。标准扩展需要服务端1.4.21及以上，旧服务端或自定义扩展需登记可信ID。登录状态可能与直接访问不同。'
+                : 'If the page is not visible, check site permissions and reverse-proxy settings. Standard extensions need server 1.4.21 or later; older servers or custom extensions need ID registration. Login state can differ from a direct visit.'}
             </p>
             <div className="status-actions">
               <button className="btn" onClick={() => setRetry((value) => value + 1)}>

@@ -63,25 +63,25 @@ jobs:
         if: steps.release.outputs.publish_extension == 'true'
         run: npm ci
 
-      - name: Build extension
-        if: steps.release.outputs.publish_extension == 'true'
-        env:
-          EXTENSION_VERSION: ${{ steps.release.outputs.version }}
-        run: npm run build:extension
-
-      - name: Package extension
+      - name: Build and package Chrome and Edge extensions
         if: steps.release.outputs.publish_extension == 'true'
         env:
           EXTENSION_VERSION: ${{ steps.release.outputs.version }}
           EXTENSION_ARTIFACT_TAG: ${{ steps.release.outputs.tag }}
-        run: npm run package:extension
+        run: |
+          for browser in chrome edge; do
+            EXTENSION_BROWSER="$browser" npm run build:extension
+            EXTENSION_BROWSER="$browser" npm run package:extension
+          done
 
       - name: Publish GitHub release with extension asset
         if: steps.release.outputs.publish_extension == 'true'
         uses: softprops/action-gh-release@v2
         with:
           body_path: ${{ steps.release_body.outputs.body_path }}
-          files: extension/harbor-deck-${{ steps.release.outputs.tag }}.zip
+          files: |
+            extension/harbor-deck-${{ steps.release.outputs.tag }}.zip
+            extension/harbor-deck-${{ steps.release.outputs.tag }}-edge.zip
           fail_on_unmatched_files: true
 
       - name: Publish GitHub release notes

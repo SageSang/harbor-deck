@@ -19,7 +19,7 @@ export class SettingsChangedError extends Error {
   }
 }
 
-export function createResolutionCoordinator() {
+export function createResolutionCoordinator(settingsReader = readSettings) {
   let generation = 0
   let job: {
     generation: number
@@ -43,7 +43,7 @@ export function createResolutionCoordinator() {
   async function refresh(
     options: { force?: boolean; failedUrl?: string; verifySingle?: boolean } = {}
   ) {
-    const settings = await readSettings()
+    const settings = await settingsReader()
     let previous = await readResolutionCache()
     const previousJob = job && sameSettings(job.settings, settings) ? job : null
     if (previousJob && !options.failedUrl && (!options.verifySingle || previousJob.verifySingle))
@@ -83,7 +83,7 @@ export function createResolutionCoordinator() {
           failedUrls,
         }
         await serialize(async () => {
-          const latest = await readSettings()
+          const latest = await settingsReader()
           if (generation !== ownGeneration || !sameSettings(settings, latest))
             throw new SettingsChangedError()
           await writeResolutionSnapshot(failure)
@@ -92,7 +92,7 @@ export function createResolutionCoordinator() {
       }
       const result = await probeAvailableTarget(settings, previous, options)
       await serialize(async () => {
-        const latest = await readSettings()
+        const latest = await settingsReader()
         if (generation !== ownGeneration || !sameSettings(settings, latest))
           throw new SettingsChangedError()
         await writeResolutionSnapshot(result)
@@ -103,7 +103,7 @@ export function createResolutionCoordinator() {
         const skin = await fetchRemoteTheme(result.activeUrl, settings.apiToken)
         if (!skin) return
         await serialize(async () => {
-          const latest = await readSettings()
+          const latest = await settingsReader()
           if (generation === ownGeneration && sameSettings(settings, latest))
             await writeExtensionTheme(skin)
         })

@@ -5,6 +5,7 @@ import Fastify from 'fastify'
 import type { FastifyRequest } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import { ZodError, z } from 'zod'
+import extensionIdentities from '../shared/extension-identities.json' with { type: 'json' }
 import {
   appConfigSchema,
   storedNavigationConfigSchema,
@@ -315,12 +316,13 @@ function getTrustProxySetting(): boolean | string[] {
 
 function getTrustedExtensionSources() {
   const value = process.env.HARBORDECK_TRUSTED_EXTENSION_IDS?.trim()
-  if (!value) return []
-  const ids = value.split(',').map((id) => id.trim())
+  const ids = value ? value.split(',').map((id) => id.trim()) : []
   if (ids.some((id) => !/^[a-p]{32}$/.test(id))) {
     throw new Error('HARBORDECK_TRUSTED_EXTENSION_IDS 必须是逗号分隔的有效 Chrome 扩展 ID')
   }
-  return [...new Set(ids)].map((id) => `chrome-extension://${id}`)
+  return [...new Set([extensionIdentities.chrome.id, extensionIdentities.edge.id, ...ids])].map(
+    (id) => `chrome-extension://${id}`
+  )
 }
 
 async function buildContentSecurityPolicy() {

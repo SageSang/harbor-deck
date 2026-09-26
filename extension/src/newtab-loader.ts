@@ -14,7 +14,8 @@ import {
   MANUAL_CACHE_TTL_MS,
   emptyResolution,
 } from './resolutionState'
-import type { ExtensionLanguage, ExtensionSettings, NewTabBootSnapshot } from './types'
+import type { ExtensionLanguage, ExtensionSettings, NewTabBootSnapshot, ProbeResult } from './types'
+import { requestResolution } from './resolutionClient'
 
 declare global {
   interface Window {
@@ -38,6 +39,8 @@ let cancelled: PauseReason | null =
 let selected: NewTabBootSnapshot | null = null
 let published: NewTabBootSnapshot | null = null
 let navigationStarted = false
+let attempt = 0
+let recoveryTimer: number | undefined
 let skin = 'midnight'
 
 function applyTheme(value: unknown) {
@@ -70,7 +73,13 @@ function withHandoff(url: string) {
 }
 function navigate(snapshot: NewTabBootSnapshot, manual = false) {
   if (navigationStarted || (!manual && cancelled) || !snapshot.activeUrl) return
+  if (!manual && (document.visibilityState === 'hidden' || navigator.onLine === false)) {
+    pause(document.visibilityState === 'hidden' ? 'hidden' : 'offline')
+    return
+  }
   navigationStarted = true
+  attempt += 1
+  window.clearTimeout(recoveryTimer)
   controller?.dispose()
   if (snapshot.openMode === 'embedded') {
     window.__harborDeckBootSnapshot = { ...snapshot, activeUrl: withHandoff(snapshot.activeUrl) }
@@ -91,6 +100,8 @@ function navigate(snapshot: NewTabBootSnapshot, manual = false) {
   } else window.location.replace(withHandoff(snapshot.activeUrl))
 }
 function pause(reason: PauseReason) {
+  attempt += 1
+  window.clearTimeout(recoveryTimer)
   cancelled ??= reason
   controller?.pause(reason)
   render(selected, cancelled)
@@ -142,6 +153,34 @@ function render(snapshot: NewTabBootSnapshot | null, paused: PauseReason | null)
   action.disabled = false
   links.replaceChildren()
   if (!reason) return
+  if ((reason === 'failed' || reason === 'deadline') && snapshot?.probeResults) {
+    const labels: Record<ProbeResult['outcome'], [string, string]> = {
+      reachable: ['可访问', 'Reachable'],
+      timeout: [
+        '请求超时，可在设置中增大检测时限',
+        'Timed out; increase the check timeout in Settings',
+      ],
+      'http-error': ['健康接口返回异常状态', 'Health endpoint returned an error'],
+      'network-error': [
+        '网络连接失败，浏览器可能拒绝了连接',
+        'Network request failed or was blocked by the browser',
+      ],
+      'permission-missing': [
+        '未授予地址访问权限，请在设置中保存并授权',
+        'Site permission missing; save and grant permission in Settings',
+      ],
+      'permission-error': ['地址权限检查失败', 'Site permission check failed'],
+    }
+    for (const name of ['primary', 'fallback'] as const) {
+      const detail = snapshot.probeResults[name]
+      if (!detail) continue
+      const line = document.createElement('p')
+      const address =
+        name === 'primary' ? (zh() ? '主地址' : 'Primary') : zh() ? '备用地址' : 'Secondary'
+      line.textContent = `${zh() ? '最近检测' : 'Last check'} · ${address}: ${labels[detail.outcome][zh() ? 0 : 1]}${detail.httpStatus ? ` (HTTP ${detail.httpStatus})` : ''} · ${Math.round(detail.elapsedMs)} ms`
+      links.appendChild(line)
+    }
+  }
   const urls = new Set(
     [snapshot?.activeUrl, settings?.primaryUrl, settings?.fallbackUrl].filter(
       (url): url is string => Boolean(url)
@@ -161,9 +200,9 @@ function render(snapshot: NewTabBootSnapshot | null, paused: PauseReason | null)
   }
   const retry = document.createElement('button')
   retry.type = 'button'
-  retry.textContent = zh() ? '重新检测' : 'Check again'
+  retry.textContent = zh() ? '重新检测并打开' : 'Check again and open'
   retry.addEventListener('click', () => {
-    void refresh(true)
+    void recoverAndOpen()
   })
   links.appendChild(retry)
   const configure = document.createElement('button')
@@ -177,23 +216,99 @@ function render(snapshot: NewTabBootSnapshot | null, paused: PauseReason | null)
 function baseSnapshot(value: ExtensionSettings) {
   return emptyResolution(value)
 }
-async function refresh(manual = false) {
+async function refresh() {
+  const ownAttempt = attempt
   try {
     const response = await chrome.runtime.sendMessage({
       type: 'harbordeck:refresh-resolution',
       force: true,
-      verifySingle: manual,
+      verifySingle: false,
     })
+    if (ownAttempt !== attempt || navigationStarted) return
     if (!response || typeof response !== 'object' || !('snapshot' in response) || !settings) return
     const next = normalizeResolution(response.snapshot)
     const current = await readSettings()
+    if (ownAttempt !== attempt || navigationStarted) return
     if (!matchesSettings(next, current) || !matchesSettings(next, settings)) {
       pause('failed')
       return
     }
     controller?.accept(next)
   } catch {
-    if (manual) render(selected, cancelled ?? 'failed')
+    /* The automatic controller owns its bounded fallback. */
+  }
+}
+
+async function recoverAndOpen() {
+  if (navigationStarted) return
+  controller?.dispose()
+  controller = null
+  const ownAttempt = ++attempt
+  const startedAt = Date.now()
+  window.clearTimeout(recoveryTimer)
+  cancelled = null
+  if (document.visibilityState === 'hidden' || navigator.onLine === false) {
+    pause(document.visibilityState === 'hidden' ? 'hidden' : 'offline')
+    return
+  }
+  render(selected, null)
+  recoveryTimer = window.setTimeout(
+    () => {
+      if (ownAttempt === attempt) pause('deadline')
+    },
+    (settings?.probeTimeoutMs ?? 200) + 200
+  )
+  try {
+    const current = await readSettings()
+    if (ownAttempt !== attempt) return
+    settings = current
+    window.clearTimeout(recoveryTimer)
+    const remaining = startedAt + current.probeTimeoutMs + 200 - Date.now()
+    if (remaining <= 0) {
+      pause('deadline')
+      return
+    }
+    recoveryTimer = window.setTimeout(() => {
+      if (ownAttempt === attempt) pause('deadline')
+    }, remaining)
+    if (!current.primaryUrl && !current.fallbackUrl) {
+      pause('unconfigured')
+      return
+    }
+    const snapshot = await requestResolution(current, { force: true, verifySingle: true })
+    if (ownAttempt !== attempt) return
+    const [latestSettings, latestSnapshot] = await Promise.all([
+      readSettings(),
+      readResolutionCache(),
+    ])
+    if (ownAttempt !== attempt) return
+    if (!matchesSettings(snapshot, latestSettings)) {
+      pause('failed')
+      return
+    }
+    const stored =
+      matchesSettings(latestSnapshot, latestSettings) &&
+      latestSnapshot.lastAttemptAt >= snapshot.lastAttemptAt
+        ? latestSnapshot
+        : snapshot
+    const candidate =
+      matchesSettings(published, latestSettings) && published.lastAttemptAt >= stored.lastAttemptAt
+        ? published
+        : stored
+    selected = candidate
+    if (
+      candidate.status !== 'success' ||
+      !candidate.activeUrl ||
+      candidate.failedUrls.includes(candidate.activeUrl)
+    ) {
+      pause('failed')
+      return
+    }
+    navigate(candidate)
+  } catch {
+    if (ownAttempt === attempt) pause('failed')
+  } finally {
+    if (ownAttempt === attempt) window.clearTimeout(recoveryTimer)
   }
 }
 for (const event of [
@@ -208,7 +323,7 @@ for (const event of [
 }
 chrome.storage.onChanged?.addListener((changes, area) => {
   if (navigationStarted) return
-  if (area === 'sync' && STORAGE_KEY in changes && settings) {
+  if (area === 'local' && STORAGE_KEY in changes && settings) {
     pause('failed')
     return
   }
@@ -264,18 +379,23 @@ async function bootstrap() {
     document.head.appendChild(link)
   }
   const decisionDeadline = Date.now() + current.probeTimeoutMs + 200
+  const automaticAttempt = attempt
   controller = createNewTabController({
     settings: current,
     initial,
     navigate: (snapshot) => {
+      if (automaticAttempt !== attempt) return
       const remaining = decisionDeadline - Date.now()
       if (remaining <= 0) {
         pause('deadline')
         return
       }
-      const checkTimer = window.setTimeout(() => pause('deadline'), remaining)
+      const checkTimer = window.setTimeout(() => {
+        if (automaticAttempt === attempt) pause('deadline')
+      }, remaining)
       void Promise.all([readSettings(), readResolutionCache()])
         .then(([latestSettings, latestSnapshot]) => {
+          if (automaticAttempt !== attempt) return
           if (!matchesSettings(snapshot, latestSettings)) {
             pause('failed')
             return
@@ -295,7 +415,9 @@ async function bootstrap() {
             pause('failed')
           } else navigate(candidate)
         })
-        .catch(() => pause('failed'))
+        .catch(() => {
+          if (automaticAttempt === attempt) pause('failed')
+        })
         .finally(() => window.clearTimeout(checkTimer))
     },
     changed: render,

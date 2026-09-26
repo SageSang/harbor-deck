@@ -22,7 +22,7 @@ const messages = {
         '建议选“直接跳转”。“内嵌显示”下，部分页面可能无法正常显示；遇到这类书签，可在导航页里开启“强制新标签页打开”。',
       probeTimeoutLabel: '检测超时（毫秒）',
       probeTimeoutHint: (defaultTimeoutMs: number, cacheDuration: string) =>
-        `默认 ${defaultTimeoutMs}ms。越小越快，越大越稳。成功验证在 ${cacheDuration} 内可快速打开；切网后窗口内首次打开仍可能使用旧地址。冷路径默认约 400ms。`,
+        `新安装默认 ${defaultTimeoutMs}ms；较短的值可能把正常的外网连接判为超时。成功验证在 ${cacheDuration} 内可快速打开；切网后首次打开仍可能使用旧地址。冷路径预算为设置值加200ms，已有设置不会自动更改。`,
       saveButton: '保存配置',
       savingButton: '保存中...',
       statusIdle: '填好地址后保存即可。',
@@ -73,7 +73,7 @@ const messages = {
         'Direct is recommended. In embedded mode, some pages may not display correctly. For those bookmarks, turn on "Force open in new tab" in HarborDeck.',
       probeTimeoutLabel: 'Check timeout (ms)',
       probeTimeoutHint: (defaultTimeoutMs: number, cacheDuration: string) =>
-        `Default ${defaultTimeoutMs}ms. Lower is faster, higher is safer. Verified addresses can open immediately for ${cacheDuration}; switching networks during that window may still use the old address. The default cold budget is about 400ms.`,
+        `New installations default to ${defaultTimeoutMs}ms. Short values can time out a working WAN connection. Verified addresses can open quickly for ${cacheDuration}; a network change may still use the old address. The cold budget is the configured value plus 200ms. Existing settings are preserved.`,
       saveButton: 'Save',
       savingButton: 'Saving...',
       statusIdle: 'Fill in the addresses and save.',

@@ -10,6 +10,7 @@ import {
 } from './storage'
 import { getInstanceKey } from './resolutionState'
 import type { ExtensionSettings, PopupDraft } from './types'
+import { createSettingsCoordinator } from './settingsCoordinator'
 let sync: Record<string, unknown>
 let local: Record<string, unknown>
 const area = (values: Record<string, unknown>) => ({
@@ -22,9 +23,30 @@ const area = (values: Record<string, unknown>) => ({
   }),
 })
 beforeEach(() => {
+  let lock: Promise<unknown> = Promise.resolve()
+  vi.stubGlobal('navigator', {
+    language: 'en',
+    locks: {
+      request: (_name: string, work: () => Promise<unknown>) => {
+        const next = lock.catch(() => undefined).then(work)
+        lock = next
+        return next
+      },
+    },
+  })
   sync = {}
   local = {}
-  vi.stubGlobal('chrome', { storage: { sync: area(sync), local: area(local) } })
+  const worker = createSettingsCoordinator()
+  vi.stubGlobal('chrome', {
+    storage: { sync: area(sync), local: area(local) },
+    runtime: {
+      sendMessage: vi.fn(async (request) => ({
+        ok: true,
+        settings:
+          request.operation === 'save' ? await worker.save(request.settings) : await worker.read(),
+      })),
+    },
+  })
 })
 afterEach(() => vi.unstubAllGlobals())
 const settings: ExtensionSettings = {
@@ -46,9 +68,11 @@ describe('extension settings and real draft compatibility', () => {
   it('preserves old smartHarbor settings, token, language and embedded mode', async () => {
     sync.smartHarborNewTabSettings = settings
     sync.smartHarborNewTabLanguage = 'en'
-    expect(await readSettings()).toEqual(settings)
+    expect(await readSettings()).toMatchObject(settings)
     expect(await readLanguage()).toBe('en')
-    expect(sync.harborDeckNewTabSettings).toEqual(settings)
+    expect(local.harborDeckNewTabSettings).toMatchObject(settings)
+    expect(sync.harborDeckNewTabSettings).toBeUndefined()
+    expect(sync.smartHarborNewTabSettings).toEqual(settings)
   })
   it('assigns a new public settings revision on each save', async () => {
     const first = await writeSettings(settings)
@@ -56,6 +80,44 @@ describe('extension settings and real draft compatibility', () => {
     expect(first.settingsRevision).toBeTruthy()
     expect(second.settingsRevision).not.toBe(first.settingsRevision)
     expect(second.apiToken).toBe(settings.apiToken)
+    expect(sync.harborDeckNewTabSettings).toBeUndefined()
+  })
+  it('imports once and ignores later connection settings from another synced device', async () => {
+    sync.harborDeckNewTabSettings = settings
+    const first = await readSettings()
+    sync.harborDeckNewTabSettings = { ...settings, primaryUrl: 'https://other-device.test/' }
+    expect(await readSettings()).toEqual(first)
+    await writeSettings({ ...first, primaryUrl: 'https://this-device.test/' })
+    expect(sync.harborDeckNewTabSettings).toMatchObject({
+      primaryUrl: 'https://other-device.test/',
+    })
+  })
+  it('does not import late sync values into an installation initialized with empty settings', async () => {
+    expect((await readSettings()).primaryUrl).toBe('')
+    sync.harborDeckNewTabSettings = settings
+    expect((await readSettings()).primaryUrl).toBe('')
+  })
+  it('serializes migration before a concurrent save, and never overwrites the saved value', async () => {
+    let finish!: (value: Record<string, unknown>) => void
+    vi.mocked(chrome.storage.sync.get).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+    const loading = readSettings()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    const saving = writeSettings({ ...settings, primaryUrl: 'https://edited.test/' })
+    finish({ harborDeckNewTabSettings: settings })
+    await Promise.all([loading, saving])
+    expect((await readSettings()).primaryUrl).toBe('https://edited.test/')
+  })
+  it('recovers after a failed migration without touching the original sync settings', async () => {
+    sync.harborDeckNewTabSettings = settings
+    vi.mocked(chrome.storage.local.set).mockRejectedValueOnce(new Error('storage unavailable'))
+    await expect(readSettings()).rejects.toThrow('storage unavailable')
+    expect(sync.harborDeckNewTabSettings).toEqual(settings)
+    expect(await readSettings()).toMatchObject(settings)
   })
   it('keeps legacy cache as an unverified address hint', async () => {
     local.smartHarborNewTabResolutionCache = {

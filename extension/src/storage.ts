@@ -8,21 +8,22 @@ import type {
 } from './types'
 import { normalizeResolution, VERIFIED_CACHE_TTL_MS } from './resolutionState'
 import { normalizeAppSkin, type AppSkin } from '@shared/theme'
+import { withExtensionDataLock } from './dataLock'
 
 export const STORAGE_KEY = 'harborDeckNewTabSettings'
 const LANGUAGE_STORAGE_KEY = 'harborDeckNewTabLanguage'
 export const RESOLUTION_CACHE_KEY = 'harborDeckNewTabResolutionCache'
 export const NEW_TAB_BOOT_SNAPSHOT_KEY = 'harborDeckNewTabBootSnapshot'
-const POPUP_DRAFT_KEY = 'harborDeckPopupDraft'
-const POPUP_COLLAPSED_SCENES_KEY = 'harborDeckPopupCollapsedScenes'
+export const POPUP_DRAFT_KEY = 'harborDeckPopupDraft'
+export const POPUP_COLLAPSED_SCENES_KEY = 'harborDeckPopupCollapsedScenes'
 export const EXTENSION_THEME_STORAGE_KEY = 'harborDeckExtensionTheme'
-const LEGACY_STORAGE_KEY = ['smart', 'Harbor', 'NewTabSettings'].join('')
+export const LEGACY_STORAGE_KEY = ['smart', 'Harbor', 'NewTabSettings'].join('')
 const LEGACY_LANGUAGE_STORAGE_KEY = ['smart', 'Harbor', 'NewTabLanguage'].join('')
 const LEGACY_RESOLUTION_CACHE_KEY = ['smart', 'Harbor', 'NewTabResolutionCache'].join('')
 
 export const MIN_PROBE_TIMEOUT_MS = 50
 export const MAX_PROBE_TIMEOUT_MS = 5000
-export const DEFAULT_PROBE_TIMEOUT_MS = 200
+export const DEFAULT_PROBE_TIMEOUT_MS = 1000
 export const RESOLUTION_CACHE_TTL_MS = VERIFIED_CACHE_TTL_MS
 export const defaultLanguage = detectPreferredLanguage()
 
@@ -96,11 +97,9 @@ export function normalizeUrl(value: string): string {
   return normalized.toString()
 }
 
-export async function readSettings(): Promise<ExtensionSettings> {
-  const nextSettings = await readMigratedValue(chrome.storage.sync, STORAGE_KEY, LEGACY_STORAGE_KEY)
-
+export function parseStoredSettings(nextSettings: unknown): ExtensionSettings {
   if (!isRecord(nextSettings)) {
-    return defaultSettings
+    throw new Error('Invalid connection settings')
   }
 
   return {
@@ -115,8 +114,8 @@ export async function readSettings(): Promise<ExtensionSettings> {
   }
 }
 
-export async function writeSettings(settings: ExtensionSettings): Promise<ExtensionSettings> {
-  const normalized: ExtensionSettings = {
+export function normalizeSettings(settings: ExtensionSettings): ExtensionSettings {
+  return {
     primaryUrl: normalizeUrl(settings.primaryUrl),
     fallbackUrl: normalizeUrl(settings.fallbackUrl),
     settingsRevision: crypto.randomUUID(),
@@ -124,11 +123,30 @@ export async function writeSettings(settings: ExtensionSettings): Promise<Extens
     openMode: normalizeOpenMode(settings.openMode),
     probeTimeoutMs: normalizeProbeTimeoutMs(settings.probeTimeoutMs),
   }
+}
 
-  await chrome.storage.sync.set({
-    [STORAGE_KEY]: normalized,
+async function requestSettings(operation: 'read' | 'save', settings?: ExtensionSettings) {
+  const response = await chrome.runtime.sendMessage({
+    type: 'harbordeck:connection-settings',
+    operation,
+    settings,
   })
-  return normalized
+  if (!isRecord(response) || response.ok !== true || !isRecord(response.settings)) {
+    throw new Error('Unable to load or save connection settings')
+  }
+  return parseStoredSettings(response.settings)
+}
+
+export async function readSettings(): Promise<ExtensionSettings> {
+  const local = await chrome.storage.local.get(STORAGE_KEY)
+  // The worker alone imports legacy sync data. Fast reads never start a second migration.
+  return local[STORAGE_KEY] !== undefined
+    ? parseStoredSettings(local[STORAGE_KEY])
+    : requestSettings('read')
+}
+
+export async function writeSettings(settings: ExtensionSettings): Promise<ExtensionSettings> {
+  return requestSettings('save', settings)
 }
 
 export async function readLanguage(): Promise<ExtensionLanguage> {
@@ -152,9 +170,11 @@ export async function readExtensionTheme(): Promise<AppSkin> {
 }
 
 export async function writeExtensionTheme(skin: AppSkin): Promise<void> {
-  await chrome.storage.local.set({
-    [EXTENSION_THEME_STORAGE_KEY]: skin,
-  })
+  await withExtensionDataLock(() =>
+    chrome.storage.local.set({
+      [EXTENSION_THEME_STORAGE_KEY]: skin,
+    })
+  )
 }
 
 export async function readResolutionCache(): Promise<ResolutionCache | null> {
@@ -210,7 +230,7 @@ function normalizePopupDraft(value: unknown): PopupDraft | null {
   }
 }
 
-const POPUP_DRAFTS_KEY = 'harborDeckPopupDrafts'
+export const POPUP_DRAFTS_KEY = 'harborDeckPopupDrafts'
 let draftWrites: Promise<void> = Promise.resolve()
 function draftKey(instanceKey: string, sourceTabUrl: string) {
   return JSON.stringify([instanceKey, sourceTabUrl])
@@ -238,43 +258,47 @@ export async function readPopupDraft(
 export function writePopupDraft(draft: PopupDraft): Promise<void> {
   draftWrites = draftWrites
     .catch(() => undefined)
-    .then(async () => {
-      if (!draft.instanceKey) {
-        await chrome.storage.local.set({ [POPUP_DRAFT_KEY]: draft })
-        return
-      }
-      const stored = await chrome.storage.local.get(POPUP_DRAFTS_KEY)
-      const drafts = isRecord(stored[POPUP_DRAFTS_KEY]) ? stored[POPUP_DRAFTS_KEY] : {}
-      await chrome.storage.local.set({
-        [POPUP_DRAFTS_KEY]: {
-          ...drafts,
-          [draftKey(draft.instanceKey, draft.sourceTabUrl)]: draft,
-        },
+    .then(() =>
+      withExtensionDataLock(async () => {
+        if (!draft.instanceKey) {
+          await chrome.storage.local.set({ [POPUP_DRAFT_KEY]: draft })
+          return
+        }
+        const stored = await chrome.storage.local.get(POPUP_DRAFTS_KEY)
+        const drafts = isRecord(stored[POPUP_DRAFTS_KEY]) ? stored[POPUP_DRAFTS_KEY] : {}
+        await chrome.storage.local.set({
+          [POPUP_DRAFTS_KEY]: {
+            ...drafts,
+            [draftKey(draft.instanceKey, draft.sourceTabUrl)]: draft,
+          },
+        })
       })
-    })
+    )
   return draftWrites
 }
 
 export function clearPopupDraft(instanceKey?: string, sourceTabUrl?: string): Promise<void> {
   draftWrites = draftWrites
     .catch(() => undefined)
-    .then(async () => {
-      if (instanceKey && sourceTabUrl) {
-        const stored = await chrome.storage.local.get(POPUP_DRAFTS_KEY)
-        const drafts = isRecord(stored[POPUP_DRAFTS_KEY]) ? { ...stored[POPUP_DRAFTS_KEY] } : {}
-        delete drafts[draftKey(instanceKey, sourceTabUrl)]
-        await chrome.storage.local.set({ [POPUP_DRAFTS_KEY]: drafts })
-      }
-      const stored = await chrome.storage.local.get(POPUP_DRAFT_KEY)
-      const legacy = normalizePopupDraft(stored[POPUP_DRAFT_KEY])
-      if (
-        !sourceTabUrl ||
-        (legacy?.sourceTabUrl === sourceTabUrl &&
-          (!legacy.instanceKey || legacy.instanceKey === instanceKey))
-      ) {
-        await chrome.storage.local.set({ [POPUP_DRAFT_KEY]: null })
-      }
-    })
+    .then(() =>
+      withExtensionDataLock(async () => {
+        if (instanceKey && sourceTabUrl) {
+          const stored = await chrome.storage.local.get(POPUP_DRAFTS_KEY)
+          const drafts = isRecord(stored[POPUP_DRAFTS_KEY]) ? { ...stored[POPUP_DRAFTS_KEY] } : {}
+          delete drafts[draftKey(instanceKey, sourceTabUrl)]
+          await chrome.storage.local.set({ [POPUP_DRAFTS_KEY]: drafts })
+        }
+        const stored = await chrome.storage.local.get(POPUP_DRAFT_KEY)
+        const legacy = normalizePopupDraft(stored[POPUP_DRAFT_KEY])
+        if (
+          !sourceTabUrl ||
+          (legacy?.sourceTabUrl === sourceTabUrl &&
+            (!legacy.instanceKey || legacy.instanceKey === instanceKey))
+        ) {
+          await chrome.storage.local.set({ [POPUP_DRAFT_KEY]: null })
+        }
+      })
+    )
   return draftWrites
 }
 
@@ -285,7 +309,9 @@ export async function readPopupCollapsedSceneIds(): Promise<string[]> {
 }
 
 export async function writePopupCollapsedSceneIds(sceneIds: Iterable<string>): Promise<void> {
-  await chrome.storage.local.set({
-    [POPUP_COLLAPSED_SCENES_KEY]: Array.from(new Set(sceneIds)),
-  })
+  await withExtensionDataLock(() =>
+    chrome.storage.local.set({
+      [POPUP_COLLAPSED_SCENES_KEY]: Array.from(new Set(sceneIds)),
+    })
+  )
 }

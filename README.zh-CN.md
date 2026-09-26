@@ -110,7 +110,7 @@ HTTPS 可以支持。应用容器内部监听 HTTP，可使用任意反向代理
 
 本版修复保护场景隔离、并发改密、编辑草稿和 WebDAV 可靠性。升级前备份完整配置；服务重启后需重新登录、解锁场景。现有搜索与管理 Token、书签标识继续有效。
 
-`HARBORDECK_TRUSTED_EXTENSION_IDS` 可选，填写允许内嵌 HTML 入口的 Chrome 扩展 ID，多个用逗号分隔；每项必须为 32 个 a–p 字符，留空仍禁止内嵌。`HARBORDECK_WEBDAV_TIMEOUT_MS` 可选，设置单个 WebDAV 请求完整超时（默认 15000，整数范围 100–300000 毫秒），不是多步骤备份的总耗时。使用内嵌时还需验证反代最终响应头与 Chrome 权限/Cookie 行为。
+`HARBORDECK_TRUSTED_EXTENSION_IDS` 可选，填写额外允许内嵌 HTML 入口的扩展 ID，多个用逗号分隔；每项必须为 32 个 a–p 字符。从1.4.21起默认允许HarborDeck的Chrome和Edge商店身份，留空表示没有额外ID，不再表示完全禁止内嵌。`HARBORDECK_WEBDAV_TIMEOUT_MS` 可选，设置单个 WebDAV 请求完整超时（默认 15000，整数范围 100–300000 毫秒），不是多步骤备份的总耗时。使用内嵌时还需验证反代最终响应头与 Chrome 权限/Cookie 行为。
 
 ## 场景、分组与导入规则
 
@@ -217,3 +217,11 @@ npm run build:extension
 React 19、TypeScript、Vite、Tailwind CSS、Zustand、TanStack Query、Fastify 和 Zod。
 
 许可证：[Apache-2.0](LICENSE)
+
+## 1.4.21 扩展身份、本机设置与启动恢复
+
+1.4.21将主备地址、Token、打开方式和探测超时改为按设备保存；首次升级接续旧设置后，请核对本机地址。设置页提供不含Token的迁移文件导出、导入，启动页暂停后可使用“重新检测并打开”。旧安装的数据核对完成前请勿卸载。
+
+Chrome和Edge分发包分别固定为对应商店ID；服务端1.4.21起无需逐台登记。旧服务端仍需升级或登记标准ID，自定义扩展继续使用额外允许配置。升级、迁移、回退和验证边界见[扩展本机设置与启动恢复说明](docs/extension-local-settings-and-recovery.md)。
+
+构建默认生成Chrome包；设置`EXTENSION_BROWSER=edge`可生成Edge包。两个渠道分别打包，不能互换公钥。默认允许来源和身份维护依据见[扩展身份与构建说明](docs/extension-identities.md)。

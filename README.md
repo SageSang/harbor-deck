@@ -108,7 +108,7 @@ HTTPS is supported by putting the container behind any reverse proxy, including 
 
 This release fixes protected-scene isolation, concurrent credential changes, editing drafts, and WebDAV reliability. Back up the complete configuration before upgrading; restarting the service requires signing in and unlocking scenes again. Existing search and management tokens and bookmark identifiers remain valid.
 
-`HARBORDECK_TRUSTED_EXTENSION_IDS` optionally lists comma-separated Chrome extension IDs allowed to embed the HTML entry. Each ID must contain exactly 32 letters from a–p; leaving it empty keeps embedding blocked. `HARBORDECK_WEBDAV_TIMEOUT_MS` optionally sets the complete per-request WebDAV timeout (default 15000; integer 100–300000), not the total duration of a multi-step backup. Verify the final reverse-proxy headers and Chrome permissions/Cookie behavior when using embedded mode.
+`HARBORDECK_TRUSTED_EXTENSION_IDS` optionally lists additional extension IDs allowed to embed the HTML entry. Each ID must contain exactly 32 letters from a–p. Starting with 1.4.21, the standard HarborDeck Chrome and Edge store identities are allowed by default; an empty value means no extra IDs, rather than blocking all embedding. `HARBORDECK_WEBDAV_TIMEOUT_MS` optionally sets the complete per-request WebDAV timeout (default 15000; integer 100–300000), not the total duration of a multi-step backup. Verify the final reverse-proxy headers and Chrome permissions/Cookie behavior when using embedded mode.
 
 ## Scenes, groups, and imports
 
@@ -221,3 +221,11 @@ Licensed under [Apache-2.0](LICENSE).
 - Automatic network detection uses dedicated LAN/WAN probes. Incomplete settings produce Unknown; choose a network manually or open either URL from the bookmark menu.
 - Web configuration responses omit locked scene content. Saving visible content preserves locked scenes on the server. JSON exports made while scenes are locked are partial; use WebDAV for a full backup.
 - Editing drafts keep their original revision and survive background updates. Conflicting saves require an explicit reload, with a comparison view and a discard confirmation.
+
+## Extension identities, local settings and recovery in 1.4.21
+
+Version 1.4.21 stores addresses, token, opening mode, and probe timeout per installation. Verify the device's addresses after the one-time migration from old sync settings. The options page can export/import settings and drafts without the token; a paused new-tab page offers **Check again and open**. Keep the old installation until its data has been verified.
+
+Chrome and Edge packages use their respective stable store identities. Server 1.4.21 or later permits both by default, without per-device registration. Upgrade older servers or register the standard ID once; custom builds still use additional trusted IDs. See the [upgrade, transfer, recovery, and validation notes](docs/extension-local-settings-and-recovery.md).
+
+Builds default to Chrome; use `EXTENSION_BROWSER=edge` for the Edge package. The two channels have separate packages and public keys. See [identity provenance and build instructions](docs/extension-identities.md).

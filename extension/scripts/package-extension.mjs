@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { readIdentities, validateBuiltManifest } from './identity.mjs'
 
 const execFileAsync = promisify(execFile)
 const rootDir = path.resolve(import.meta.dirname, '..', '..')
@@ -10,15 +11,41 @@ const distDir = path.resolve(extensionDir, 'dist')
 
 const packageJson = JSON.parse(await fs.readFile(path.resolve(rootDir, 'package.json'), 'utf8'))
 const version = process.env.EXTENSION_VERSION || packageJson.version
+const channel = process.env.EXTENSION_BROWSER || 'chrome'
+const manifest = JSON.parse(await fs.readFile(path.join(distDir, 'manifest.json'), 'utf8'))
+validateBuiltManifest(manifest, await readIdentities(), channel, version)
 const artifactTag = process.env.EXTENSION_ARTIFACT_TAG || `v${version}`
 const normalizedArtifactTag = artifactTag.startsWith('v') ? artifactTag : `v${artifactTag}`
-const packageBaseName = `harbor-deck-${normalizedArtifactTag}`
+const packageBaseName = `harbor-deck-${normalizedArtifactTag}${channel === 'edge' ? '-edge' : ''}`
 const packageDir = path.resolve(extensionDir, packageBaseName)
 const zipPath = path.resolve(extensionDir, `${packageBaseName}.zip`)
 
 await fs.rm(packageDir, { recursive: true, force: true })
 await fs.rm(zipPath, { force: true })
-await fs.cp(distDir, packageDir, { recursive: true })
+await fs.cp(distDir, packageDir, {
+  recursive: true,
+  filter: (source) => path.basename(source) !== '@eaDir',
+})
+await fs.mkdir(path.join(packageDir, 'migration'), { recursive: true })
+await fs.copyFile(
+  path.join(extensionDir, 'tools/export-legacy-settings.js'),
+  path.join(packageDir, 'migration/export-legacy-settings.js')
+)
+await fs.copyFile(
+  path.join(rootDir, 'docs/extension-identities.md'),
+  path.join(packageDir, 'migration/extension-identities.md')
+)
+const migrationGuide = await fs.readFile(
+  path.join(rootDir, 'docs/extension-local-settings-and-recovery.md'),
+  'utf8'
+)
+await fs.writeFile(
+  path.join(packageDir, 'migration/README.md'),
+  migrationGuide.replace(
+    '../extension/tools/export-legacy-settings.js',
+    'export-legacy-settings.js'
+  )
+)
 
 if (process.platform === 'win32') {
   await execFileAsync(

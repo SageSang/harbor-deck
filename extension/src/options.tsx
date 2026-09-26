@@ -19,6 +19,8 @@ import {
 import { restoreExtensionTheme } from './theme'
 import type { ExtensionLanguage, ExtensionSettings, OpenMode } from './types'
 import './styles.css'
+import { TransferPanel } from './TransferPanel'
+import extensionIdentities from '@shared/extension-identities.json'
 
 const REPOSITORY_URL = 'https://github.com/SageSang/harbor-deck'
 
@@ -58,11 +60,17 @@ function getStatusText(language: ExtensionLanguage, status: SaveStatus) {
 
 export function OptionsApp() {
   const [form, setForm] = useState<ExtensionSettings>(defaultSettings)
+  const [savedForm, setSavedForm] = useState<ExtensionSettings>(defaultSettings)
   const [language, setLanguage] = useState<ExtensionLanguage>(defaultLanguage)
   const [status, setStatus] = useState<SaveStatus>({ tone: 'idle', kind: 'idle' })
   const [saving, setSaving] = useState(false)
+  const [initialized, setInitialized] = useState(false)
+  const [transferring, setTransferring] = useState(false)
   const [showApiToken, setShowApiToken] = useState(false)
   const [permissions, setPermissions] = useState<Record<string, boolean>>({})
+  const isStandardExtension = Object.values(extensionIdentities).some(
+    (identity) => identity.id === chrome.runtime.id
+  )
 
   async function refreshPermissions(settings: ExtensionSettings) {
     const urls = [settings.primaryUrl, settings.fallbackUrl].filter(Boolean)
@@ -90,7 +98,9 @@ export function OptionsApp() {
       await restoreExtensionTheme()
       if (!cancelled) {
         setForm(settings)
+        setSavedForm(settings)
         setLanguage(nextLanguage)
+        setInitialized(true)
       }
 
       if (!cancelled) await refreshPermissions(settings)
@@ -106,6 +116,7 @@ export function OptionsApp() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!initialized || saving || transferring) return
     setSaving(true)
 
     try {
@@ -125,6 +136,7 @@ export function OptionsApp() {
       nextSettings = await writeSettings(nextSettings)
       void requestResolution(nextSettings, { force: true }).catch(() => undefined)
       setForm(nextSettings)
+      setSavedForm(nextSettings)
       await refreshPermissions(nextSettings)
       setStatus(
         permissionGranted
@@ -176,6 +188,7 @@ export function OptionsApp() {
                 <button
                   type="button"
                   className={language === 'zh-CN' ? 'active' : ''}
+                  disabled={transferring}
                   onClick={() => void handleLanguageChange('zh-CN')}
                 >
                   {messages.options.languageChinese}
@@ -183,6 +196,7 @@ export function OptionsApp() {
                 <button
                   type="button"
                   className={language === 'en' ? 'active' : ''}
+                  disabled={transferring}
                   onClick={() => void handleLanguageChange('en')}
                 >
                   {messages.options.languageEnglish}
@@ -201,154 +215,186 @@ export function OptionsApp() {
             </div>
           </div>
           <p className="hint">{messages.options.subtitle}</p>
+          <p className="field-help">
+            {language === 'zh-CN'
+              ? '主备地址、Token和打开方式仅保存在这台设备。升级后请核对本机地址，其他设备的连接设置不会同步覆盖这里。'
+              : 'Addresses, token and opening mode are stored on this device. Verify its addresses after upgrading; other devices cannot overwrite these connection settings through sync.'}
+          </p>
         </div>
 
-        <form className="settings-grid" onSubmit={handleSubmit}>
-          <div className="field">
-            <label htmlFor="primary-url">{messages.options.primaryUrlLabel}</label>
-            <input
-              id="primary-url"
-              className="input"
-              placeholder={messages.options.primaryUrlPlaceholder}
-              value={form.primaryUrl}
-              onChange={(event) => updateField('primaryUrl', event.target.value)}
-            />
-            <p className="field-help">{messages.options.primaryUrlHint}</p>
-          </div>
-
-          <div className="field">
-            <label htmlFor="fallback-url">{messages.options.fallbackUrlLabel}</label>
-            <input
-              id="fallback-url"
-              className="input"
-              placeholder={messages.options.fallbackUrlPlaceholder}
-              value={form.fallbackUrl}
-              onChange={(event) => updateField('fallbackUrl', event.target.value)}
-            />
-            <p className="field-help">{messages.options.fallbackUrlHint}</p>
-          </div>
-
-          <div className="field">
-            <label htmlFor="api-token">{language === 'zh-CN' ? '接口 Token' : 'API token'}</label>
-            <div className="password-field">
+        <form onSubmit={handleSubmit}>
+          <fieldset
+            className="settings-grid settings-fields"
+            disabled={!initialized || saving || transferring}
+          >
+            <div className="field">
+              <label htmlFor="primary-url">{messages.options.primaryUrlLabel}</label>
               <input
-                id="api-token"
+                id="primary-url"
                 className="input"
-                type={showApiToken ? 'text' : 'password'}
-                autoComplete="off"
-                placeholder={
-                  language === 'zh-CN' ? 'HARBORDECK_SEARCH_TOKEN' : 'HARBORDECK_SEARCH_TOKEN'
-                }
-                value={form.apiToken}
-                onChange={(event) => updateField('apiToken', event.target.value)}
+                placeholder={messages.options.primaryUrlPlaceholder}
+                value={form.primaryUrl}
+                onChange={(event) => updateField('primaryUrl', event.target.value)}
               />
-              <button
-                type="button"
-                className="password-toggle"
-                aria-label={showApiToken ? 'Hide token' : 'Show token'}
-                title={showApiToken ? 'Hide token' : 'Show token'}
-                onClick={() => setShowApiToken((visible) => !visible)}
-              >
-                {showApiToken ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
-              </button>
+              <p className="field-help">{messages.options.primaryUrlHint}</p>
             </div>
-            <p className="field-help">
-              {language === 'zh-CN'
-                ? '用于插件添加书签和快捷搜索；需与服务端环境变量一致。'
-                : 'Used by the extension bookmark action and quick search; must match the server environment variable.'}
-            </p>
-          </div>
 
-          <div className="field">
-            <label>{messages.options.openModeLabel}</label>
-            <div
-              className="toggle-group"
-              role="tablist"
-              aria-label={messages.options.openModeAriaLabel}
-            >
-              <button
-                type="button"
-                className={`toggle-option ${form.openMode === 'direct' ? 'active' : ''}`}
-                onClick={() => setOpenMode('direct')}
-              >
-                {messages.options.openModeDirect}
-              </button>
-              <button
-                type="button"
-                className={`toggle-option ${form.openMode === 'embedded' ? 'active' : ''}`}
-                onClick={() => setOpenMode('embedded')}
-              >
-                {messages.options.openModeEmbedded}
-              </button>
+            <div className="field">
+              <label htmlFor="fallback-url">{messages.options.fallbackUrlLabel}</label>
+              <input
+                id="fallback-url"
+                className="input"
+                placeholder={messages.options.fallbackUrlPlaceholder}
+                value={form.fallbackUrl}
+                onChange={(event) => updateField('fallbackUrl', event.target.value)}
+              />
+              <p className="field-help">{messages.options.fallbackUrlHint}</p>
             </div>
-            <p className="field-help">{messages.options.openModeHint}</p>
-            <div className="field-help">
-              <p>
-                {language === 'zh-CN' ? '当前扩展 ID：' : 'This extension ID: '}
-                <code>{chrome.runtime.id}</code>
-              </p>
-              <p>
+
+            <div className="field">
+              <label htmlFor="api-token">{language === 'zh-CN' ? '接口 Token' : 'API token'}</label>
+              <div className="password-field">
+                <input
+                  id="api-token"
+                  className="input"
+                  type={showApiToken ? 'text' : 'password'}
+                  autoComplete="off"
+                  placeholder={
+                    language === 'zh-CN' ? 'HARBORDECK_SEARCH_TOKEN' : 'HARBORDECK_SEARCH_TOKEN'
+                  }
+                  value={form.apiToken}
+                  onChange={(event) => updateField('apiToken', event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  aria-label={showApiToken ? 'Hide token' : 'Show token'}
+                  title={showApiToken ? 'Hide token' : 'Show token'}
+                  onClick={() => setShowApiToken((visible) => !visible)}
+                >
+                  {showApiToken ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                </button>
+              </div>
+              <p className="field-help">
                 {language === 'zh-CN'
-                  ? '内嵌模式需在服务端 HARBORDECK_TRUSTED_EXTENSION_IDS 登记此 ID。商店版与解压版请分别核对；重装或更换解压目录后 ID 可能变化。'
-                  : 'For embedded mode, register this ID in HARBORDECK_TRUSTED_EXTENSION_IDS on the server. Check store and unpacked IDs separately; reinstalling or moving an unpacked copy can change its ID.'}
+                  ? '用于插件添加书签和快捷搜索；需与服务端环境变量一致。'
+                  : 'Used by the extension bookmark action and quick search; must match the server environment variable.'}
               </p>
-              <p>
-                {language === 'zh-CN'
-                  ? '主备地址需分别授权，HTTP 与 HTTPS 权限分开。反向代理不能额外添加禁止内嵌的 CSP。登录状态是否与直接访问共用，取决于浏览器与 Cookie 设置。'
-                  : 'Grant each address permission, including both HTTP and HTTPS when used. A reverse proxy must not add a conflicting frame-ancestors policy. Login sharing depends on browser and cookie settings.'}
-              </p>
-              {Object.entries(permissions).map(([url, allowed]) => (
-                <p key={url}>
-                  {url} —{' '}
-                  {allowed
-                    ? language === 'zh-CN'
-                      ? '已授权'
-                      : 'Granted'
-                    : language === 'zh-CN'
-                      ? '未授权，保存时可申请'
-                      : 'Not granted; save to request'}
+            </div>
+
+            <div className="field">
+              <label>{messages.options.openModeLabel}</label>
+              <div
+                className="toggle-group"
+                role="tablist"
+                aria-label={messages.options.openModeAriaLabel}
+              >
+                <button
+                  type="button"
+                  className={`toggle-option ${form.openMode === 'direct' ? 'active' : ''}`}
+                  onClick={() => setOpenMode('direct')}
+                >
+                  {messages.options.openModeDirect}
+                </button>
+                <button
+                  type="button"
+                  className={`toggle-option ${form.openMode === 'embedded' ? 'active' : ''}`}
+                  onClick={() => setOpenMode('embedded')}
+                >
+                  {messages.options.openModeEmbedded}
+                </button>
+              </div>
+              <p className="field-help">{messages.options.openModeHint}</p>
+              <div className="field-help">
+                <p>
+                  {language === 'zh-CN' ? '当前扩展 ID：' : 'This extension ID: '}
+                  <code>{chrome.runtime.id}</code>
                 </p>
-              ))}
-              <button type="button" className="btn" onClick={() => void refreshPermissions(form)}>
-                {language === 'zh-CN' ? '刷新授权状态' : 'Refresh permissions'}
+                <p>
+                  {language === 'zh-CN'
+                    ? isStandardExtension
+                      ? '这是标准扩展身份。服务端1.4.21及以上默认允许内嵌，无需逐台登记。旧服务端可升级，或按原方式登记当前ID。'
+                      : '这是自定义扩展身份。内嵌前请将当前ID加入服务端 HARBORDECK_TRUSTED_EXTENSION_IDS。'
+                    : isStandardExtension
+                      ? 'This is a standard extension identity. Server 1.4.21 or later permits embedding by default. Upgrade older servers or register this ID once.'
+                      : 'This is a custom extension identity. Register its ID in HARBORDECK_TRUSTED_EXTENSION_IDS before embedding.'}
+                </p>
+                <p>
+                  {language === 'zh-CN'
+                    ? '主备地址需分别授权，HTTP 与 HTTPS 权限分开。反向代理不能额外添加禁止内嵌的 CSP。登录状态是否与直接访问共用，取决于浏览器与 Cookie 设置。'
+                    : 'Grant each address permission, including both HTTP and HTTPS when used. A reverse proxy must not add a conflicting frame-ancestors policy. Login sharing depends on browser and cookie settings.'}
+                </p>
+                {Object.entries(permissions).map(([url, allowed]) => (
+                  <p key={url}>
+                    {url} —{' '}
+                    {allowed
+                      ? language === 'zh-CN'
+                        ? '已授权'
+                        : 'Granted'
+                      : language === 'zh-CN'
+                        ? '未授权，保存时可申请'
+                        : 'Not granted; save to request'}
+                  </p>
+                ))}
+                <button type="button" className="btn" onClick={() => void refreshPermissions(form)}>
+                  {language === 'zh-CN' ? '刷新授权状态' : 'Refresh permissions'}
+                </button>
+              </div>
+            </div>
+
+            <div className="field">
+              <label htmlFor="probe-timeout-ms">{messages.options.probeTimeoutLabel}</label>
+              <input
+                id="probe-timeout-ms"
+                type="number"
+                min={50}
+                max={5000}
+                step={50}
+                className="input"
+                value={form.probeTimeoutMs}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value)
+                  updateField(
+                    'probeTimeoutMs',
+                    Number.isFinite(nextValue) ? nextValue : DEFAULT_PROBE_TIMEOUT_MS
+                  )
+                }}
+              />
+              <p className="field-help">
+                {messages.options.probeTimeoutHint(DEFAULT_PROBE_TIMEOUT_MS, cacheDuration)}
+              </p>
+            </div>
+
+            <div className="footer-row">
+              <div
+                className={`status-note ${status.tone === 'success' ? 'success' : ''} ${status.tone === 'error' ? 'error' : ''} ${status.tone === 'warn' ? 'warn' : ''}`}
+              >
+                {getStatusText(language, status)}
+              </div>
+              <button
+                className="btn btn-primary"
+                type="submit"
+                disabled={saving || transferring || !initialized}
+              >
+                {saving ? messages.options.savingButton : messages.options.saveButton}
               </button>
             </div>
-          </div>
-
-          <div className="field">
-            <label htmlFor="probe-timeout-ms">{messages.options.probeTimeoutLabel}</label>
-            <input
-              id="probe-timeout-ms"
-              type="number"
-              min={50}
-              max={5000}
-              step={50}
-              className="input"
-              value={form.probeTimeoutMs}
-              onChange={(event) => {
-                const nextValue = Number(event.target.value)
-                updateField(
-                  'probeTimeoutMs',
-                  Number.isFinite(nextValue) ? nextValue : DEFAULT_PROBE_TIMEOUT_MS
-                )
-              }}
-            />
-            <p className="field-help">
-              {messages.options.probeTimeoutHint(DEFAULT_PROBE_TIMEOUT_MS, cacheDuration)}
-            </p>
-          </div>
-
-          <div className="footer-row">
-            <div
-              className={`status-note ${status.tone === 'success' ? 'success' : ''} ${status.tone === 'error' ? 'error' : ''} ${status.tone === 'warn' ? 'warn' : ''}`}
-            >
-              {getStatusText(language, status)}
-            </div>
-            <button className="btn btn-primary" type="submit" disabled={saving}>
-              {saving ? messages.options.savingButton : messages.options.saveButton}
-            </button>
-          </div>
+          </fieldset>
         </form>
+        <TransferPanel
+          language={language}
+          disabled={saving || transferring || !initialized}
+          hasUnsavedChanges={JSON.stringify(form) !== JSON.stringify(savedForm)}
+          onBusy={setTransferring}
+          onImported={(result) => {
+            setForm(result.settings)
+            setSavedForm(result.settings)
+            if (result.languageApplied) setLanguage(result.language)
+            setStatus({ tone: 'idle', kind: 'idle' })
+            void refreshPermissions(result.settings)
+            void restoreExtensionTheme().catch(() => undefined)
+          }}
+        />
       </section>
     </main>
   )

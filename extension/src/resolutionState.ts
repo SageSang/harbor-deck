@@ -3,6 +3,7 @@ import type {
   NewTabBootSnapshot,
   ResolutionReason,
   ResolutionStatus,
+  ProbeResult,
 } from './types'
 
 export const RESOLUTION_SCHEMA_VERSION = 2
@@ -121,8 +122,43 @@ export function normalizeResolution(value: unknown): NewTabBootSnapshot | null {
     return null
   const time = (val: unknown) =>
     typeof val === 'number' && Number.isFinite(val) && val > 0 ? val : null
+  const probeResults: NonNullable<NewTabBootSnapshot['probeResults']> = {}
+  if (v.probeResults && typeof v.probeResults === 'object') {
+    const source = v.probeResults as Record<string, unknown>
+    const outcomes: ProbeResult['outcome'][] = [
+      'reachable',
+      'timeout',
+      'http-error',
+      'network-error',
+      'permission-missing',
+      'permission-error',
+    ]
+    for (const name of ['primary', 'fallback'] as const) {
+      const raw = source[name]
+      if (!raw || typeof raw !== 'object') continue
+      const item = raw as Record<string, unknown>
+      if (
+        !outcomes.includes(item.outcome as ProbeResult['outcome']) ||
+        typeof item.elapsedMs !== 'number' ||
+        !Number.isFinite(item.elapsedMs) ||
+        item.elapsedMs < 0
+      )
+        continue
+      probeResults[name] = {
+        outcome: item.outcome as ProbeResult['outcome'],
+        elapsedMs: item.elapsedMs,
+        ...(typeof item.httpStatus === 'number' &&
+        Number.isInteger(item.httpStatus) &&
+        item.httpStatus >= 100 &&
+        item.httpStatus <= 599
+          ? { httpStatus: item.httpStatus }
+          : {}),
+      }
+    }
+  }
   return {
     ...emptyResolution(settings),
+    ...(Object.keys(probeResults).length ? { probeResults } : {}),
     activeUrl: v.activeUrl,
     status: v.status as ResolutionStatus,
     reason: v.reason as ResolutionReason,

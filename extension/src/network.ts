@@ -1,4 +1,4 @@
-import type { ExtensionSettings, NewTabBootSnapshot } from './types'
+import type { ExtensionSettings, NewTabBootSnapshot, ProbeResult } from './types'
 import { isAppSkin, type AppSkin } from '@shared/theme'
 import { emptyResolution, matchesSettings, MANUAL_CACHE_TTL_MS } from './resolutionState'
 
@@ -26,11 +26,17 @@ export async function requestOriginPermissions(urls: string[]): Promise<boolean>
   return chrome.permissions.request({ origins })
 }
 
-async function probe(baseUrl: string, timeoutMs: number): Promise<boolean | null> {
+async function probe(baseUrl: string, timeoutMs: number): Promise<ProbeResult> {
+  const startedAt = Date.now()
+  const result = (outcome: ProbeResult['outcome'], httpStatus?: number): ProbeResult => ({
+    outcome,
+    elapsedMs: Math.max(0, Date.now() - startedAt),
+    ...(httpStatus === undefined ? {} : { httpStatus }),
+  })
   try {
-    if (!(await hasOriginPermission(baseUrl))) return null
+    if (!(await hasOriginPermission(baseUrl))) return result('permission-missing')
   } catch {
-    return null
+    return result('permission-error')
   }
 
   const controller = new AbortController()
@@ -43,9 +49,9 @@ async function probe(baseUrl: string, timeoutMs: number): Promise<boolean | null
       cache: 'no-store',
       signal: controller.signal,
     })
-    return response.ok
+    return result(response.ok ? 'reachable' : 'http-error', response.status)
   } catch {
-    return false
+    return result(controller.signal.aborted ? 'timeout' : 'network-error')
   } finally {
     globalThis.clearTimeout(timeoutId)
   }
@@ -99,6 +105,9 @@ export async function probeAvailableTarget(
   const failed = new Set(current?.failedUrls ?? [])
   if (options.failedUrl && urls.includes(options.failedUrl)) failed.add(options.failedUrl)
   const result = { ...emptyResolution(settings), lastAttemptAt: now }
+  const probeResults: NonNullable<NewTabBootSnapshot['probeResults']> = {}
+  const details = () =>
+    Object.keys(probeResults).length ? { probeResults: { ...probeResults } } : {}
   if (current?.lastSuccessAt && now - current.lastSuccessAt <= MANUAL_CACHE_TTL_MS) {
     result.lastSuccessfulUrl = current.lastSuccessfulUrl
     result.lastSuccessAt = current.lastSuccessAt
@@ -109,6 +118,7 @@ export async function probeAvailableTarget(
     const primary = url === settings.primaryUrl
     return {
       ...result,
+      ...details(),
       activeUrl: url,
       status: verified ? 'success' : 'unverified',
       reason: primary
@@ -125,6 +135,7 @@ export async function probeAvailableTarget(
   }
   const unavailable = (): NewTabBootSnapshot => ({
     ...result,
+    ...details(),
     status: 'failed',
     reason: 'unreachable',
     failedUrls: [...failed],
@@ -134,7 +145,14 @@ export async function probeAvailableTarget(
 
   const check = async (url: string): Promise<boolean | null> => {
     if (!url) return null
-    const reachable = await probe(url, settings.probeTimeoutMs)
+    const checked = await probe(url, settings.probeTimeoutMs)
+    probeResults[url === settings.primaryUrl ? 'primary' : 'fallback'] = checked
+    const reachable =
+      checked.outcome === 'reachable'
+        ? true
+        : checked.outcome === 'permission-missing' || checked.outcome === 'permission-error'
+          ? null
+          : false
     if (reachable === true) failed.delete(url)
     else if (reachable === false) failed.add(url)
     return reachable

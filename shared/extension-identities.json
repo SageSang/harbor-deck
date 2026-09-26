@@ -1,0 +1,12 @@
+{
+  "chrome": {
+    "id": "mlnpanpmgplmlangfnokhelkhkfcpine",
+    "publicKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwe6Z7gXgPB2ZKm+eUjobc6065RTIhOoe5R3TQ45O+UzV5EK0Y9WCApOQjF4CZZ/wUEqROVL8DUTAy7IRis7jnTG2hMHoEfAaeNUcmYNFXv2jMSF0GKqcA3a0MEW+qw/Ba1edK8XX7zDMyvv7XWrhKC5PCgzlISZbyr3NJvE3/PfItJPNMBTu8zfpe/c+JiM2+yHSvfPYoU8MlvyfOCJn7sKNh+IBDZ99Udy6lMpUoP2jEYeCYbkdcEyWD8yNJqsTwdUKEqtOj+kWrDYGJIo4NLy8ZnrdsJOcE4xtQrCGZUGSKxNErWx0D9fJlQii32CCrAim2aVRdiPbb1EKdg7KBwIDAQAB",
+    "storeUrl": "https://chromewebstore.google.com/detail/mlnpanpmgplmlangfnokhelkhkfcpine"
+  },
+  "edge": {
+    "id": "ogjfbhbheifoaidpfdbcbcbgfiblmnik",
+    "publicKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhW8NSxlXRXAU52lgb1ucj/FEejHPnhTseRK+DXBO8XDT9YOyCK5YzqBs/M4r3yRcpqITwU7Dp9tgC3d2Lgn3ELLiC2SZ3QoBVg7SPYviiUoWJMcYqzNJkoIPimDND8JZGyJLPUZtHEim0vI85IEIL1PVmt0xzabgWypkdp4iDP1vbeahHLGcm7R2JDmAVx0OXsf2mWpcwoBtCNdKqoE0tIg14Em0WwW1HV+JpSbHl60UVsAztuJ8Hg7MVn8lbTwucw8jigCYVXliNePuIJHrs/dptiSZ1BvGMp1qo9FRK2Dk7u07D6/+Z9+eTYdYR+r7mNRYeZht1UcVyiZcRny7LQIDAQAB",
+    "storeUrl": "https://microsoftedge.microsoft.com/addons/detail/ogjfbhbheifoaidpfdbcbcbgfiblmnik"
+  }
+}

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { readIdentities, selectIdentity } from './identity.mjs'
 
 const rootDir = path.resolve(import.meta.dirname, '..', '..')
 const extensionDir = path.resolve(rootDir, 'extension')
@@ -7,6 +8,7 @@ const distDir = path.resolve(extensionDir, 'dist')
 
 const packageJson = JSON.parse(await fs.readFile(path.resolve(rootDir, 'package.json'), 'utf8'))
 const version = process.env.EXTENSION_VERSION || packageJson.version
+const identity = selectIdentity(await readIdentities(), process.env.EXTENSION_BROWSER || 'chrome')
 const extensionIcons = {
   16: 'icons/icon-16.png',
   32: 'icons/icon-32.png',
@@ -18,7 +20,9 @@ const manifest = {
   manifest_version: 3,
   name: 'HarborDeck',
   version,
-  description: 'Use HarborDeck as the Chrome new tab page with automatic primary/secondary URL switching.',
+  key: identity.publicKey,
+  description:
+    'Use HarborDeck as the Chrome new tab page with automatic primary/secondary URL switching.',
   permissions: ['storage', 'permissions', 'activeTab'],
   optional_host_permissions: ['http://*/*', 'https://*/*'],
   icons: extensionIcons,

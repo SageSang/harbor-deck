@@ -42,6 +42,18 @@ export type ResolutionReason =
   | 'unreachable'
 export type ResolutionStatus = 'success' | 'unverified' | 'failed' | 'unconfigured'
 
+export interface ProbeResult {
+  outcome:
+    | 'reachable'
+    | 'timeout'
+    | 'http-error'
+    | 'network-error'
+    | 'permission-missing'
+    | 'permission-error'
+  elapsedMs: number
+  httpStatus?: number
+}
+
 /** Public startup state. Tokens never enter this record. */
 export interface NewTabBootSnapshot {
   schemaVersion: 2
@@ -58,6 +70,7 @@ export interface NewTabBootSnapshot {
   failedUrls: string[]
   lastSuccessfulUrl: string
   lastSuccessAt: number | null
+  probeResults?: { primary?: ProbeResult; fallback?: ProbeResult }
 }
 
 export type ResolutionCache = NewTabBootSnapshot

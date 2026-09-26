@@ -111,4 +111,48 @@ describe('address probing', () => {
     })
     expect(fetch).not.toHaveBeenCalled()
   })
+  it('distinguishes HTTP, request, and permission failures without retaining error text or credentials', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        url.includes('lan.test')
+          ? Promise.resolve({ ok: false, status: 503 })
+          : Promise.reject(new Error('private URL or credential must not enter diagnostics'))
+      )
+    )
+    const result = await probeAvailableTarget(settings, null)
+    expect(result.probeResults).toMatchObject({
+      primary: { outcome: 'http-error', httpStatus: 503 },
+      fallback: { outcome: 'network-error' },
+    })
+    expect(JSON.stringify(result)).not.toContain('credential')
+    permissions.mockResolvedValue(false)
+    expect((await probeAvailableTarget(settings, result)).probeResults).toMatchObject({
+      primary: { outcome: 'permission-missing' },
+      fallback: { outcome: 'permission-missing' },
+    })
+  })
+  it('records a real abort timeout separately from an HTTP failure', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url, { signal }) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () =>
+              reject(new DOMException('Aborted', 'AbortError'))
+            )
+          })
+      )
+    )
+    const result = probeAvailableTarget(settings, null)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(await result).toMatchObject({
+      status: 'failed',
+      probeResults: {
+        primary: { outcome: 'timeout', elapsedMs: 200 },
+        fallback: { outcome: 'timeout', elapsedMs: 200 },
+      },
+    })
+  })
 })
