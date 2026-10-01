@@ -35,6 +35,14 @@ await fs.copyFile(
   path.join(rootDir, 'docs/extension-identities.md'),
   path.join(packageDir, 'migration/extension-identities.md')
 )
+await fs.copyFile(
+  path.join(rootDir, 'docs/bookmark-cache.md'),
+  path.join(packageDir, 'migration/bookmark-cache.md')
+)
+await fs.copyFile(
+  path.join(rootDir, 'docs/bookmark-cache-validation-2026-10-01.md'),
+  path.join(packageDir, 'migration/bookmark-cache-validation-2026-10-01.md')
+)
 const migrationGuide = await fs.readFile(
   path.join(rootDir, 'docs/extension-local-settings-and-recovery.md'),
   'utf8'

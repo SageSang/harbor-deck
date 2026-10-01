@@ -1,3 +1,11 @@
+import { withReadTimeout } from '@shared/readTimeout'
+import {
+  BOOKMARK_AUTH_REQUIRED,
+  bookmarkCacheEpoch,
+  captureBookmarkCacheScope,
+  clearBookmarkCache,
+  saveBookmarkCache,
+} from '@/features/navigation/bookmarkCache'
 import { defaultSystemConfig } from '@/config/defaultConfig'
 import {
   appConfigSchema,
@@ -37,6 +45,10 @@ export class ApiError extends Error {
 }
 
 export async function requestJson<T>(url: string, options?: ApiRequestOptions): Promise<T> {
+  if (options?.method && options.method.toUpperCase() !== 'GET' && navigator.onLine === false) {
+    throw new Error('当前离线，修改不会自动提交 / Offline; changes are not queued')
+  }
+  const cacheEpoch = bookmarkCacheEpoch()
   const messages = getCurrentMessages()
   const { fallbackMessage, onResponse, headers: optionHeaders, ...requestOptions } = options ?? {}
   const sceneTokens = readSceneTokens()
@@ -47,18 +59,30 @@ export async function requestJson<T>(url: string, options?: ApiRequestOptions): 
   if (Object.keys(sceneTokens).length) {
     headers.set('X-Scene-Tokens', JSON.stringify(sceneTokens))
   }
-  const response = await fetch(url, {
-    ...requestOptions,
-    headers,
-  })
-  onResponse?.(response)
+  const read = async (signal?: AbortSignal | null) => {
+    const response = await fetch(url, { ...requestOptions, headers, signal })
+    onResponse?.(response)
 
-  if (!response.ok) {
-    const message = await response.text()
-    throw new ApiError(message || fallbackMessage || messages.common.requestFailed, response.status)
+    if (!response.ok) {
+      if (
+        (response.status === 401 || response.status === 403) &&
+        cacheEpoch === bookmarkCacheEpoch()
+      ) {
+        clearBookmarkCache(response.status === 401)
+        if (response.status === 401) window.dispatchEvent(new Event(BOOKMARK_AUTH_REQUIRED))
+      }
+      const message = await response.text()
+      throw new ApiError(
+        message || fallbackMessage || messages.common.requestFailed,
+        response.status
+      )
+    }
+
+    return response.json() as Promise<T>
   }
-
-  return response.json() as Promise<T>
+  return !requestOptions.method || requestOptions.method.toUpperCase() === 'GET'
+    ? withReadTimeout(requestOptions.signal, read)
+    : read(requestOptions.signal)
 }
 
 function revisionHeaders(revision?: string) {
@@ -94,11 +118,14 @@ export async function saveAppConfig(config: AppConfig): Promise<AppConfig> {
 
 export async function fetchNavigationConfig(signal?: AbortSignal): Promise<NavigationConfig> {
   const messages = getCurrentMessages()
+  const scope = captureBookmarkCacheScope()
   const data = await requestJson<unknown>('/api/config/navigation', {
     signal,
     fallbackMessage: messages.errors.loadServicesConfigFailed,
   })
-  return navigationConfigSchema.parse(data)
+  const parsed = navigationConfigSchema.parse(data)
+  if (!signal?.aborted) saveBookmarkCache(parsed, scope)
+  return parsed
 }
 
 export async function saveNavigationConfig(config: NavigationConfig): Promise<NavigationConfig> {
@@ -123,8 +150,8 @@ export interface SceneListResponse {
   scenes: SceneSummary[]
 }
 
-export async function fetchSceneList(): Promise<SceneListResponse> {
-  return requestJson<SceneListResponse>('/api/navigation/scenes')
+export async function fetchSceneList(signal?: AbortSignal): Promise<SceneListResponse> {
+  return requestJson<SceneListResponse>('/api/navigation/scenes', { signal })
 }
 
 export async function fetchSceneServices(

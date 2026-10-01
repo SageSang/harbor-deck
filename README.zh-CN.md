@@ -225,3 +225,7 @@ React 19、TypeScript、Vite、Tailwind CSS、Zustand、TanStack Query、Fastify
 Chrome和Edge分发包分别固定为对应商店ID；服务端1.4.21起无需逐台登记。旧服务端仍需升级或登记标准ID，自定义扩展继续使用额外允许配置。升级、迁移、回退和验证边界见[扩展本机设置与启动恢复说明](docs/extension-local-settings-and-recovery.md)。
 
 构建默认生成Chrome包；设置`EXTENSION_BROWSER=edge`可生成Edge包。两个渠道分别打包，不能互换公钥。默认允许来源和身份维护依据见[扩展身份与构建说明](docs/extension-identities.md)。
+
+### 1.4.22 书签本地缓存
+
+弱网或暂时不可达时先显示上次成功的普通书签，后台成功后更新；扩展提供本地只读列表。密码场景及凭据不落盘，离线修改不排队补交。使用范围与升级步骤见[书签本地缓存说明](docs/bookmark-cache.md)。

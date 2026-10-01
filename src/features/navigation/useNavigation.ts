@@ -1,3 +1,4 @@
+import { captureBookmarkCacheScope, clearBookmarkCache, saveBookmarkCache } from './bookmarkCache'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { NavigationConfig } from '@/config/schema'
@@ -24,6 +25,9 @@ export function useNavigationConfig(options?: { enabled?: boolean }) {
     queryFn: ({ signal }) => fetchNavigationConfig(signal),
     enabled: options?.enabled ?? true,
     staleTime: 30_000,
+    retry: false,
+    networkMode: 'always',
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -53,6 +57,7 @@ export function useSaveNavigationConfig(scopeKey = '') {
       dataUpdateCount: query?.state.dataUpdateCount,
       accessVersion: version,
       scopeKey,
+      cacheScope: captureBookmarkCacheScope(),
       operation: ++scopeRef.current.operation,
     }
   }
@@ -137,6 +142,7 @@ export function useSaveNavigationConfig(scopeKey = '') {
       }
     }
     if (!isCurrent(request)) return { request }
+    if (result.current) saveBookmarkCache(result.current, request.cacheScope)
     invalidateDerived()
     return result
   }
@@ -203,7 +209,10 @@ export function useSaveNavigationConfig(scopeKey = '') {
 export function useSceneList() {
   return useQuery({
     queryKey: sceneListQueryKey,
-    queryFn: fetchSceneList,
+    queryFn: ({ signal }) => fetchSceneList(signal),
+    retry: false,
+    networkMode: 'always',
+    refetchOnWindowFocus: false,
     staleTime: 30_000,
   })
 }
@@ -259,8 +268,9 @@ export function useActiveSceneServices() {
     queryFn: ({ signal }) => fetchSceneServices(activeSceneId!, token, signal),
     enabled: Boolean(activeSceneId && activeScene && (!activeScene.protected || token)),
     staleTime: 30_000,
-    retry: (failureCount, error) =>
-      !(error instanceof ApiError && error.status === 403) && failureCount < 2,
+    retry: false,
+    networkMode: 'always',
+    refetchOnWindowFocus: false,
   })
 
   useEffect(() => {
@@ -313,6 +323,7 @@ export function useSetScenePassword() {
       revision?: string
     }) => setScenePassword(sceneId, password, revision),
     onSuccess: () => {
+      clearBookmarkCache()
       useAppStore.getState().clearSceneTokens()
       void queryClient.invalidateQueries({ queryKey: navigationConfigQueryKey })
       void queryClient.invalidateQueries({ queryKey: sceneListQueryKey })

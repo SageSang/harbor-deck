@@ -7,6 +7,7 @@ interface ChromeStorageArea {
 interface ChromeStorageNamespace {
   onChanged?: {
     addListener(callback: (changes: Record<string, unknown>, area: string) => void): void
+    removeListener?(callback: (changes: Record<string, unknown>, area: string) => void): void
   }
   sync: ChromeStorageArea
   local: ChromeStorageArea

@@ -229,3 +229,7 @@ Version 1.4.21 stores addresses, token, opening mode, and probe timeout per inst
 Chrome and Edge packages use their respective stable store identities. Server 1.4.21 or later permits both by default, without per-device registration. Upgrade older servers or register the standard ID once; custom builds still use additional trusted IDs. See the [upgrade, transfer, recovery, and validation notes](docs/extension-local-settings-and-recovery.md).
 
 Builds default to Chrome; use `EXTENSION_BROWSER=edge` for the Edge package. The two channels have separate packages and public keys. See [identity provenance and build instructions](docs/extension-identities.md).
+
+### Local bookmark caching in 1.4.22
+
+Ordinary bookmarks can render from a local snapshot while reads are pending or unavailable. The extension provides a local read-only list; protected scenes and credentials are excluded, and offline writes are not queued. See [cache behavior and upgrade notes](docs/bookmark-cache.md).

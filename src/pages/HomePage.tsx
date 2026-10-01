@@ -1,3 +1,5 @@
+import { BOOKMARK_CACHE_REFRESH } from '@/features/navigation/bookmarkCache'
+import { BookmarkCacheControl } from '@/features/navigation/BookmarkCacheFallback'
 import { lazy, Suspense, useEffect } from 'react'
 import { HeroClock } from '@/components/HeroClock'
 import { SearchBox } from '@/components/SearchBox'
@@ -62,6 +64,13 @@ export function HomePage() {
             <div className="mx-auto mb-5 max-w-2xl rounded-[1.35rem] border border-red-200/80 bg-red-50/96 p-5 shadow-[0_16px_36px_rgba(220,38,38,0.08)] backdrop-blur-sm md:p-6">
               <p className="text-lg font-semibold text-red-900">{messages.home.errorTitle}</p>
               <p className="mt-1 text-sm leading-relaxed text-red-700">{error}</p>
+              <button
+                type="button"
+                className="mt-2 underline"
+                onClick={() => window.dispatchEvent(new Event(BOOKMARK_CACHE_REFRESH))}
+              >
+                {messages.common.refresh}
+              </button>
             </div>
           )}
 
@@ -77,6 +86,7 @@ export function HomePage() {
               <ServiceGrid />
             </Suspense>
           </div>
+          <BookmarkCacheControl />
         </main>
       </div>
     </GroupExpansionProvider>

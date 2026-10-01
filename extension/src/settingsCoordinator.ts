@@ -7,6 +7,8 @@ import {
 } from './storage'
 import type { ExtensionSettings } from './types'
 import { withExtensionDataLock } from './dataLock'
+import { BOOKMARK_CACHE_KEY } from '@shared/bookmarkSnapshot'
+import { pruneBookmarkCaches } from './bookmarkCache'
 
 /** One worker owns migration and connection-setting writes for this installation. */
 export function createSettingsCoordinator() {
@@ -36,7 +38,11 @@ export function createSettingsCoordinator() {
     save: (value: ExtensionSettings) =>
       serialize(async () => {
         const settings = normalizeSettings(value)
-        await chrome.storage.local.set({ [STORAGE_KEY]: settings })
+        const cached = await chrome.storage.local.get(BOOKMARK_CACHE_KEY)
+        await chrome.storage.local.set({
+          [STORAGE_KEY]: settings,
+          [BOOKMARK_CACHE_KEY]: pruneBookmarkCaches(cached[BOOKMARK_CACHE_KEY], settings),
+        })
         return settings
       }),
     serialize,

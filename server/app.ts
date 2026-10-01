@@ -537,7 +537,10 @@ export async function buildServer() {
     const isEmbeddedHtml =
       ['/', '/index.html'].includes(url.pathname) &&
       url.searchParams.get('embedded') === '1' &&
-      String(reply.getHeader('content-type') ?? '').startsWith('text/html')
+      // Static HTML revalidation omits Content-Type on 304. Retain the same
+      // framing policy as the cached HTML response for these exact entry paths.
+      (String(reply.getHeader('content-type') ?? '').startsWith('text/html') ||
+        reply.statusCode === 304)
     applySecurityHeaders(
       request,
       reply,

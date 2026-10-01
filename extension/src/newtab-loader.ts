@@ -1,3 +1,6 @@
+import { readBookmarkCaches } from './bookmarkCache'
+import { cacheSource } from '@shared/bookmarkSnapshot'
+import './cacheBoot'
 /** Lightweight local shell: no React, CSS bundle or direct network imports. */
 import { createNewTabController, type PauseReason } from './newtabController'
 import {
@@ -81,23 +84,32 @@ function navigate(snapshot: NewTabBootSnapshot, manual = false) {
   attempt += 1
   window.clearTimeout(recoveryTimer)
   controller?.dispose()
-  if (snapshot.openMode === 'embedded') {
-    window.__harborDeckBootSnapshot = { ...snapshot, activeUrl: withHandoff(snapshot.activeUrl) }
-    shell.hidden = true
+  window.__harborDeckBootSnapshot = { ...snapshot, activeUrl: withHandoff(snapshot.activeUrl) }
+  if (settings)
+    window.__harborDeckCacheBoot = {
+      settings: { ...settings, apiToken: '' },
+      query: input.value,
+      paused: false,
+    }
+  loadApp()
+}
+function loadApp() {
+  shell.hidden = true
+  for (const name of ['styles.css', 'newtabApp.css']) {
     const stylesheet = document.createElement('link')
     stylesheet.rel = 'stylesheet'
-    stylesheet.href = new URL('./assets/styles.css', document.baseURI).toString()
+    stylesheet.href = new URL(`./assets/${name}`, document.baseURI).toString()
     document.head.appendChild(stylesheet)
-    const script = document.createElement('script')
-    script.type = 'module'
-    script.src = new URL('./assets/newtab-app.js', document.baseURI).toString()
-    script.onerror = () => {
-      navigationStarted = false
-      shell.hidden = false
-      pause('failed')
-    }
-    document.head.appendChild(script)
-  } else window.location.replace(withHandoff(snapshot.activeUrl))
+  }
+  const script = document.createElement('script')
+  script.type = 'module'
+  script.src = new URL('./assets/newtab-app.js', document.baseURI).toString()
+  script.onerror = () => {
+    navigationStarted = false
+    shell.hidden = false
+    pause('failed')
+  }
+  document.head.appendChild(script)
 }
 function pause(reason: PauseReason) {
   attempt += 1
@@ -369,6 +381,23 @@ async function bootstrap() {
   ])
   settings = current
   language = nextLanguage
+  const caches = await readBookmarkCaches(current).catch(() => ({ snapshots: [] }))
+  const cached =
+    caches.snapshots.find(
+      (entry) => entry.source === cacheSource(initial?.lastSuccessfulUrl ?? '')
+    ) ?? caches.snapshots[0]
+  if (cached) {
+    window.__harborDeckCacheBoot = {
+      settings: { ...current, apiToken: '' },
+      snapshot: cached,
+      query: input.value,
+      paused: Boolean(cancelled),
+    }
+    navigationStarted = true
+    attempt += 1
+    loadApp()
+    return
+  }
   const target = matchesSettings(initial, current)
     ? initial.activeUrl
     : current.primaryUrl || current.fallbackUrl

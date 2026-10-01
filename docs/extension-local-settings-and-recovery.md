@@ -43,3 +43,7 @@ Before rolling back, export the current local settings and drafts. Older version
 The standard public identities have been verified and implemented. Real Mac, Microsoft Edge itself, multiple physical devices, and the production HTTPS proxy still need validation before claiming full compatibility. Linux Chromium tests use the real built server and temporary accounts; they do not replace those device and deployment checks.
 
 Failed address checks now show separate primary/secondary outcomes: request timeout, HTTP error code, network request failure, or missing/failed permission checks, with elapsed time. These are the most recent probe results, not a complete network diagnosis. No token, exception text or search term is added to diagnostics.
+
+## 1.4.22 local bookmark cache
+
+The new local snapshot and offline extension list are described in [bookmark cache notes](bookmark-cache.md). Update both the server and extension to establish the extension-local copy; the server can be upgraded first while the old extension keeps working.

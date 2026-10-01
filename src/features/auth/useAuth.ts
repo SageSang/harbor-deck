@@ -33,6 +33,8 @@ export function useAuthStatus() {
   return useQuery({
     queryKey: authStatusQueryKey,
     queryFn: fetchAuthStatus,
+    retry: false,
+    networkMode: 'always',
     staleTime: 30_000,
     refetchOnWindowFocus: true,
   })

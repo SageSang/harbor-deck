@@ -55,6 +55,8 @@ beforeEach(() => {
       }
     )
   }
+  delete window.__harborDeckCacheBoot
+  delete window.__harborDeckBootSnapshot
   document.head.replaceChildren()
   document.body.innerHTML =
     '<section id="harbordeck-instant-shell"><form id="harbordeck-instant-form"><input id="harbordeck-instant-input"><p id="harbordeck-instant-status"></p><button id="harbordeck-instant-action"></button></form></section><div id="root"></div>'
@@ -95,6 +97,29 @@ async function pausedLoader() {
   expect(retryButton()).toBeTruthy()
 }
 describe('built-app handoff from the lightweight loader', () => {
+  it('starts the local cached app while offline without exposing tokens or waiting for probes', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    const cached = {
+      schemaVersion: 1,
+      source: settings.primaryUrl,
+      username: 'owner',
+      updatedAt: 100,
+      scenes: [],
+    }
+    chrome.storage.local.get = async (key) =>
+      key === 'harborDeckBookmarkSnapshotV1'
+        ? { harborDeckBookmarkSnapshotV1: { epoch: 'one', snapshots: [cached] } }
+        : {}
+    await import('./newtab-loader')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(window.__harborDeckCacheBoot?.snapshot).toEqual(cached)
+    expect(window.__harborDeckCacheBoot?.paused).toBe(true)
+    expect(JSON.stringify(window.__harborDeckCacheBoot)).not.toContain(settings.apiToken)
+    expect(document.querySelector('script[src*="newtab-app.js"]')).not.toBeNull()
+    expect(document.querySelector('link[href*="newtabApp.css"]')).not.toBeNull()
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
   it('loads the embedded entry and its stylesheet after the warm window, without publishing a token', async () => {
     await import('./newtab-loader')
     await vi.advanceTimersByTimeAsync(119)

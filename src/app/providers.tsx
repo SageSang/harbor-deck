@@ -5,7 +5,7 @@ import { useAppStore } from '@/store/appStore'
 import { navigationConfigQueryKey, appConfigQueryKey } from '@/features/config/api'
 import { skinUsesDarkMode } from '@shared/theme'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({ defaultOptions: { mutations: { networkMode: 'always' } } })
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const skin = useAppStore((state) => state.skin)

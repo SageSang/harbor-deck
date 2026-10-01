@@ -24,6 +24,34 @@ afterEach(async () => {
 })
 
 describe('service startup and embedding boundaries', () => {
+  it('preserves HTML embedding policy on 304 revalidation without opening other paths', async () => {
+    const { buildServer } = await import('./app')
+    app = await buildServer()
+    app.log.level = 'silent'
+    app.get('/', async (request, reply) =>
+      request.headers['if-none-match']
+        ? reply.code(304).header('ETag', '"fixture"').send()
+        : reply.type('text/html').header('ETag', '"fixture"').send('<html></html>')
+    )
+    app.get('/other', async (_request, reply) => reply.code(304).send())
+    const initial = await app.inject('/?embedded=1')
+    const cached = await app.inject({
+      url: '/?embedded=1',
+      headers: { 'if-none-match': '"fixture"' },
+    })
+    expect(cached.statusCode).toBe(304)
+    expect(cached.headers['content-security-policy']).toBe(
+      initial.headers['content-security-policy']
+    )
+    expect(
+      (await app.inject({ url: '/', headers: { 'if-none-match': '"fixture"' } })).headers[
+        'content-security-policy'
+      ]
+    ).toContain("frame-ancestors 'none'")
+    expect((await app.inject('/other?embedded=1')).headers['content-security-policy']).toContain(
+      "frame-ancestors 'none'"
+    )
+  })
   it('serves health while remote scheduling stalls, and closes by cancelling the body', async () => {
     await writeFile(
       path.join(directory, 'config.json'),
@@ -68,9 +96,7 @@ describe('service startup and embedding boundaries', () => {
     app.log.level = 'silent'
     app.get('/', async (_request, reply) => reply.type('text/html').send('<!doctype html>fixture'))
     const embedded = await app.inject('/?embedded=1')
-    expect(embedded.headers['content-security-policy']).toContain(
-      `chrome-extension://${trusted}`
-    )
+    expect(embedded.headers['content-security-policy']).toContain(`chrome-extension://${trusted}`)
     expect(embedded.headers['content-security-policy']).not.toContain('chrome-extension://*')
     for (const identity of Object.values(identities)) {
       expect(embedded.headers['content-security-policy']).toContain(

@@ -988,7 +988,7 @@ export function ServiceGrid() {
     }
   }
 
-  if (isLoading || navigationQuery.isLoading) {
+  if ((isLoading || navigationQuery.isLoading) && !config) {
     return (
       <div className="flex min-h-[420px] items-center justify-center">
         <div className="rounded-[1.75rem] border border-border/75 bg-card/72 px-8 py-6 text-center shadow-[0_20px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:bg-card/70 dark:shadow-[0_24px_56px_rgba(0,0,0,0.28)]">
@@ -1000,7 +1000,7 @@ export function ServiceGrid() {
     )
   }
 
-  if (error || navigationQuery.error)
+  if ((error || navigationQuery.error) && !config)
     return (
       <div role="alert" className="p-5 text-center">
         <NavigationSyncNotice save={saveMutation} />
