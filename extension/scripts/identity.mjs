@@ -47,3 +47,11 @@ export function validateBuiltManifest(manifest, identities, channel, version) {
   if (manifest.version !== version)
     throw new Error('Built extension version does not match the package version')
 }
+
+export function createStoreManifest(manifest, identities, channel, version) {
+  // Check the built channel before removing its development-only identity hint.
+  validateBuiltManifest(manifest, identities, channel, version)
+  const storeManifest = { ...manifest }
+  delete storeManifest.key
+  return storeManifest
+}

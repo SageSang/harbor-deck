@@ -47,3 +47,7 @@ Failed address checks now show separate primary/secondary outcomes: request time
 ## 1.4.22 local bookmark cache
 
 The new local snapshot and offline extension list are described in [bookmark cache notes](bookmark-cache.md). Update both the server and extension to establish the extension-local copy; the server can be upgraded first while the old extension keeps working.
+
+## Store upload packages
+
+Use `harbor-deck-<tag>-store.zip` for Chrome Web Store and `harbor-deck-<tag>-edge-store.zip` for Edge Add-ons. These omit `manifest.key`; upload them to the existing HarborDeck listing. The original ZIP names retain the key for Developer-mode unpacked installation. See [package selection](extension-identities.md#build-and-package). The 1.4.22 store ZIPs correct the original packaging error without changing runtime code or requiring another server upgrade. Successful local checks do not mean a store upload or review has passed.

@@ -63,7 +63,7 @@ jobs:
         if: steps.release.outputs.publish_extension == 'true'
         run: npm ci
 
-      - name: Build and package Chrome and Edge extensions
+      - name: Build and package Chrome and Edge extensions for stores and unpacked use
         if: steps.release.outputs.publish_extension == 'true'
         env:
           EXTENSION_VERSION: ${{ steps.release.outputs.version }}
@@ -74,6 +74,13 @@ jobs:
             EXTENSION_BROWSER="$browser" npm run package:extension
           done
 
+      - name: Verify store and unpacked ZIP manifests
+        if: steps.release.outputs.publish_extension == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: python3 extension/scripts/verify-packages.py
+
       - name: Publish GitHub release with extension asset
         if: steps.release.outputs.publish_extension == 'true'
         uses: softprops/action-gh-release@v2
@@ -82,6 +89,8 @@ jobs:
           files: |
             extension/harbor-deck-${{ steps.release.outputs.tag }}.zip
             extension/harbor-deck-${{ steps.release.outputs.tag }}-edge.zip
+            extension/harbor-deck-${{ steps.release.outputs.tag }}-store.zip
+            extension/harbor-deck-${{ steps.release.outputs.tag }}-edge-store.zip
           fail_on_unmatched_files: true
 
       - name: Publish GitHub release notes
