@@ -1,4 +1,4 @@
-import { readSettings, readLanguage } from './storage'
+import { readSettings, readLanguage, effectiveOpenMode } from './storage'
 import { installLocalRuntime } from './localRuntime'
 import {
   SEARCH_BOOT_INPUT_EVENT,
@@ -56,7 +56,7 @@ async function start() {
     addresses?.appendChild(link)
   }
   // Legacy installations move once to local rendering; an explicit new direct choice is retained.
-  if (settings.openMode === 'direct' && settings.localExperienceVersion === 1) {
+  if (effectiveOpenMode(settings) === 'direct') {
     form.style.visibility = 'visible'
     const { startDirect } = await import('./direct')
     await startDirect(settings)

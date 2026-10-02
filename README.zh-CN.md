@@ -58,7 +58,7 @@ HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.24
+    image: ghcr.io/sagesang/harbor-deck:1.4.25
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -101,12 +101,12 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
   -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
-  ghcr.io/sagesang/harbor-deck:1.4.24
+  ghcr.io/sagesang/harbor-deck:1.4.25
 ```
 
 HTTPS 可以支持。应用容器内部监听 HTTP，可使用任意反向代理（包括群晖反向代理、Caddy 或 Nginx Proxy Manager）终止 TLS，再把 HTTPS 域名转发到宿主机 `127.0.0.1:8080`。默认只信任回环、链路本地和私有网络代理；代理不在这些网段时，用 `HARBORDECK_TRUST_PROXY` 明确填写其 IP 或 CIDR。只有确实需要绕过反向代理从局域网直连时，才把端口绑定改回 `8080:80`。
 
-### 升级到 1.4.24
+### 升级到 1.4.25
 
 本版修复保护场景隔离、并发改密、编辑草稿和 WebDAV 可靠性。升级前备份完整配置；服务重启后需重新登录、解锁场景。现有搜索与管理 Token、书签标识继续有效。
 
@@ -226,6 +226,6 @@ Chrome和Edge分发包分别固定为对应商店ID；服务端1.4.21起无需�
 
 构建默认生成Chrome包；设置`EXTENSION_BROWSER=edge`可生成Edge包。两个渠道分别打包，不能互换公钥。默认允许来源和身份维护依据见[扩展身份与构建说明](docs/extension-identities.md)。
 
-### 1.4.24 本地正式界面与原位更新
+### 1.4.25 本地正式界面与原位更新
 
 缓存和在线内容使用同一套正式前端；本机只保存普通展示数据，编辑仍要求完整在线配置与版本号。受保护场景及凭据不落盘，离线修改不排队补交。服务端可以先升级，旧扩展继续使用。使用和升级见[书签缓存说明](docs/bookmark-cache.md)，验收见[验证记录](docs/unified-newtab-validation-2026-10-02.md)。

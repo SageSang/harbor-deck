@@ -54,6 +54,15 @@ function normalizeOpenMode(value: unknown): OpenMode {
   return value === 'local' ? 'local' : value === 'embedded' ? 'embedded' : 'direct'
 }
 
+/** One rule for startup, the selected option and the value saved after legacy migration. */
+export function effectiveOpenMode(
+  settings: Pick<ExtensionSettings, 'openMode' | 'localExperienceVersion'>
+): 'local' | 'direct' {
+  return settings.openMode === 'direct' && settings.localExperienceVersion === 1
+    ? 'direct'
+    : 'local'
+}
+
 function detectPreferredLanguage(): ExtensionLanguage {
   const locale = globalThis.navigator?.language?.toLowerCase() ?? ''
   return locale.startsWith('zh') ? 'zh-CN' : 'en'

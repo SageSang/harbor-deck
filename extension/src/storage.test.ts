@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   readSettings,
+  effectiveOpenMode,
   readLanguage,
   readResolutionCache,
   readPopupDraft,
@@ -150,3 +151,35 @@ describe('extension settings and real draft compatibility', () => {
     )
   })
 })
+
+it.each([
+  { mode: 'direct' as const, version: undefined, expected: 'local' },
+  { mode: 'embedded' as const, version: undefined, expected: 'local' },
+  { mode: 'local' as const, version: 1 as const, expected: 'local' },
+  { mode: 'direct' as const, version: 1 as const, expected: 'direct' },
+])(
+  'saves the displayed $expected choice when only the timeout changes from $mode / $version',
+  async ({ mode, version, expected }) => {
+    const before: ExtensionSettings = {
+      primaryUrl: 'https://deck.test/',
+      fallbackUrl: '',
+      apiToken: 'keep-token',
+      probeTimeoutMs: 200,
+      openMode: mode,
+      localExperienceVersion: version,
+    }
+    const selected = effectiveOpenMode(before)
+    expect(selected).toBe(expected)
+    const saved = await writeSettings({
+      ...before,
+      openMode: selected,
+      localExperienceVersion: 1,
+      probeTimeoutMs: 1000,
+    })
+    expect(saved.openMode).toBe(expected)
+    expect(effectiveOpenMode(saved)).toBe(expected)
+    expect(saved.apiToken).toBe(before.apiToken)
+    expect(saved.primaryUrl).toBe(before.primaryUrl)
+    expect(saved.probeTimeoutMs).toBe(1000)
+  }
+)

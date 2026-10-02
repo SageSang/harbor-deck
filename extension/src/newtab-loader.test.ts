@@ -5,7 +5,11 @@ const mocks = vi.hoisted(() => ({
   mount: vi.fn(),
   direct: vi.fn(),
 }))
-vi.mock('./storage', () => ({ readSettings: mocks.settings, readLanguage: async () => 'en' }))
+vi.mock('./storage', async (original) => ({
+  ...(await original<typeof import('./storage')>()),
+  readSettings: mocks.settings,
+  readLanguage: async () => 'en',
+}))
 vi.mock('./localRuntime', () => ({ installLocalRuntime: mocks.install }))
 vi.mock('./newtab', () => {
   mocks.mount()

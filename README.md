@@ -56,7 +56,7 @@ The repository includes a generic Docker Compose configuration for Docker Compos
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.24
+    image: ghcr.io/sagesang/harbor-deck:1.4.25
     pull_policy: always
     container_name: harbor-deck
     restart: always
@@ -86,7 +86,7 @@ Deployment steps:
 3. Point an HTTPS reverse proxy at `127.0.0.1:8080`, then open the HTTPS domain and create the administrator account.
 4. Create scenes and groups in Bookmark Management, then add or import bookmarks.
 
-The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.24` with `latest` only when you intentionally want automatic image updates.
+The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.25` with `latest` only when you intentionally want automatic image updates.
 
 For a direct Docker command:
 
@@ -99,12 +99,12 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
   -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
-  ghcr.io/sagesang/harbor-deck:1.4.24
+  ghcr.io/sagesang/harbor-deck:1.4.25
 ```
 
 HTTPS is supported by putting the container behind any reverse proxy, including Synology Reverse Proxy, Caddy, or Nginx Proxy Manager. The application listens on HTTP inside the container; point the proxy at host `127.0.0.1:8080`. By default it trusts forwarded headers only from loopback, link-local, and private-network proxies. Set `HARBORDECK_TRUST_PROXY` to an explicit IP or CIDR when the proxy is elsewhere. Change the port binding back to `8080:80` only when direct LAN access is intentionally required.
 
-### Upgrading to 1.4.24
+### Upgrading to 1.4.25
 
 This release fixes protected-scene isolation, concurrent credential changes, editing drafts, and WebDAV reliability. Back up the complete configuration before upgrading; restarting the service requires signing in and unlocking scenes again. Existing search and management tokens and bookmark identifiers remain valid.
 
@@ -230,6 +230,6 @@ Chrome and Edge packages use their respective stable store identities. Server 1.
 
 Builds default to Chrome; use `EXTENSION_BROWSER=edge` for the Edge package. The two channels have separate packages and public keys. See [identity provenance and build instructions](docs/extension-identities.md).
 
-### Unified local new tab in 1.4.24
+### Unified local new tab in 1.4.25
 
 Cached and online content use the same frontend. Only ordinary display data is persisted; complete online config and revisions are still required for editing. Protected scenes and credentials are excluded, and offline writes are not queued. Server upgrades remain compatible with older extensions. See [cache behavior and upgrade notes](docs/bookmark-cache.md) and [validation](docs/unified-newtab-validation-2026-10-02.md).

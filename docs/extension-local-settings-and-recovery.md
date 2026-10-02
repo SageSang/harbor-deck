@@ -28,7 +28,7 @@ Import writes all durable local data together, under a browser-provided lock sha
 
 The migration file contains private addresses and draft content even though it omits the token. Keep it locally and remove the file when no longer needed. Do not remove the old extension merely because a download or import reported success.
 
-## New tabs in 1.4.24
+## New tabs in 1.4.25
 
 New tabs now run the actual HarborDeck frontend packaged in the extension. A cached tab paints the same interface and updates it in place. A tab without a cache keeps an editable transition input until data is ready, preserving text, selection and IME composition. No hidden iframe or automatic cache-to-server page switch is used in local mode.
 
@@ -42,4 +42,4 @@ Before rolling back, export current local settings and drafts. Older versions ma
 
 The server can be upgraded before the extension. Existing extension APIs and the legacy embedding/cache bridge remain available while store updates are pending. Both Chrome and Edge ZIPs are built, with separate store and fixed-identity unpacked packages.
 
-The full cache behavior, privacy boundary and upgrade steps are documented in [bookmark cache notes](bookmark-cache.md). Current validation is documented in [1.4.24 validation](unified-newtab-validation-2026-10-02.md). Real Mac and the production HTTPS proxy must not be described as tested solely on the basis of isolated Linux browser tests.
+The full cache behavior, privacy boundary and upgrade steps are documented in [bookmark cache notes](bookmark-cache.md). Current validation is documented in [1.4.25 validation](unified-newtab-validation-2026-10-02.md). Real Mac and the production HTTPS proxy must not be described as tested solely on the basis of isolated Linux browser tests.

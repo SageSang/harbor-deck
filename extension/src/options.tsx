@@ -8,6 +8,7 @@ import {
   DEFAULT_PROBE_TIMEOUT_MS,
   defaultLanguage,
   defaultSettings,
+  effectiveOpenMode,
   normalizeProbeTimeoutMs,
   normalizeUrl,
   readLanguage,
@@ -120,7 +121,7 @@ export function OptionsApp() {
         primaryUrl: normalizeUrl(form.primaryUrl),
         fallbackUrl: normalizeUrl(form.fallbackUrl),
         apiToken: form.apiToken.trim(),
-        openMode: form.openMode,
+        openMode: effectiveOpenMode(form),
         localExperienceVersion: 1,
         probeTimeoutMs: normalizeProbeTimeoutMs(form.probeTimeoutMs),
       }
@@ -288,14 +289,14 @@ export function OptionsApp() {
               >
                 <button
                   type="button"
-                  className={`toggle-option ${form.openMode === 'direct' && form.localExperienceVersion === 1 ? 'active' : ''}`}
+                  className={`toggle-option ${effectiveOpenMode(form) === 'direct' ? 'active' : ''}`}
                   onClick={() => setOpenMode('direct')}
                 >
                   {messages.options.openModeDirect}
                 </button>
                 <button
                   type="button"
-                  className={`toggle-option ${form.openMode !== 'direct' || form.localExperienceVersion !== 1 ? 'active' : ''}`}
+                  className={`toggle-option ${effectiveOpenMode(form) === 'local' ? 'active' : ''}`}
                   onClick={() => setOpenMode('local')}
                 >
                   {language === 'zh-CN' ? '本地页面（推荐）' : 'Local page (recommended)'}
