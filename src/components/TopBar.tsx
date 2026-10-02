@@ -1,3 +1,5 @@
+import { useNavigationConfig } from '@/features/navigation/useNavigation'
+import { isLocalNewTab, openConnectionSettings } from '@/lib/clientRuntime'
 import { QuickRecordInbox } from '@/features/services/QuickRecordInbox'
 import { WEB_THEME_STORAGE_KEY, isAppSkin } from '@shared/theme'
 import { useEffect, useRef, useState } from 'react'
@@ -33,6 +35,7 @@ export function TopBar() {
   const setNetworkModeStrategy = useAppStore((state) => state.setNetworkModeStrategy)
   const setSkin = useAppStore((state) => state.setSkin)
   const { data: systemConfig } = useSystemConfig()
+  const { canEdit } = useNavigationConfig()
   const systemSkin = systemConfig?.skin
   const { messages } = useI18n()
   const [isNetworkInfoOpen, setIsNetworkInfoOpen] = useState(false)
@@ -252,8 +255,19 @@ export function TopBar() {
 
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           <QuickRecordInbox />
-          <LazyBookmarkManageButton />
-          <LazyServiceSettingsButton />
+          <fieldset
+            disabled={!canEdit}
+            className="contents"
+            title={!canEdit ? '连接成功后可编辑 / Connect to edit' : undefined}
+          >
+            <LazyBookmarkManageButton />
+            <LazyServiceSettingsButton />
+          </fieldset>
+          {isLocalNewTab() && (
+            <Button variant="ghost" size="sm" onClick={openConnectionSettings}>
+              连接 / Connection
+            </Button>
+          )}
           <Button
             asChild
             variant="outline"

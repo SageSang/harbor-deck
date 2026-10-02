@@ -1,3 +1,4 @@
+import { preferenceKey } from '@/lib/clientRuntime'
 const LAST_REGULAR_SCENE_KEY = 'harbordeck-last-regular-scene'
 const ACTIVE_SCENE_KEY = 'harbordeck-active-scene'
 const SCENE_TOKENS_KEY = 'harbordeck-scene-tokens'
@@ -10,14 +11,14 @@ function readStorage(storage: Storage | undefined, key: string, legacyKey?: stri
     return null
   }
 
-  const current = storage.getItem(key)
+  const current = storage.getItem(preferenceKey(key))
   if (current !== null || !legacyKey) {
     return current
   }
 
-  const legacy = storage.getItem(legacyKey)
+  const legacy = storage.getItem(preferenceKey(legacyKey))
   if (legacy !== null) {
-    storage.setItem(key, legacy)
+    storage.setItem(preferenceKey(key), legacy)
   }
   return legacy
 }
@@ -67,14 +68,14 @@ export function persistSceneState(
   if (typeof window === 'undefined') {
     return
   }
-  window.sessionStorage.setItem(ACTIVE_SCENE_KEY, sceneId)
+  window.sessionStorage.setItem(preferenceKey(ACTIVE_SCENE_KEY), sceneId)
   if (!options.protected) {
-    window.localStorage.setItem(LAST_REGULAR_SCENE_KEY, sceneId)
+    window.localStorage.setItem(preferenceKey(LAST_REGULAR_SCENE_KEY), sceneId)
   }
   if (options.token) {
     const tokens = readSceneTokens()
     tokens[sceneId] = options.token
-    window.sessionStorage.setItem(SCENE_TOKENS_KEY, JSON.stringify(tokens))
+    window.sessionStorage.setItem(preferenceKey(SCENE_TOKENS_KEY), JSON.stringify(tokens))
   }
 }
 
@@ -84,5 +85,5 @@ export function removeSceneToken(sceneId: string) {
   }
   const tokens = readSceneTokens()
   delete tokens[sceneId]
-  window.sessionStorage.setItem(SCENE_TOKENS_KEY, JSON.stringify(tokens))
+  window.sessionStorage.setItem(preferenceKey(SCENE_TOKENS_KEY), JSON.stringify(tokens))
 }

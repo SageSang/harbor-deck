@@ -1,3 +1,4 @@
+import { fetchApi, prepareApi } from '@/lib/clientRuntime'
 import { withReadTimeout } from '@shared/readTimeout'
 import {
   bookmarkCacheEpoch,
@@ -27,9 +28,10 @@ export interface UpdateCredentialsPayload {
 
 async function requestJson<T>(url: string, options: JsonRequestOptions): Promise<T> {
   if (options.method !== 'GET' && navigator.onLine === false) throw new Error('当前离线 / Offline')
+  await prepareApi()
   const cacheEpoch = bookmarkCacheEpoch()
   const read = async (signal?: AbortSignal | null) => {
-    const response = await fetch(url, {
+    const response = await fetchApi(url, {
       headers: {
         'Content-Type': 'application/json',
         ...(options.headers ?? {}),
@@ -56,19 +58,22 @@ async function requestJson<T>(url: string, options: JsonRequestOptions): Promise
 
 export const authStatusQueryKey = ['auth', 'status'] as const
 
-export async function fetchAuthStatus() {
+export async function fetchAuthStatus(signal?: AbortSignal) {
+  await prepareApi()
   const epoch = bookmarkCacheEpoch()
   const status = await requestJson<AuthStatus>('/api/auth/status', {
     method: 'GET',
+    signal,
     fallbackMessage: '鉴权状态获取失败',
   })
-  if (epoch === bookmarkCacheEpoch())
-    setBookmarkCacheUser(status.authenticated ? (status.username ?? null) : null)
+  if (epoch !== bookmarkCacheEpoch()) throw new DOMException('Session changed', 'AbortError')
+  setBookmarkCacheUser(status.authenticated ? (status.username ?? null) : null)
   return status
 }
 
 export async function login(payload: LoginPayload) {
   clearBookmarkCache(true)
+  await prepareApi()
   const epoch = bookmarkCacheEpoch()
   const status = await requestJson<AuthStatus>('/api/auth/login', {
     method: 'POST',
@@ -82,6 +87,7 @@ export async function login(payload: LoginPayload) {
 
 export async function setup(payload: LoginPayload) {
   clearBookmarkCache(true)
+  await prepareApi()
   const epoch = bookmarkCacheEpoch()
   const status = await requestJson<AuthStatus>('/api/auth/setup', {
     method: 'POST',
@@ -93,17 +99,20 @@ export async function setup(payload: LoginPayload) {
   return status
 }
 
-export function logout() {
+export async function logout() {
   clearBookmarkCache(true)
-  return requestJson<{ ok: true }>('/api/auth/logout', {
+  const result = await requestJson<{ ok: true }>('/api/auth/logout', {
     method: 'POST',
     body: JSON.stringify({}),
     fallbackMessage: '退出登录失败',
   })
+  clearBookmarkCache(true)
+  return result
 }
 
 export async function updateCredentials(payload: UpdateCredentialsPayload) {
   clearBookmarkCache(true)
+  await prepareApi()
   const epoch = bookmarkCacheEpoch()
   const status = await requestJson<AuthStatus>('/api/auth/credentials', {
     method: 'PUT',

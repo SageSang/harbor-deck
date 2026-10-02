@@ -1,5 +1,5 @@
 export type ExtensionLanguage = 'zh-CN' | 'en'
-export type OpenMode = 'embedded' | 'direct'
+export type OpenMode = 'embedded' | 'direct' | 'local'
 
 export interface ExtensionSettings {
   primaryUrl: string
@@ -7,6 +7,7 @@ export interface ExtensionSettings {
   apiToken: string
   openMode: OpenMode
   probeTimeoutMs: number
+  localExperienceVersion?: 1
   settingsRevision?: string
 }
 

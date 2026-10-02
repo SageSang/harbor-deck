@@ -8,6 +8,7 @@ export interface SearchBootState {
   revision: number
   pendingSubmit: boolean
   released: boolean
+  composing?: boolean
 }
 
 declare global {

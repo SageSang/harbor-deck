@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   root: __dirname,
+  base: './',
   plugins: [react()],
   build: {
     outDir: path.resolve(__dirname, 'dist'),
@@ -35,6 +36,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@': path.resolve(__dirname, '../src'),
       '@extension': path.resolve(__dirname, './src'),
       '@shared': path.resolve(__dirname, '../shared'),
     },

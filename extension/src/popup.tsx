@@ -1,11 +1,11 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { requestResolution } from './resolutionClient'
 import { getInstanceKey, sameSettings } from './resolutionState'
 import {
   getIntegrationJson,
   integrationRequest,
+  integrationTarget,
   lookupPath,
   matchesSubmission,
   IntegrationHttpError,
@@ -196,18 +196,29 @@ export function PopupApp() {
         setPendingSubmission(reusableDraft.pendingSubmission)
       }
       dirty.current = Boolean(reusableDraft)
+      if (!/^https?:\/\//i.test(sourceTabUrl) && !reusableDraft) {
+        setState((current) => ({
+          ...current,
+          tabUrl: '',
+          tabTitle: '',
+          error:
+            language === 'zh-CN'
+              ? '此页面不能收藏，请在 HTTP 或 HTTPS 网页上使用扩展。'
+              : 'This page cannot be saved. Open the extension on an HTTP or HTTPS page.',
+        }))
+        setReady(true)
+        return
+      }
       if (!settings.apiToken || (!settings.primaryUrl && !settings.fallbackUrl)) {
         await chrome.runtime.openOptionsPage()
         window.close()
         return
       }
       try {
-        const target = await requestResolution(settings)
         if (cancelled) return
         const result = await getIntegrationJson<SceneResponse>(
           settings,
-          '/api/integrations/bookmarks/scenes',
-          target.activeUrl
+          '/api/integrations/bookmarks/scenes'
         )
         if (cancelled) return
         const sortedScenes = [...result.scenes].sort(
@@ -362,13 +373,13 @@ export function PopupApp() {
     let confirmed = false
     try {
       if (!sameSettings(state.settings, await readSettings())) throw new IntegrationSettingsError()
-      const target = await requestResolution(state.settings)
-      if (!target.activeUrl) throw new Error('No available address')
+      const target = integrationTarget(state.settings)
+      if (!target) throw new Error('No available address')
       dirty.current = true
       setPendingSubmission(body)
       await writePopupDraft(makeDraft(body))
       dispatched = true
-      await integrationRequest(target.activeUrl, '/api/integrations/bookmarks', state.settings, {
+      await integrationRequest(target, '/api/integrations/bookmarks', state.settings, {
         body,
       })
       confirmed = true

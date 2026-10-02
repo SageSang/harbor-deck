@@ -1,3 +1,4 @@
+import { isLocalNewTab, openConnectionSettings } from '@/lib/clientRuntime'
 import type { ReactNode } from 'react'
 import { LockKeyhole } from 'lucide-react'
 
@@ -22,6 +23,15 @@ export function AuthCard({ title, description, children }: AuthCardProps) {
             </div>
           </div>
           <div className="mt-6">{children}</div>
+          {isLocalNewTab() && (
+            <button
+              type="button"
+              className="mt-4 text-sm underline"
+              onClick={openConnectionSettings}
+            >
+              连接设置 / Connection settings
+            </button>
+          )}
         </div>
       </div>
     </div>

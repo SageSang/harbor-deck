@@ -51,7 +51,7 @@ async function readMigratedValue(
 }
 
 function normalizeOpenMode(value: unknown): OpenMode {
-  return value === 'embedded' ? 'embedded' : 'direct'
+  return value === 'local' ? 'local' : value === 'embedded' ? 'embedded' : 'direct'
 }
 
 function detectPreferredLanguage(): ExtensionLanguage {
@@ -77,7 +77,8 @@ export const defaultSettings: ExtensionSettings = {
   primaryUrl: '',
   fallbackUrl: '',
   apiToken: '',
-  openMode: 'direct',
+  openMode: 'local',
+  localExperienceVersion: 1,
   probeTimeoutMs: DEFAULT_PROBE_TIMEOUT_MS,
 }
 
@@ -107,6 +108,7 @@ export function parseStoredSettings(nextSettings: unknown): ExtensionSettings {
     fallbackUrl: typeof nextSettings.fallbackUrl === 'string' ? nextSettings.fallbackUrl : '',
     apiToken: typeof nextSettings.apiToken === 'string' ? nextSettings.apiToken : '',
     openMode: normalizeOpenMode(nextSettings.openMode),
+    ...(nextSettings.localExperienceVersion === 1 ? { localExperienceVersion: 1 as const } : {}),
     probeTimeoutMs: normalizeProbeTimeoutMs(nextSettings.probeTimeoutMs),
     ...(typeof nextSettings.settingsRevision === 'string'
       ? { settingsRevision: nextSettings.settingsRevision }
@@ -121,6 +123,7 @@ export function normalizeSettings(settings: ExtensionSettings): ExtensionSetting
     settingsRevision: crypto.randomUUID(),
     apiToken: settings.apiToken.trim(),
     openMode: normalizeOpenMode(settings.openMode),
+    ...(settings.localExperienceVersion === 1 ? { localExperienceVersion: 1 as const } : {}),
     probeTimeoutMs: normalizeProbeTimeoutMs(settings.probeTimeoutMs),
   }
 }

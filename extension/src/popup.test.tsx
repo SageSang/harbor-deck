@@ -22,6 +22,7 @@ vi.mock('./integrationClient', async (original) => ({
   ...(await original<typeof import('./integrationClient')>()),
   getIntegrationJson: mocks.getIntegrationJson,
   integrationRequest: mocks.integrationRequest,
+  integrationTarget: () => settings.primaryUrl,
 }))
 const settings: ExtensionSettings = {
   primaryUrl: 'https://deck.test/',
@@ -78,8 +79,8 @@ afterEach(async () => {
 })
 describe('popup initialization and uncertain writes', () => {
   it('loads English once, waits for lookup, and never saves initialization as a draft', async () => {
-    let complete!: (value: ReturnType<typeof emptyResolution>) => void
-    mocks.requestResolution.mockImplementationOnce(
+    let complete!: (value: typeof sceneList) => void
+    mocks.getIntegrationJson.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           complete = resolve
@@ -88,9 +89,7 @@ describe('popup initialization and uncertain writes', () => {
     await act(async () => root.render(<PopupApp />))
     expect(host.textContent).toContain('Add to HarborDeck')
     expect(mocks.writePopupDraft).not.toHaveBeenCalled()
-    await act(async () =>
-      complete({ ...emptyResolution(settings), activeUrl: settings.primaryUrl })
-    )
+    await act(async () => complete(sceneList))
     expect(mocks.readSettings).toHaveBeenCalledTimes(1)
     expect((host.querySelector('input') as HTMLInputElement).value).toBe('Saved bookmark')
     expect(host.querySelector('button[type="submit"]')?.textContent).toBe('Save Changes')

@@ -1,26 +1,22 @@
 import { authStatusQueryKey } from '@/features/auth/api'
 import { useAppStore } from '@/store/appStore'
 import { useBookmarkCache } from '@/features/navigation/useBookmarkCache'
-import { Suspense, lazy, useEffect, useRef } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { BookmarkCacheFallback } from '@/features/navigation/BookmarkCacheFallback'
+import { NavigationViewContext } from '@/features/navigation/navigationView'
+import { isLocalNewTab, openConnectionSettings } from '@/lib/clientRuntime'
+import { HomePage } from './HomePage'
 import {
   BOOKMARK_CACHE_REFRESH,
   BOOKMARK_CACHE_OPEN,
   BOOKMARK_AUTH_REQUIRED,
   startBookmarkCacheBridge,
 } from '@/features/navigation/bookmarkCache'
-import { useNavigationConfig, useActiveSceneServices } from '@/features/navigation/useNavigation'
-import { navigationConfigQueryKey } from '@/features/config/api'
+import { navigationConfigQueryKey, systemConfigQueryKey } from '@/features/config/api'
 import { dismissSearchBootShell } from '@/components/searchBoot'
 import { Button } from '@/components/ui/button'
-import { useAuthStatus } from '@/features/auth/useAuth'
+import { useAuthStatus, clearProtectedQueries } from '@/features/auth/useAuth'
 import { useI18n } from '@/i18n/runtime'
-
-const HomePage = lazy(async () => {
-  const module = await import('./HomePage')
-  return { default: module.HomePage }
-})
 
 const LoginPage = lazy(async () => {
   const module = await import('./LoginPage')
@@ -40,39 +36,23 @@ function PageLoadFallback({ label }: { label: string }) {
   )
 }
 
-function NavigationStartup() {
-  const navigation = useNavigationConfig()
-  const services = useActiveSceneServices()
-  const cache = useBookmarkCache()
-  const opened = useRef(false)
-  const ready = Boolean(navigation.data && (services.data || services.activeScene?.protected))
-  if (ready) opened.current = true
-  if (!opened.current && cache)
-    return (
-      <BookmarkCacheFallback
-        busy={navigation.isFetching || services.isFetching || services.sceneListQuery.isFetching}
-        onRefresh={() => {
-          void navigation.refetch()
-          void services.sceneListQuery.refetch()
-          if (services.activeSceneId) void services.refetch()
-        }}
-      />
-    )
-  return <HomePage />
-}
-
 export function AuthGatePage() {
   const { messages } = useI18n()
   const authStatusQuery = useAuthStatus()
+  const [connectionChanged, setConnectionChanged] = useState(false)
+  const [online, setOnline] = useState(navigator.onLine !== false)
   const cache = useBookmarkCache()
   const { refetch: refreshAuth } = authStatusQuery
   const queryClient = useQueryClient()
   useEffect(startBookmarkCacheBridge, [])
   useEffect(() => {
     const refresh = () => {
+      setOnline(navigator.onLine !== false)
       void refreshAuth()
       void queryClient.invalidateQueries({ queryKey: navigationConfigQueryKey })
       void queryClient.invalidateQueries({ queryKey: ['navigation'] })
+      void queryClient.invalidateQueries({ queryKey: systemConfigQueryKey })
+      void queryClient.invalidateQueries({ queryKey: ['preferences'] })
     }
     const open = (event: Event) => {
       const { query, sceneId } = (event as CustomEvent<{ query: string; sceneId?: string }>).detail
@@ -80,15 +60,32 @@ export function AuthGatePage() {
       if (sceneId) useAppStore.getState().initializeActiveScene(sceneId, false)
     }
     const requireAuth = () => {
+      clearProtectedQueries(queryClient)
       void queryClient.cancelQueries({ queryKey: authStatusQueryKey }).then(() => {
         queryClient.setQueryData(authStatusQueryKey, { authenticated: false, setupRequired: false })
       })
     }
+    const revoke = () => {
+      clearProtectedQueries(queryClient)
+      void queryClient.cancelQueries({ queryKey: authStatusQueryKey })
+      queryClient.setQueryData(authStatusQueryKey, { authenticated: false, setupRequired: false })
+    }
+    const offline = () => setOnline(false)
+    const settingsChanged = () => {
+      setOnline(false)
+      setConnectionChanged(true)
+    }
+    window.addEventListener('harbordeck-cache-revoked', revoke)
+    window.addEventListener('harbordeck-source-changed', settingsChanged)
+    window.addEventListener('offline', offline)
     window.addEventListener(BOOKMARK_AUTH_REQUIRED, requireAuth)
     window.addEventListener(BOOKMARK_CACHE_OPEN, open)
     window.addEventListener(BOOKMARK_CACHE_REFRESH, refresh)
     window.addEventListener('online', refresh)
     return () => {
+      window.removeEventListener('harbordeck-cache-revoked', revoke)
+      window.removeEventListener('harbordeck-source-changed', settingsChanged)
+      window.removeEventListener('offline', offline)
       window.removeEventListener(BOOKMARK_AUTH_REQUIRED, requireAuth)
       window.removeEventListener(BOOKMARK_CACHE_OPEN, open)
       window.removeEventListener(BOOKMARK_CACHE_REFRESH, refresh)
@@ -97,67 +94,59 @@ export function AuthGatePage() {
   }, [refreshAuth, queryClient])
 
   useEffect(() => {
-    if (
-      !authStatusQuery.isLoading &&
-      (authStatusQuery.isError ||
-        !authStatusQuery.data ||
-        authStatusQuery.data.setupRequired ||
-        !authStatusQuery.data.authenticated)
-    ) {
-      dismissSearchBootShell()
+    if (authStatusQuery.data && !authStatusQuery.data.authenticated) dismissSearchBootShell()
+    const status = document.getElementById('boot-status')
+    if (status) {
+      status.textContent = authStatusQuery.isError
+        ? '暂时无法连接，可以继续输入、重新检测或手动打开 / Connection unavailable'
+        : ''
+      status.hidden = !authStatusQuery.isError
     }
   }, [authStatusQuery.data, authStatusQuery.isError, authStatusQuery.isLoading])
 
-  if (authStatusQuery.isLoading) {
-    if (cache)
-      return (
-        <BookmarkCacheFallback
-          busy={authStatusQuery.isFetching}
-          onRefresh={() => void authStatusQuery.refetch()}
-        />
-      )
-    return <PageLoadFallback label={messages.authPage.checking} />
-  }
-
-  if ((authStatusQuery.isError && !authStatusQuery.data?.authenticated) || !authStatusQuery.data) {
-    if (cache)
-      return (
-        <BookmarkCacheFallback
-          busy={authStatusQuery.isFetching}
-          onRefresh={() => void authStatusQuery.refetch()}
-        />
-      )
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="w-full max-w-md rounded-2xl border border-border/80 bg-background p-6 shadow-lg">
-          <p className="text-sm text-foreground">{messages.authPage.unknownError}</p>
-          <Button type="button" className="mt-4" onClick={() => authStatusQuery.refetch()}>
-            {messages.common.refresh}
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  if (authStatusQuery.data.setupRequired) {
+  const status = authStatusQuery.data
+  if (status && !status.authenticated) {
     return (
       <Suspense fallback={<PageLoadFallback label={messages.common.loading} />}>
-        <SetupPage />
-      </Suspense>
-    )
-  }
-
-  if (!authStatusQuery.data.authenticated) {
-    return (
-      <Suspense fallback={<PageLoadFallback label={messages.common.loading} />}>
-        <LoginPage />
+        {status.setupRequired ? <SetupPage /> : <LoginPage />}
       </Suspense>
     )
   }
 
   return (
-    <Suspense fallback={<PageLoadFallback label={messages.common.loading} />}>
-      <NavigationStartup />
-    </Suspense>
+    <NavigationViewContext.Provider
+      value={{
+        authenticated: Boolean(status?.authenticated),
+        online: online && !connectionChanged,
+        snapshot: cache,
+      }}
+    >
+      <HomePage />
+      {(connectionChanged || authStatusQuery.isError || (isLocalNewTab() && !status)) && (
+        <div
+          role="status"
+          className="fixed bottom-3 left-1/2 z-[160] -translate-x-1/2 rounded-xl border bg-background px-4 py-2 text-xs shadow"
+        >
+          {connectionChanged
+            ? '连接设置已变更，请打开新标签页；当前草稿保留 / Connection changed; open a new tab. Draft kept.'
+            : authStatusQuery.isFetching
+              ? '正在连接 / Connecting'
+              : '暂时无法连接，已有书签仍可使用 / Connection unavailable'}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={connectionChanged}
+            onClick={() => window.dispatchEvent(new Event(BOOKMARK_CACHE_REFRESH))}
+          >
+            {messages.common.refresh}
+          </Button>
+          {isLocalNewTab() && (
+            <Button variant="ghost" size="sm" onClick={openConnectionSettings}>
+              连接设置 / Connection
+            </Button>
+          )}
+        </div>
+      )}
+    </NavigationViewContext.Provider>
   )
 }

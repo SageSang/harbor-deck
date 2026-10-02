@@ -1,3 +1,4 @@
+import { fetchApi, prepareApi } from '@/lib/clientRuntime'
 import { withReadTimeout } from '@shared/readTimeout'
 import {
   BOOKMARK_AUTH_REQUIRED,
@@ -48,6 +49,7 @@ export async function requestJson<T>(url: string, options?: ApiRequestOptions): 
   if (options?.method && options.method.toUpperCase() !== 'GET' && navigator.onLine === false) {
     throw new Error('当前离线，修改不会自动提交 / Offline; changes are not queued')
   }
+  await prepareApi()
   const cacheEpoch = bookmarkCacheEpoch()
   const messages = getCurrentMessages()
   const { fallbackMessage, onResponse, headers: optionHeaders, ...requestOptions } = options ?? {}
@@ -60,7 +62,7 @@ export async function requestJson<T>(url: string, options?: ApiRequestOptions): 
     headers.set('X-Scene-Tokens', JSON.stringify(sceneTokens))
   }
   const read = async (signal?: AbortSignal | null) => {
-    const response = await fetch(url, { ...requestOptions, headers, signal })
+    const response = await fetchApi(url, { ...requestOptions, headers, signal })
     onResponse?.(response)
 
     if (!response.ok) {
@@ -118,6 +120,7 @@ export async function saveAppConfig(config: AppConfig): Promise<AppConfig> {
 
 export async function fetchNavigationConfig(signal?: AbortSignal): Promise<NavigationConfig> {
   const messages = getCurrentMessages()
+  await prepareApi()
   const scope = captureBookmarkCacheScope()
   const data = await requestJson<unknown>('/api/config/navigation', {
     signal,

@@ -19,7 +19,7 @@ import {
 } from './api'
 import { groupExpansionQueryKey } from '@/features/navigation/groupExpansionApi'
 
-function clearProtectedQueries(queryClient: ReturnType<typeof useQueryClient>) {
+export function clearProtectedQueries(queryClient: ReturnType<typeof useQueryClient>) {
   useAppStore.getState().clearSceneTokens()
   queryClient.removeQueries({ queryKey: appConfigQueryKey })
   queryClient.removeQueries({ queryKey: systemConfigQueryKey })
@@ -32,7 +32,7 @@ function clearProtectedQueries(queryClient: ReturnType<typeof useQueryClient>) {
 export function useAuthStatus() {
   return useQuery({
     queryKey: authStatusQueryKey,
-    queryFn: fetchAuthStatus,
+    queryFn: ({ signal }) => fetchAuthStatus(signal),
     retry: false,
     networkMode: 'always',
     staleTime: 30_000,
@@ -76,6 +76,11 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: logout,
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: authStatusQueryKey })
+      clearProtectedQueries(queryClient)
+      setAuthenticatedStatus(queryClient, { setupRequired: false, authenticated: false })
+    },
     onSuccess: () => {
       clearProtectedQueries(queryClient)
       setAuthenticatedStatus(queryClient, {

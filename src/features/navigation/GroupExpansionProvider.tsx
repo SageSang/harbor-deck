@@ -1,3 +1,6 @@
+import { useNavigationView } from './navigationView'
+import { updateBookmarkPresentation } from './bookmarkCache'
+import { preferenceKey } from '@/lib/clientRuntime'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { NavigationConfig } from '@/config/schema'
@@ -30,16 +33,23 @@ const GROUP_EXPANSION_CHANNEL = 'harbordeck-group-expansion'
 export function GroupExpansionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const navigationQuery = useNavigationConfig()
+  const view = useNavigationView()
+  const canWrite = navigationQuery.canEdit
+  const localOverrides = useRef(new Map<string, boolean>())
   const { showToast } = useFeedback()
   const { messages } = useI18n()
   const preferenceQuery = useQuery({
     queryKey: groupExpansionQueryKey,
     queryFn: fetchGroupExpansionPreference,
     staleTime: Infinity,
+    enabled: view.authenticated,
+    retry: false,
     refetchOnWindowFocus: false,
   })
   const [initializeAttempt, setInitializeAttempt] = useState(0)
-  const [fallbackKeys, setFallbackKeys] = useState<string[]>([])
+  const [fallbackKeys, setFallbackKeys] = useState<string[]>(
+    () => view.snapshot?.expandedGroupKeys ?? []
+  )
   const [pendingGroupKeys, setPendingGroupKeys] = useState<Set<string>>(() => new Set())
   const [pendingSceneIds, setPendingSceneIds] = useState<Set<string>>(() => new Set())
   const channelRef = useRef<BroadcastChannel | null>(null)
@@ -108,6 +118,7 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
   )
 
   const reconcileServerSnapshot = useCallback(async () => {
+    if (!view.authenticated) return
     reconcileIdRef.current += 1
     const reconcileId = reconcileIdRef.current
     try {
@@ -122,14 +133,14 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
     } catch {
       // A later focus or visibility refresh will retry reconciliation.
     }
-  }, [hasPendingOperations, setServerSnapshot])
+  }, [hasPendingOperations, setServerSnapshot, view.authenticated])
 
   useEffect(() => {
     if (typeof BroadcastChannel === 'undefined') {
       return
     }
 
-    const channel = new BroadcastChannel(GROUP_EXPANSION_CHANNEL)
+    const channel = new BroadcastChannel(preferenceKey(GROUP_EXPANSION_CHANNEL))
     channelRef.current = channel
     channel.onmessage = (event) => {
       const parsed = parseGroupExpansionSnapshot(event.data)
@@ -152,7 +163,7 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const snapshot = preferenceQuery.data
     const navigation = navigationQuery.data
-    if (!snapshot || snapshot.initialized || !navigation || initializingRef.current) {
+    if (!canWrite || !snapshot || snapshot.initialized || !navigation || initializingRef.current) {
       return
     }
 
@@ -180,6 +191,7 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
   }, [
     broadcastSnapshot,
     initializeAttempt,
+    canWrite,
     messages.serviceGrid.groupPreferenceInitializeFailed,
     navigationQuery.data,
     preferenceQuery.data,
@@ -227,8 +239,9 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
   const setGroupExpanded = useCallback(
     (sceneId: string, groupId: string, expanded: boolean) => {
       const snapshot = queryClient.getQueryData<GroupExpansionSnapshot>(groupExpansionQueryKey)
-      if (!snapshot?.initialized) {
+      if (!canWrite || !snapshot?.initialized || navigator.onLine === false) {
         const key = getGroupKey(sceneId, groupId)
+        localOverrides.current.set(key, expanded)
         setFallbackKeys((keys) =>
           expanded ? [...new Set([...keys, key])] : keys.filter((item) => item !== key)
         )
@@ -237,6 +250,7 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
       if (pendingSceneDesiredRef.current.has(sceneId)) return
 
       const key = getGroupKey(sceneId, groupId)
+      localOverrides.current.delete(key)
       const rollbackSnapshot = snapshot
       pendingGroupDesiredRef.current.set(key, expanded)
       setPendingGroupKeys((current) => new Set(current).add(key))
@@ -293,6 +307,7 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
     },
     [
       broadcastSnapshot,
+      canWrite,
       messages.serviceGrid.groupPreferenceSaveFailed,
       queryClient,
       reconcileServerSnapshot,
@@ -306,6 +321,13 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
       const navigation = navigationRef.current
       const snapshot = queryClient.getQueryData<GroupExpansionSnapshot>(groupExpansionQueryKey)
       const scene = navigation?.scenes.find((item) => item.id === sceneId)
+      if (scene && (!canWrite || !snapshot?.initialized || navigator.onLine === false)) {
+        scene.groups.forEach((group) =>
+          localOverrides.current.set(getGroupKey(sceneId, group.id), expanded)
+        )
+        setFallbackKeys((keys) => [...keys])
+        return true
+      }
       if (!snapshot?.initialized || !navigation || !scene) {
         return false
       }
@@ -355,6 +377,7 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
     },
     [
       broadcastSnapshot,
+      canWrite,
       messages.serviceGrid.groupPreferenceSaveFailed,
       queryClient,
       reconcileServerSnapshot,
@@ -379,14 +402,25 @@ export function GroupExpansionProvider({ children }: { children: ReactNode }) {
     [pendingGroupKeys, pendingSceneIds]
   )
 
-  const expandedGroupKeys = useMemo(
-    () =>
-      new Set(
-        preferenceQuery.data?.initialized ? preferenceQuery.data.expandedGroupKeys : fallbackKeys
-      ),
-    [preferenceQuery.data, fallbackKeys]
+  const expandedGroupKeys = useMemo(() => {
+    const keys = new Set(
+      preferenceQuery.data?.initialized ? preferenceQuery.data.expandedGroupKeys : fallbackKeys
+    )
+    localOverrides.current.forEach((expanded, key) => {
+      if (expanded) keys.add(key)
+      else keys.delete(key)
+    })
+    return keys
+  }, [preferenceQuery.data, fallbackKeys])
+  useEffect(() => {
+    if (!view.snapshot) return
+    const keys = [...expandedGroupKeys]
+    if (JSON.stringify(keys) !== JSON.stringify(view.snapshot.expandedGroupKeys ?? []))
+      updateBookmarkPresentation({ expandedGroupKeys: keys })
+  }, [expandedGroupKeys, view.snapshot])
+  const isReady = Boolean(
+    preferenceQuery.data?.initialized || view.snapshot || preferenceQuery.isError
   )
-  const isReady = Boolean(preferenceQuery.data?.initialized)
   const refetchPreference = preferenceQuery.refetch
   const retry = useCallback(() => {
     loadErrorShownRef.current = false

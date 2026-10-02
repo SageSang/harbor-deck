@@ -1,4 +1,3 @@
-import { requestResolution } from './resolutionClient'
 import type { BookmarkSubmission, ExtensionSettings } from './types'
 
 export class IntegrationHttpError extends Error {
@@ -68,26 +67,33 @@ export async function integrationRequest<T>(
   }
 }
 
-/** Read-only recovery: at most one address refresh and one repeated GET. */
+const readTargets = new WeakMap<ExtensionSettings, string>()
+export function integrationTarget(settings: ExtensionSettings) {
+  return readTargets.get(settings)
+}
+/** Try each configured address at most once for GETs. A POST always uses the successful read's address. */
 export async function getIntegrationJson<T>(
   settings: ExtensionSettings,
   path: string,
   initialUrl?: string
 ): Promise<T> {
-  const target = initialUrl ?? (await requestResolution(settings)).activeUrl
-  if (!target) throw new IntegrationNetworkError()
-  try {
-    return await integrationRequest<T>(target, path, settings)
-  } catch (error) {
-    if (!(error instanceof IntegrationNetworkError)) throw error
-    const refreshed = await requestResolution(settings, {
-      force: true,
-      failedUrl: target,
-      verifySingle: true,
-    })
-    if (!refreshed.activeUrl) throw error
-    return integrationRequest<T>(refreshed.activeUrl, path, settings)
+  const targets = [
+    ...new Set(
+      [readTargets.get(settings), initialUrl, settings.primaryUrl, settings.fallbackUrl].filter(
+        (url): url is string => Boolean(url)
+      )
+    ),
+  ]
+  for (const target of targets) {
+    try {
+      const result = await integrationRequest<T>(target, path, settings)
+      readTargets.set(settings, target)
+      return result
+    } catch (error) {
+      if (!(error instanceof IntegrationNetworkError)) throw error
+    }
   }
+  throw new IntegrationNetworkError()
 }
 
 export function lookupPath(url: string) {

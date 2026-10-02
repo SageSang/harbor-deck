@@ -8,7 +8,8 @@ import { requestResolution } from './resolutionClient'
 import { emptyResolution } from './resolutionState'
 import type { ExtensionSettings } from './types'
 vi.mock('./resolutionClient', () => ({ requestResolution: vi.fn() }))
-const settings: ExtensionSettings = {
+let settings: ExtensionSettings
+const defaults: ExtensionSettings = {
   primaryUrl: 'http://lan.test/',
   fallbackUrl: 'https://wan.test/',
   apiToken: 'token',
@@ -17,6 +18,7 @@ const settings: ExtensionSettings = {
   settingsRevision: 'v1',
 }
 beforeEach(() => {
+  settings = { ...defaults }
   vi.mocked(requestResolution).mockReset()
   vi.mocked(requestResolution).mockResolvedValue({
     ...emptyResolution(settings),
@@ -28,7 +30,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('integration network recovery', () => {
-  it('retries a failed GET once after refreshing the failed address', async () => {
+  it('tries a failed GET on the configured alternative without a health-probe gate', async () => {
     const fetch = vi
       .fn()
       .mockRejectedValueOnce(new TypeError('network'))
@@ -38,11 +40,8 @@ describe('integration network recovery', () => {
       await getIntegrationJson(settings, '/api/integrations/bookmarks/scenes', settings.primaryUrl)
     ).toEqual({ scenes: [] })
     expect(fetch).toHaveBeenCalledTimes(2)
-    expect(requestResolution).toHaveBeenCalledWith(settings, {
-      force: true,
-      failedUrl: settings.primaryUrl,
-      verifySingle: true,
-    })
+    expect(requestResolution).not.toHaveBeenCalled()
+    expect(String((fetch.mock.calls as unknown[][])[1][0])).toContain('wan.test')
   })
   it('does not retry authentication failures or repeat an unsuccessful recovery', async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: false, status: 401 })

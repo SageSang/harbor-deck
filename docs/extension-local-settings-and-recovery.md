@@ -28,26 +28,18 @@ Import writes all durable local data together, under a browser-provided lock sha
 
 The migration file contains private addresses and draft content even though it omits the token. Keep it locally and remove the file when no longer needed. Do not remove the old extension merely because a download or import reported success.
 
-## Continue from a paused new-tab page
+## New tabs in 1.4.24
 
-A new tab can pause after timeout, hiding, offline detection, input, or an explicit address failure. These conditions still stop automatic navigation. The 120 ms warm-path guard and earliest 180 ms cold navigation are retained. New installations now default to a 1000 ms probe timeout (1200 ms cold budget), because a working WAN health request can exceed the former 200 ms timeout. Existing saved values are preserved; increase them in Settings if appropriate.
+New tabs now run the actual HarborDeck frontend packaged in the extension. A cached tab paints the same interface and updates it in place. A tab without a cache keeps an editable transition input until data is ready, preserving text, selection and IME composition. No hidden iframe or automatic cache-to-server page switch is used in local mode.
 
-Use **Check again and open** to start a new bounded attempt using current settings. A verified address opens once. Failure, missing permissions, or timeout leaves manual links available. A late result from an earlier attempt cannot complete the new attempt. Typing, hiding, going offline, or changing settings during recovery cancels it; existing typed text is retained. Simply becoming visible or online does not restart a cancelled automatic navigation.
+Existing addresses, tokens, probe timeout and bookmark drafts are retained. Legacy embedded mode and the old default direct mode use local rendering automatically. To navigate directly to the server instead, explicitly choose Direct in the updated options page and save. Local mode tests actual read-only APIs with a separate five-second timeout; a failed short health probe cannot block it or the bookmark capture API. Writes are never automatically replayed at another address.
 
-This improves recovery from the observed startup-page behavior. The supplied screenshot confirms the generic failed-verification message, and the owner reports that at least one manual address opens. The exact Mac browser/version, saved timeout and underlying failure remain unconfirmed; this is not proof of a Mac-specific root cause or fix.
+After changing connection settings, open a fresh tab. The old page freezes its server binding and retains the current draft. Sign in with the existing server account when needed; the capture token is not an administrator credential.
 
 ## Recovery and release boundary
 
-Before rolling back, export the current local settings and drafts. Older versions read sync connection settings, so their values may be stale; re-enter the device's correct addresses and token rather than copying them automatically back to sync for every device.
+Before rolling back, export current local settings and drafts. Older versions may read stale sync settings; re-enter the correct device addresses and token and select an opening mode supported by that version.
 
-The standard public identities have been verified and implemented. Real Mac, Microsoft Edge itself, multiple physical devices, and the production HTTPS proxy still need validation before claiming full compatibility. Linux Chromium tests use the real built server and temporary accounts; they do not replace those device and deployment checks.
+The server can be upgraded before the extension. Existing extension APIs and the legacy embedding/cache bridge remain available while store updates are pending. Both Chrome and Edge ZIPs are built, with separate store and fixed-identity unpacked packages.
 
-Failed address checks now show separate primary/secondary outcomes: request timeout, HTTP error code, network request failure, or missing/failed permission checks, with elapsed time. These are the most recent probe results, not a complete network diagnosis. No token, exception text or search term is added to diagnostics.
-
-## 1.4.22 local bookmark cache
-
-The new local snapshot and offline extension list are described in [bookmark cache notes](bookmark-cache.md). Update both the server and extension to establish the extension-local copy; the server can be upgraded first while the old extension keeps working.
-
-## Store upload packages
-
-Use `harbor-deck-<tag>-store.zip` for Chrome Web Store and `harbor-deck-<tag>-edge-store.zip` for Edge Add-ons. These omit `manifest.key`; upload them to the existing HarborDeck listing. The original ZIP names retain the key for Developer-mode unpacked installation. See [package selection](extension-identities.md#build-and-package). The 1.4.22 store ZIPs correct the original packaging error without changing runtime code or requiring another server upgrade. Successful local checks do not mean a store upload or review has passed.
+The full cache behavior, privacy boundary and upgrade steps are documented in [bookmark cache notes](bookmark-cache.md). Current validation is documented in [1.4.24 validation](unified-newtab-validation-2026-10-02.md). Real Mac and the production HTTPS proxy must not be described as tested solely on the basis of isolated Linux browser tests.

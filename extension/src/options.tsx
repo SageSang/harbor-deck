@@ -20,7 +20,6 @@ import { restoreExtensionTheme } from './theme'
 import type { ExtensionLanguage, ExtensionSettings, OpenMode } from './types'
 import './styles.css'
 import { TransferPanel } from './TransferPanel'
-import extensionIdentities from '@shared/extension-identities.json'
 
 const REPOSITORY_URL = 'https://github.com/SageSang/harbor-deck'
 
@@ -68,9 +67,6 @@ export function OptionsApp() {
   const [transferring, setTransferring] = useState(false)
   const [showApiToken, setShowApiToken] = useState(false)
   const [permissions, setPermissions] = useState<Record<string, boolean>>({})
-  const isStandardExtension = Object.values(extensionIdentities).some(
-    (identity) => identity.id === chrome.runtime.id
-  )
 
   async function refreshPermissions(settings: ExtensionSettings) {
     const urls = [settings.primaryUrl, settings.fallbackUrl].filter(Boolean)
@@ -125,6 +121,7 @@ export function OptionsApp() {
         fallbackUrl: normalizeUrl(form.fallbackUrl),
         apiToken: form.apiToken.trim(),
         openMode: form.openMode,
+        localExperienceVersion: 1,
         probeTimeoutMs: normalizeProbeTimeoutMs(form.probeTimeoutMs),
       }
 
@@ -162,7 +159,7 @@ export function OptionsApp() {
   }
 
   function setOpenMode(mode: OpenMode) {
-    updateField('openMode', mode)
+    setForm((current) => ({ ...current, openMode: mode, localExperienceVersion: 1 }))
   }
 
   async function handleLanguageChange(nextLanguage: ExtensionLanguage) {
@@ -291,20 +288,24 @@ export function OptionsApp() {
               >
                 <button
                   type="button"
-                  className={`toggle-option ${form.openMode === 'direct' ? 'active' : ''}`}
+                  className={`toggle-option ${form.openMode === 'direct' && form.localExperienceVersion === 1 ? 'active' : ''}`}
                   onClick={() => setOpenMode('direct')}
                 >
                   {messages.options.openModeDirect}
                 </button>
                 <button
                   type="button"
-                  className={`toggle-option ${form.openMode === 'embedded' ? 'active' : ''}`}
-                  onClick={() => setOpenMode('embedded')}
+                  className={`toggle-option ${form.openMode !== 'direct' || form.localExperienceVersion !== 1 ? 'active' : ''}`}
+                  onClick={() => setOpenMode('local')}
                 >
-                  {messages.options.openModeEmbedded}
+                  {language === 'zh-CN' ? '本地页面（推荐）' : 'Local page (recommended)'}
                 </button>
               </div>
-              <p className="field-help">{messages.options.openModeHint}</p>
+              <p className="field-help">
+                {language === 'zh-CN'
+                  ? '本地页面先显示缓存，连接后原位更新；直接打开会跳转到服务端网页。旧模式自动采用本地页面，连接和令牌保持不变。'
+                  : 'Local mode displays cached content and updates in place. Direct mode navigates to the server. Legacy modes use local rendering without changing addresses or tokens.'}
+              </p>
               <div className="field-help">
                 <p>
                   {language === 'zh-CN' ? '当前扩展 ID：' : 'This extension ID: '}
@@ -312,17 +313,8 @@ export function OptionsApp() {
                 </p>
                 <p>
                   {language === 'zh-CN'
-                    ? isStandardExtension
-                      ? '这是标准扩展身份。服务端1.4.21及以上默认允许内嵌，无需逐台登记。旧服务端可升级，或按原方式登记当前ID。'
-                      : '这是自定义扩展身份。内嵌前请将当前ID加入服务端 HARBORDECK_TRUSTED_EXTENSION_IDS。'
-                    : isStandardExtension
-                      ? 'This is a standard extension identity. Server 1.4.21 or later permits embedding by default. Upgrade older servers or register this ID once.'
-                      : 'This is a custom extension identity. Register its ID in HARBORDECK_TRUSTED_EXTENSION_IDS before embedding.'}
-                </p>
-                <p>
-                  {language === 'zh-CN'
-                    ? '主备地址需分别授权，HTTP 与 HTTPS 权限分开。反向代理不能额外添加禁止内嵌的 CSP。登录状态是否与直接访问共用，取决于浏览器与 Cookie 设置。'
-                    : 'Grant each address permission, including both HTTP and HTTPS when used. A reverse proxy must not add a conflicting frame-ancestors policy. Login sharing depends on browser and cookie settings.'}
+                    ? '主备地址需分别授权。登录使用服务端账号和浏览器 Cookie；扩展令牌只供收藏功能使用。'
+                    : 'Grant access to both addresses. Sign in with the server account; the extension token is only used for bookmark capture.'}
                 </p>
                 {Object.entries(permissions).map(([url, allowed]) => (
                   <p key={url}>

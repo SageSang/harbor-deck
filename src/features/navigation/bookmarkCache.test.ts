@@ -136,6 +136,7 @@ it('does not let a late authorization failure erase a new account cache', async 
   const { fetchNavigationConfig } = await import('../config/api')
   const old = fetchNavigationConfig()
   const failure = expect(old).rejects.toThrow()
+  await vi.waitFor(() => expect(reply).toBeTypeOf('function'))
   cache.setBookmarkCacheUser('new-owner')
   cache.saveBookmarkCache(config, cache.captureBookmarkCacheScope())
   reply(new Response('Expired old session', { status: 401 }))

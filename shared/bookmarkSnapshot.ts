@@ -1,5 +1,7 @@
+import { isValidSearchEngineTemplate } from '../src/config/searchEngines'
 import { z } from 'zod'
-import type { NavigationConfig } from '../src/config/schema'
+import { APP_SKINS } from './theme'
+import type { NavigationConfig, SystemConfig } from '../src/config/schema'
 
 export const BOOKMARK_CACHE_KEY = 'harborDeckBookmarkSnapshotV1'
 export const CACHE_MESSAGE = 'harbordeck:bookmark-cache'
@@ -14,6 +16,10 @@ const item = z.object({
   primaryUrl: http,
   secondaryUrl: http.optional(),
   note: z.string().optional(),
+  icon: z.string().optional(),
+  forceNewTab: z.boolean().optional(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
 })
 const group = z.object({ id: z.string(), name: z.string(), items: z.array(item) })
 export const bookmarkSnapshotSchema = z.object({
@@ -22,6 +28,32 @@ export const bookmarkSnapshotSchema = z.object({
   username: z.string().min(1),
   updatedAt: z.number().finite().nonnegative(),
   revision: z.string().optional(),
+  defaultSceneId: z.string().optional(),
+  display: z
+    .object({
+      appName: z.string(),
+      skin: z.enum(APP_SKINS),
+      clickOpenTarget: z.enum(['self', 'blank']),
+      middleClickOpenTarget: z.enum(['self', 'blank']),
+      defaultSearchEngine: z.string(),
+      networkProbe: z
+        .object({
+          lanProtocol: z.enum(['http', 'https']),
+          lanHost: z.string(),
+          wanProtocol: z.enum(['http', 'https']),
+          wanHost: z.string(),
+        })
+        .optional(),
+      customSearchEngines: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          urlTemplate: z.string().refine(isValidSearchEngineTemplate),
+        })
+      ),
+    })
+    .optional(),
+  expandedGroupKeys: z.array(z.string()).optional(),
   scenes: z.array(z.object({ id: z.string(), name: z.string(), groups: z.array(group) })),
 })
 export type BookmarkSnapshot = z.infer<typeof bookmarkSnapshotSchema>
@@ -60,7 +92,16 @@ export function makeBookmarkSnapshot(
 ): BookmarkSnapshot {
   const bookmarks = new Map(config.bookmarks.map((bookmark) => [bookmark.slug, bookmark]))
   const display = (
-    value: { name: string; primaryUrl: string; secondaryUrl?: string; note?: string },
+    value: {
+      name: string
+      primaryUrl: string
+      secondaryUrl?: string
+      note?: string
+      icon?: string
+      forceNewTab?: boolean
+      createdAt?: number
+      updatedAt?: number
+    },
     id: string
   ) => ({
     id,
@@ -68,6 +109,10 @@ export function makeBookmarkSnapshot(
     primaryUrl: value.primaryUrl,
     ...(value.secondaryUrl ? { secondaryUrl: value.secondaryUrl } : {}),
     ...(value.note ? { note: value.note } : {}),
+    icon: value.icon,
+    forceNewTab: value.forceNewTab,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
   })
   return bookmarkSnapshotSchema.parse({
     schemaVersion: 1,
@@ -75,6 +120,7 @@ export function makeBookmarkSnapshot(
     username,
     updatedAt: Date.now(),
     revision: config._revision,
+    defaultSceneId: config.defaultSceneId,
     scenes: config.scenes
       .filter((scene) => !scene.protected)
       .map((scene) => ({
@@ -101,4 +147,20 @@ export function makeBookmarkSnapshot(
         ],
       })),
   })
+}
+
+export function snapshotDisplay(system: SystemConfig): NonNullable<BookmarkSnapshot['display']> {
+  return {
+    appName: system.appName,
+    skin: system.skin,
+    networkProbe: { ...system.networkProbe },
+    clickOpenTarget: system.clickOpenTarget,
+    middleClickOpenTarget: system.middleClickOpenTarget,
+    defaultSearchEngine: system.defaultSearchEngine,
+    customSearchEngines: system.customSearchEngines.map(({ id, name, urlTemplate }) => ({
+      id,
+      name,
+      urlTemplate,
+    })),
+  }
 }

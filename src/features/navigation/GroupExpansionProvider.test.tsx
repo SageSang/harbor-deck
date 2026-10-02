@@ -167,9 +167,10 @@ describe('GroupExpansionProvider', () => {
     FakeBroadcastChannel.deliveries = 0
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
-    vi.mocked(useNavigationConfig).mockReturnValue({ data: navigation } as ReturnType<
-      typeof useNavigationConfig
-    >)
+    vi.mocked(useNavigationConfig).mockReturnValue({
+      data: navigation,
+      canEdit: true,
+    } as ReturnType<typeof useNavigationConfig>)
     vi.mocked(fetchGroupExpansionPreference).mockResolvedValue(emptySnapshot)
     vi.mocked(initializeGroupExpansionPreference).mockResolvedValue(emptySnapshot)
     vi.mocked(saveGroupExpansion).mockResolvedValue(emptySnapshot)
@@ -227,7 +228,7 @@ describe('GroupExpansionProvider', () => {
     }
   })
 
-  it('allows temporary browsing after preference failure and explicit retry restores server state', async () => {
+  it('preserves temporary browsing choices when preference reads recover', async () => {
     vi.mocked(fetchGroupExpansionPreference).mockRejectedValueOnce(new Error('offline'))
     await renderProvider()
     await act(async () => {
@@ -241,7 +242,7 @@ describe('GroupExpansionProvider', () => {
       currentExpansion?.retry()
       await vi.waitFor(() => expect(currentExpansion?.isReady).toBe(true))
     })
-    expect(currentExpansion?.expandedGroupKeys.size).toBe(0)
+    expect(currentExpansion?.expandedGroupKeys).toEqual(new Set(['personal:main']))
   })
 
   it('initializes from legacy state once and clears both local storage keys', async () => {

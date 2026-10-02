@@ -22,7 +22,7 @@ const manifest = {
   version,
   key: identity.publicKey,
   description:
-    'Use HarborDeck as the Chrome new tab page with automatic primary/secondary URL switching.',
+    'Open your self-hosted HarborDeck in new tabs, with local bookmark caching and in-place updates.',
   permissions: ['storage', 'permissions', 'activeTab'],
   optional_host_permissions: ['http://*/*', 'https://*/*'],
   icons: extensionIcons,

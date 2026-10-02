@@ -1,5 +1,6 @@
+import { snapshotNavigation, sceneServices, useNavigationView } from './navigationView'
 import { captureBookmarkCacheScope, clearBookmarkCache, saveBookmarkCache } from './bookmarkCache'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { NavigationConfig } from '@/config/schema'
 import {
@@ -20,15 +21,29 @@ import { useAppStore } from '@/store/appStore'
 
 export function useNavigationConfig(options?: { enabled?: boolean }) {
   const accessVersion = useAppStore((state) => state.sceneAccessVersion)
-  return useQuery({
+  const view = useNavigationView()
+  const cached = useMemo(() => snapshotNavigation(view.snapshot), [view.snapshot])
+  const query = useQuery({
     queryKey: [...navigationConfigQueryKey, accessVersion],
     queryFn: ({ signal }) => fetchNavigationConfig(signal),
-    enabled: options?.enabled ?? true,
+    enabled: view.authenticated && (options?.enabled ?? true),
     staleTime: 30_000,
     retry: false,
     networkMode: 'always',
     refetchOnWindowFocus: false,
   })
+  return {
+    ...query,
+    data: query.data ?? cached,
+    isLoading: query.isLoading && !cached,
+    isCached: !query.data && Boolean(cached),
+    canEdit:
+      view.online !== false &&
+      view.authenticated &&
+      Boolean(query.data?._revision) &&
+      !query.isError &&
+      navigator.onLine !== false,
+  }
 }
 
 interface NavigationSaveCallbacks {
@@ -40,6 +55,7 @@ interface NavigationSaveCallbacks {
 export function useSaveNavigationConfig(scopeKey = '') {
   const queryClient = useQueryClient()
   const accessVersion = useAppStore((state) => state.sceneAccessVersion)
+  const navigation = useNavigationConfig()
   const scopeRef = useRef({ key: scopeKey, operation: 0, mounted: true })
   if (scopeRef.current.key !== scopeKey) {
     scopeRef.current = { key: scopeKey, operation: scopeRef.current.operation + 1, mounted: true }
@@ -188,11 +204,19 @@ export function useSaveNavigationConfig(scopeKey = '') {
   const currentFailure = syncFailure && isCurrent(syncFailure.request) ? syncFailure : null
   return {
     isPending: mutation.isPending,
-    isSaveBlocked: mutation.isPending || isSyncing || Boolean(currentFailure),
+    isSaveBlocked:
+      !navigation.canEdit || mutation.isPending || isSyncing || Boolean(currentFailure),
     syncError: currentFailure?.syncError ?? null,
     isSyncing,
     mutate: (config: NavigationConfig, callbacks?: NavigationSaveCallbacks) => {
-      if (mutation.isPending || isSyncing || currentFailure) return
+      if (
+        !navigation.canEdit ||
+        !config._revision ||
+        mutation.isPending ||
+        isSyncing ||
+        currentFailure
+      )
+        return
       mutation.mutate(capture(config, callbacks))
     },
     retrySync: async () => {
@@ -207,14 +231,36 @@ export function useSaveNavigationConfig(scopeKey = '') {
 }
 
 export function useSceneList() {
-  return useQuery({
+  const view = useNavigationView()
+  const navigation = useNavigationConfig()
+  const query = useQuery({
     queryKey: sceneListQueryKey,
     queryFn: ({ signal }) => fetchSceneList(signal),
+    enabled: view.authenticated,
     retry: false,
     networkMode: 'always',
     refetchOnWindowFocus: false,
     staleTime: 30_000,
   })
+  const projected = useMemo(
+    () =>
+      navigation.data
+        ? {
+            defaultSceneId: navigation.data.defaultSceneId,
+            scenes: navigation.data.scenes.map(({ id, name, protected: locked }) => ({
+              id,
+              name,
+              protected: locked,
+            })),
+          }
+        : undefined,
+    [navigation.data]
+  )
+  return {
+    ...query,
+    data: navigation.isCached ? (query.data ?? projected) : (projected ?? query.data),
+    isLoading: query.isLoading && !projected,
+  }
 }
 
 export function useActiveScene() {
@@ -255,6 +301,12 @@ export function useActiveScene() {
 
 export function useActiveSceneServices() {
   const { sceneListQuery, activeSceneId, activeScene } = useActiveScene()
+  const view = useNavigationView()
+  const navigation = useNavigationConfig()
+  const cached = useMemo(
+    () => sceneServices(navigation.data, activeSceneId),
+    [navigation.data, activeSceneId]
+  )
   const token = useAppStore((state) =>
     activeSceneId ? state.sceneTokens[activeSceneId] : undefined
   )
@@ -266,7 +318,9 @@ export function useActiveSceneServices() {
   const query = useQuery({
     queryKey: [...sceneServicesQueryKey(activeSceneId), accessVersion],
     queryFn: ({ signal }) => fetchSceneServices(activeSceneId!, token, signal),
-    enabled: Boolean(activeSceneId && activeScene && (!activeScene.protected || token)),
+    enabled:
+      view.authenticated &&
+      Boolean(activeSceneId && activeScene && (!activeScene.protected || token)),
     staleTime: 30_000,
     retry: false,
     networkMode: 'always',
@@ -293,7 +347,15 @@ export function useActiveSceneServices() {
     sceneListQuery.data,
   ])
 
-  return { ...query, activeSceneId, activeScene, sceneListQuery }
+  return {
+    ...query,
+    data: cached ?? query.data,
+    isLoading: query.isLoading && !cached,
+    error: cached ? null : query.error,
+    activeSceneId,
+    activeScene,
+    sceneListQuery,
+  }
 }
 
 export function useUnlockScene() {

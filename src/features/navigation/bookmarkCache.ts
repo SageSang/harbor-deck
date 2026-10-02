@@ -1,3 +1,4 @@
+import { clientSource, clientStorage, prepareCacheClear, isLocalNewTab } from '@/lib/clientRuntime'
 import {
   BOOKMARK_CACHE_KEY,
   CACHE_MESSAGE,
@@ -23,14 +24,17 @@ let bridge: { origin: string; nonce: string } | null = null
 export function readBookmarkCache() {
   if (suppressed) return null
   try {
-    return parseBookmarkSnapshot(localStorage.getItem(BOOKMARK_CACHE_KEY), location.href)
+    return parseBookmarkSnapshot(
+      clientStorage().getItem(BOOKMARK_CACHE_KEY),
+      isLocalNewTab() ? undefined : clientSource()
+    )
   } catch {
     return null
   }
 }
 export function bookmarkCacheEpoch() {
   try {
-    return `${memoryEpoch}:${localStorage.getItem(EPOCH_KEY) ?? ''}`
+    return `${memoryEpoch}:${clientStorage().getItem(EPOCH_KEY) ?? ''}`
   } catch {
     return memoryEpoch
   }
@@ -46,6 +50,7 @@ function changed() {
   window.dispatchEvent(new Event(BOOKMARK_CACHE_CHANGED))
 }
 export function clearBookmarkCache(accessLost = false) {
+  prepareCacheClear(accessLost)
   memoryEpoch = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
   verified = null
   suppressed = true
@@ -54,12 +59,12 @@ export function clearBookmarkCache(accessLost = false) {
     accessDenied = true
   }
   try {
-    localStorage.removeItem(BOOKMARK_CACHE_KEY)
+    clientStorage().removeItem(BOOKMARK_CACHE_KEY)
   } catch {
     /* Optional cache; writes must never block logout. */
   }
   try {
-    localStorage.setItem(EPOCH_KEY, memoryEpoch)
+    clientStorage().setItem(EPOCH_KEY, memoryEpoch)
   } catch {
     /* Optional. */
   }
@@ -87,10 +92,15 @@ export function saveBookmarkCache(
   scope: ReturnType<typeof captureBookmarkCacheScope>
 ) {
   if (!scope.username || scope.username !== username || scope.epoch !== bookmarkCacheEpoch()) return
-  const snapshot = makeBookmarkSnapshot(config, location.href, scope.username)
+  const previous = readBookmarkCache()
+  const snapshot = {
+    ...makeBookmarkSnapshot(config, clientSource(), scope.username),
+    display: previous?.display,
+    expandedGroupKeys: previous?.expandedGroupKeys,
+  }
   verified = snapshot
   try {
-    localStorage.setItem(BOOKMARK_CACHE_KEY, JSON.stringify(snapshot))
+    clientStorage().setItem(BOOKMARK_CACHE_KEY, JSON.stringify(snapshot))
     suppressed = false
   } catch {
     /* Quota/private mode: retain old snapshot. */
@@ -120,7 +130,7 @@ export function startBookmarkCacheBridge() {
       return
     if (message.kind === 'connect') {
       bridge = { origin: event.origin, nonce: message.nonce }
-      if (verified && verified.source === cacheSource(location.href)) send('snapshot', verified)
+      if (verified && verified.source === cacheSource(clientSource())) send('snapshot', verified)
       else send(accessDenied ? 'denied' : username ? 'waiting' : 'connected')
     } else if (
       bridge?.origin === event.origin &&
@@ -165,5 +175,22 @@ export function startBookmarkCacheBridge() {
     window.removeEventListener('message', receive)
     window.removeEventListener('storage', storage)
     bridge = null
+  }
+}
+
+export function updateBookmarkPresentation(
+  patch: Pick<BookmarkSnapshot, 'display' | 'expandedGroupKeys'>
+) {
+  const current = readBookmarkCache()
+  if (!current || !username || current.username !== username) return
+  try {
+    const snapshot = parseBookmarkSnapshot({ ...current, ...patch }, clientSource())
+    if (!snapshot) return
+    clientStorage().setItem(BOOKMARK_CACHE_KEY, JSON.stringify(snapshot))
+    verified = snapshot
+    send('snapshot', snapshot)
+    changed()
+  } catch {
+    /* Display cache is optional. */
   }
 }

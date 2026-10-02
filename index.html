@@ -199,6 +199,7 @@
           revision: 0,
           pendingSubmit: false,
           released: false,
+          composing: false,
         }
         window.__harborDeckSearchBoot = state
 
@@ -213,11 +214,18 @@
         }
 
         input.addEventListener('input', publishValue, { passive: true })
+        input.addEventListener('compositionstart', () => {
+          state.composing = true
+        })
+        input.addEventListener('compositionend', () => {
+          state.composing = false
+          publishValue()
+        })
         input.addEventListener('keydown', (event) => {
           if (event.key !== 'Enter' || event.isComposing || !input.value.trim()) return
           event.preventDefault()
-          publishValue()
           state.pendingSubmit = true
+          publishValue()
         })
 
         input.focus({ preventScroll: true })

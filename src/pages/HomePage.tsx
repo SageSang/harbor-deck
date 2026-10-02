@@ -1,6 +1,6 @@
 import { BOOKMARK_CACHE_REFRESH } from '@/features/navigation/bookmarkCache'
-import { BookmarkCacheControl } from '@/features/navigation/BookmarkCacheFallback'
-import { lazy, Suspense, useEffect } from 'react'
+import { BookmarkCacheControl } from '@/features/navigation/BookmarkCacheControl'
+import { useEffect } from 'react'
 import { HeroClock } from '@/components/HeroClock'
 import { SearchBox } from '@/components/SearchBox'
 import { TopBar } from '@/components/TopBar'
@@ -10,9 +10,7 @@ import { useSystemConfig } from '@/features/config/useSystemConfig'
 import { detectNetworkMode } from '@/core/network/detectNetworkMode'
 import { GroupExpansionProvider } from '@/features/navigation/GroupExpansionProvider'
 
-const ServiceGrid = lazy(() =>
-  import('@/features/services/ServiceGrid').then(({ ServiceGrid: Grid }) => ({ default: Grid }))
-)
+import { ServiceGrid } from '@/features/services/ServiceGrid'
 
 export function HomePage() {
   const networkModeStrategy = useAppStore((state) => state.networkModeStrategy)
@@ -55,7 +53,7 @@ export function HomePage() {
         <main className="relative z-10 container mx-auto max-w-[92rem] px-2.5 pt-3 pb-5 sm:px-4 md:px-5 md:pt-4 md:pb-7 lg:px-6">
           <section className="mx-auto flex w-full max-w-[46rem] flex-col items-center py-1 text-center md:py-1.5">
             <HeroClock />
-            <div className="mt-2 w-full animate-slide-up [animation-delay:220ms] md:mt-2.5">
+            <div className="mt-2 w-full md:mt-2.5">
               <SearchBox />
             </div>
           </section>
@@ -75,16 +73,7 @@ export function HomePage() {
           )}
 
           <div className="mt-1.5 md:mt-2">
-            <Suspense
-              fallback={
-                <div
-                  aria-label={messages.common.loading}
-                  className="min-h-[16rem] rounded-[1.6rem] border border-border/60 bg-card/45 shadow-[0_14px_36px_rgba(52,45,39,0.04)]"
-                />
-              }
-            >
-              <ServiceGrid />
-            </Suspense>
+            <ServiceGrid />
           </div>
           <BookmarkCacheControl />
         </main>

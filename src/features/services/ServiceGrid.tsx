@@ -1,5 +1,5 @@
 import { useDialogFocus } from '@/components/useDialogFocus'
-import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -241,6 +241,7 @@ export function ServiceGrid() {
   const longPressTimerRef = useRef<number | null>(null)
   const longPressPointerRef = useRef<{ slug: string; x: number; y: number } | null>(null)
   const justLongPressedRef = useRef(false)
+  const focusedElementRef = useRef<HTMLAnchorElement | null>(null)
   const [focusedBookmarkSlug, setFocusedBookmarkSlug] = useState<string | null>(null)
   const activeSystemConfig = systemConfig ?? defaultSystemConfig
 
@@ -321,6 +322,34 @@ export function ServiceGrid() {
       }),
     [activeSceneId, expandedGroupKeys, isSearchActive, renderGroups]
   )
+  useLayoutEffect(() => {
+    const previous = focusedElementRef.current
+    if (
+      !previous ||
+      previous.isConnected ||
+      !document.hasFocus() ||
+      document.activeElement !== document.body
+    )
+      return
+    const next = focusedBookmarkSlug ? bookmarkRefs.current.get(focusedBookmarkSlug) : undefined
+    if (next?.getClientRects().length) next.focus({ preventScroll: true })
+    else if (!next) {
+      focusedElementRef.current = null
+      setFocusedBookmarkSlug(null)
+      focusSearchInput()
+    }
+  }, [renderGroups, focusedBookmarkSlug, expandedGroupKeys])
+
+  useEffect(() => {
+    const valid = new Set(
+      renderGroups.flatMap((group) => group.services.map((service) => service.slug))
+    )
+    setSelectedSlugs((current) => {
+      const next = new Set([...current].filter((slug) => valid.has(slug)))
+      return next.size === current.size ? current : next
+    })
+  }, [renderGroups])
+
   const firstVisibleBookmarkSlug = visibleBookmarkEntries[0]?.slug ?? null
   const lastVisibleBookmarkSlug =
     visibleBookmarkEntries[visibleBookmarkEntries.length - 1]?.slug ?? null
@@ -988,7 +1017,9 @@ export function ServiceGrid() {
     }
   }
 
-  if ((isLoading || navigationQuery.isLoading) && !config) {
+  // Empty/error states must not unmount an editor and discard its original revision or draft.
+  const editing = Boolean(bookmarkDialog || quickRecordDialog || batchDialogOpen || renamingGroup)
+  if ((isLoading || navigationQuery.isLoading) && !config && !editing) {
     return (
       <div className="flex min-h-[420px] items-center justify-center">
         <div className="rounded-[1.75rem] border border-border/75 bg-card/72 px-8 py-6 text-center shadow-[0_20px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:bg-card/70 dark:shadow-[0_24px_56px_rgba(0,0,0,0.28)]">
@@ -1000,7 +1031,7 @@ export function ServiceGrid() {
     )
   }
 
-  if ((error || navigationQuery.error) && !config)
+  if ((error || navigationQuery.error) && !config && !editing)
     return (
       <div role="alert" className="p-5 text-center">
         <NavigationSyncNotice save={saveMutation} />
@@ -1018,7 +1049,7 @@ export function ServiceGrid() {
       </div>
     )
 
-  if (renderGroups.length === 0) {
+  if (renderGroups.length === 0 && !editing) {
     const hasAnyBookmarks = activeConfig.some((group) => group.items.length > 0)
 
     return (
@@ -1302,7 +1333,13 @@ export function ServiceGrid() {
                                 ? 0
                                 : -1
                             }
-                            onFocus={() => setFocusedBookmarkSlug(service.slug)}
+                            onFocus={(event) => {
+                              focusedElementRef.current = event.currentTarget
+                              setFocusedBookmarkSlug(service.slug)
+                            }}
+                            onBlur={() => {
+                              focusedElementRef.current = null
+                            }}
                             onKeyDown={(event) => {
                               if (selectionMode) {
                                 return
@@ -1588,153 +1625,155 @@ export function ServiceGrid() {
                   </a>
                 </>
               )}
-              {contextMenu.kind === 'bookmark' ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBookmarkDialog({ mode: 'edit', slug: contextMenu.slug })
-                      setContextMenu(null)
-                    }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    {messages.serviceGrid.editAction}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleCopyBookmarkLink(contextMenu.slug)}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
-                  >
-                    <Link2 className="h-4 w-4" />
-                    {messages.serviceGrid.copyLinkAction}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBookmarkDialog({ mode: 'duplicate', slug: contextMenu.slug })
-                      setContextMenu(null)
-                    }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
-                  >
-                    <Copy className="h-4 w-4" />
-                    {messages.serviceGrid.duplicateAction}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDeleteBookmark(contextMenu.slug)}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    {messages.serviceGrid.deleteAction}
-                  </button>
-                </>
-              ) : null}
-              {contextMenu.kind === 'quick-record' ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuickRecordDialog({
-                        recordId: contextMenu.recordId,
-                        sceneId: contextMenu.sceneId,
-                      })
-                      setContextMenu(null)
-                    }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    编辑记录
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void handleCopyQuickRecordLink(contextMenu.recordId, contextMenu.sceneId)
-                    }
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
-                  >
-                    <Link2 className="h-4 w-4" />
-                    {messages.serviceGrid.copyLinkAction}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void handleDeleteQuickRecord(contextMenu.recordId, contextMenu.sceneId)
-                    }
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    删除记录
-                  </button>
-                </>
-              ) : null}
-              {contextMenu.kind === 'group' ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBookmarkDialog({
-                        mode: 'create',
-                        slug: null,
-                        initialSceneId: activeSceneId,
-                        initialGroupId: contextMenu.groupId,
-                      })
-                      setContextMenu(null)
-                    }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
-                  >
-                    <Plus className="h-4 w-4" />
-                    {messages.serviceGrid.createBookmarkAction}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRenamingGroup({
-                        groupId: contextMenu.groupId,
-                        groupName: contextMenu.groupName,
-                      })
-                      setContextMenu(null)
-                    }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    {messages.serviceGrid.editGroupAction}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void handleDeleteGroup(contextMenu.groupId, contextMenu.groupName)
-                    }
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    {messages.serviceGrid.deleteGroupAction}
-                  </button>
-                </>
-              ) : null}
-              {contextMenu.kind === 'selection' ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBatchDialogOpen(true)
-                      setContextMenu(null)
-                    }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
-                  >
-                    <Plus className="h-4 w-4" />
-                    {messages.serviceGrid.batchAddActionWithCount(contextMenu.slugs.length)}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDeleteSelected(contextMenu.slugs)}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    {messages.serviceGrid.deleteSelectedActionWithCount(contextMenu.slugs.length)}
-                  </button>
-                </>
-              ) : null}
+              <fieldset disabled={!navigationQuery.canEdit} className="disabled:opacity-45">
+                {contextMenu.kind === 'bookmark' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBookmarkDialog({ mode: 'edit', slug: contextMenu.slug })
+                        setContextMenu(null)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      {messages.serviceGrid.editAction}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyBookmarkLink(contextMenu.slug)}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                    >
+                      <Link2 className="h-4 w-4" />
+                      {messages.serviceGrid.copyLinkAction}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBookmarkDialog({ mode: 'duplicate', slug: contextMenu.slug })
+                        setContextMenu(null)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                    >
+                      <Copy className="h-4 w-4" />
+                      {messages.serviceGrid.duplicateAction}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteBookmark(contextMenu.slug)}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {messages.serviceGrid.deleteAction}
+                    </button>
+                  </>
+                ) : null}
+                {contextMenu.kind === 'quick-record' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuickRecordDialog({
+                          recordId: contextMenu.recordId,
+                          sceneId: contextMenu.sceneId,
+                        })
+                        setContextMenu(null)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      编辑记录
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleCopyQuickRecordLink(contextMenu.recordId, contextMenu.sceneId)
+                      }
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                    >
+                      <Link2 className="h-4 w-4" />
+                      {messages.serviceGrid.copyLinkAction}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleDeleteQuickRecord(contextMenu.recordId, contextMenu.sceneId)
+                      }
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      删除记录
+                    </button>
+                  </>
+                ) : null}
+                {contextMenu.kind === 'group' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBookmarkDialog({
+                          mode: 'create',
+                          slug: null,
+                          initialSceneId: activeSceneId,
+                          initialGroupId: contextMenu.groupId,
+                        })
+                        setContextMenu(null)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                    >
+                      <Plus className="h-4 w-4" />
+                      {messages.serviceGrid.createBookmarkAction}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenamingGroup({
+                          groupId: contextMenu.groupId,
+                          groupName: contextMenu.groupName,
+                        })
+                        setContextMenu(null)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      {messages.serviceGrid.editGroupAction}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleDeleteGroup(contextMenu.groupId, contextMenu.groupName)
+                      }
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {messages.serviceGrid.deleteGroupAction}
+                    </button>
+                  </>
+                ) : null}
+                {contextMenu.kind === 'selection' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatchDialogOpen(true)
+                        setContextMenu(null)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-accent/80"
+                    >
+                      <Plus className="h-4 w-4" />
+                      {messages.serviceGrid.batchAddActionWithCount(contextMenu.slugs.length)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteSelected(contextMenu.slugs)}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-500/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {messages.serviceGrid.deleteSelectedActionWithCount(contextMenu.slugs.length)}
+                    </button>
+                  </>
+                ) : null}
+              </fieldset>
             </div>
           </div>,
           document.body

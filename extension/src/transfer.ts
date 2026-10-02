@@ -63,7 +63,8 @@ const schema = z
       .object({
         primaryUrl: address,
         fallbackUrl: address,
-        openMode: z.enum(['direct', 'embedded']),
+        localExperienceVersion: z.literal(1).optional(),
+        openMode: z.enum(['direct', 'embedded', 'local']),
         probeTimeoutMs: z.number().int().min(50).max(5000),
       })
       .strict(),
@@ -135,6 +136,7 @@ export function createTransferService(connections: ReturnType<typeof createSetti
             primaryUrl: settings.primaryUrl,
             fallbackUrl: settings.fallbackUrl,
             openMode: settings.openMode,
+            localExperienceVersion: settings.localExperienceVersion,
             probeTimeoutMs: settings.probeTimeoutMs,
           },
           language: await readLanguage(),
