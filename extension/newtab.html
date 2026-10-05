@@ -5,10 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HarborDeck</title>
     <style>
+      :root {
+        color-scheme: light;
+        --boot-bg: #f5f7fa;
+        --boot-panel: #fafbfd;
+        --boot-text: #202937;
+        --boot-field: #fff;
+        --boot-border: #d4dce8;
+      }
+      :root[data-skin='midnight'] {
+        color-scheme: dark;
+        --boot-bg: #111723;
+        --boot-panel: #171e2b;
+        --boot-text: #e3edf5;
+        --boot-field: #1a2230;
+        --boot-border: #323c50;
+      }
+      :root[data-skin='ember'] {
+        color-scheme: dark;
+        --boot-bg: #211613;
+        --boot-panel: #2b201a;
+        --boot-text: #f4ece0;
+        --boot-field: #2f221b;
+        --boot-border: #49392e;
+      }
       body {
         margin: 0;
-        background: #f5f7fa;
-        color: #202937;
+        background: var(--boot-bg);
+        color: var(--boot-text);
         font-family: system-ui, sans-serif;
       }
       #harbordeck-search-boot {
@@ -16,7 +40,7 @@
         position: fixed;
         z-index: 50;
         inset: 0;
-        background: #f5f7fa;
+        background: var(--boot-bg);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -25,21 +49,21 @@
         box-sizing: border-box;
         width: min(92vw, 760px);
         padding: 32px;
-        border: 1px solid #d4dce8;
+        border: 1px solid var(--boot-border);
         border-radius: 24px;
-        background: #fafbfd;
+        background: var(--boot-panel);
         box-shadow: 0 20px 50px #23324814;
       }
       .boot-panel input {
         box-sizing: border-box;
         width: 100%;
         padding: 18px;
-        border: 1px solid #d4dce8;
+        border: 1px solid var(--boot-border);
         border-radius: 18px;
         font: inherit;
         margin: 16px 0;
-        background: #fff;
-        color: #202937;
+        background: var(--boot-field);
+        color: var(--boot-text);
       }
       .boot-panel button {
         padding: 10px 16px;

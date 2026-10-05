@@ -80,6 +80,7 @@ export function SearchBox() {
       // Cached startup already exposes the real input. A delayed animation frame
       // must never copy the unused transition input over what the user typed.
       dismissSearchBootShell()
+      if (isLocalNewTab()) focusSearchInputIfSafe()
       return
     }
 

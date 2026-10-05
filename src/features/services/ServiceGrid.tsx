@@ -438,6 +438,7 @@ export function ServiceGrid() {
     }
 
     function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.isComposing) return
       if (document.querySelector('[aria-modal="true"]')) return
       if (event.key === '/' && !isEditableTarget(event.target)) {
         event.preventDefault()

@@ -3,6 +3,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import zipfile
 
@@ -31,8 +32,12 @@ for channel, suffix in [('chrome', ''), ('edge', '-edge')]:
         assert not manifest.get('host_permissions'), f'{channel}: unexpected fixed host permissions'
         for name in names - {'manifest.json'}:
             assert unpacked.read(name) == store.read(name), f'{channel}: unexpected difference in {name}'
-        required = [manifest['background']['service_worker'], manifest['action']['default_popup'],
+        required = ['newtab.html', manifest['background']['service_worker'], manifest['action']['default_popup'],
                     manifest['options_ui']['page'], *manifest['chrome_url_overrides'].values(),
                     *manifest['icons'].values()]
         assert all(name in names for name in required), f'{channel}: missing manifest resource'
+        for name in names:
+            if name.endswith('.html'):
+                for script in re.findall(r'<script\b[^>]*\bsrc="([^"]+)"', unpacked.read(name).decode()):
+                    assert script.removeprefix('./') in names, f'{channel}: missing script {script}'
     print(f'{channel}: store ZIP has no key; unpacked ID {extension_id}; other files identical')

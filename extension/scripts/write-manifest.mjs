@@ -40,7 +40,7 @@ const manifest = {
     open_in_tab: true,
   },
   chrome_url_overrides: {
-    newtab: 'newtab.html',
+    newtab: 'newtab-entry.html',
   },
 }
 

@@ -1,20 +1,20 @@
 export const SEARCH_INPUT_ID = 'search-box-input'
 export const EMBEDDED_FOCUS_MESSAGE_TYPE = 'harbordeck:focus-search'
 
-let embeddedUserInteracted = false
-let embeddedFocusGuardInstalled = false
+let userInteracted = false
+let focusGuardInstalled = false
 
 /**
- * Register input protection before React mounts so an embedded page never
+ * Register input protection before React mounts so a new-tab/embedded page never
  * steals focus after the user has already started interacting with it.
  */
-export function installEmbeddedFocusGuard() {
-  if (embeddedFocusGuardInstalled || typeof window === 'undefined') {
+export function installSearchFocusGuard() {
+  if (focusGuardInstalled || typeof window === 'undefined') {
     return
   }
 
   const markInteraction = () => {
-    embeddedUserInteracted = true
+    userInteracted = true
   }
 
   window.addEventListener('pointerdown', markInteraction, true)
@@ -22,12 +22,15 @@ export function installEmbeddedFocusGuard() {
   window.addEventListener('beforeinput', markInteraction, true)
   window.addEventListener('input', markInteraction, true)
   window.addEventListener('compositionstart', markInteraction, true)
-  embeddedFocusGuardInstalled = true
+  // After the user moves to browser chrome or another tab, asynchronous data
+  // must not take their focus back. Initial focus is attempted only at startup.
+  window.addEventListener('blur', markInteraction)
+  focusGuardInstalled = true
 }
 
-/** Focus only while the embedded page still has no user interaction. */
-export function focusSearchInputIfSafe() {
-  if (embeddedUserInteracted || typeof document === 'undefined') {
+/** Focus only while the page still has no user interaction. */
+export function focusSearchInputIfSafe(inputId = SEARCH_INPUT_ID) {
+  if (userInteracted || typeof document === 'undefined') {
     return false
   }
 
@@ -40,7 +43,10 @@ export function focusSearchInputIfSafe() {
     return false
   }
 
-  return focusSearchInput()
+  const input = document.getElementById(inputId)
+  if (!(input instanceof HTMLInputElement)) return false
+  input.focus({ preventScroll: true })
+  return document.activeElement === input
 }
 
 /** Focus the global search input without changing its current query. */

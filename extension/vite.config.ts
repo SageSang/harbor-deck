@@ -12,6 +12,7 @@ export default defineConfig({
     assetsDir: 'assets',
     rollupOptions: {
       input: {
+        newtabEntry: path.resolve(__dirname, 'newtab-entry.html'),
         newtab: path.resolve(__dirname, 'newtab.html'),
         options: path.resolve(__dirname, 'options.html'),
         popup: path.resolve(__dirname, 'popup.html'),

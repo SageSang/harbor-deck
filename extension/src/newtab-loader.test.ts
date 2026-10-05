@@ -19,6 +19,7 @@ vi.mock('./direct', () => ({ startDirect: mocks.direct }))
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
+  localStorage.clear()
   document.body.innerHTML =
     '<form id="harbordeck-search-boot"><input id="harbordeck-search-boot-input"><p id="boot-status" hidden></p><button id="connection-settings" hidden></button></form><div id="root"></div>'
   mocks.settings.mockResolvedValue({ openMode: 'embedded', probeTimeoutMs: 200 })
@@ -36,6 +37,8 @@ describe('one-document new tab boot', () => {
     expect(mocks.install).toHaveBeenCalledOnce()
     expect(mocks.direct).not.toHaveBeenCalled()
     expect(document.querySelector('iframe')).toBeNull()
+    expect(document.activeElement?.id).toBe('harbordeck-search-boot-input')
+    expect(document.documentElement.dataset.skin).toBe('frost')
   })
   it('migrates a legacy direct default but honors a new explicit direct choice', async () => {
     mocks.settings.mockResolvedValue({ openMode: 'direct' })

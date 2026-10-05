@@ -42,6 +42,10 @@ await fs.copyFile(
   path.join(rootDir, 'docs/unified-newtab-validation-2026-10-02.md'),
   path.join(packageDir, 'migration/unified-newtab-validation-2026-10-02.md')
 )
+await fs.copyFile(
+  path.join(rootDir, 'docs/newtab-focus-validation-2026-10-05.md'),
+  path.join(packageDir, 'migration/newtab-focus-validation-2026-10-05.md')
+)
 const migrationGuide = await fs.readFile(
   path.join(rootDir, 'docs/extension-local-settings-and-recovery.md'),
   'utf8'
@@ -88,7 +92,8 @@ for (const directory of [packageDir, storeDir]) {
       }
     )
   } else {
-    await execFileAsync('zip', ['-r', zipPath, '.'], {
+    // A NAS may recreate index directories after the filtered copy completed.
+    await execFileAsync('zip', ['-r', zipPath, '.', '-x', '[@]eaDir/*', '*/@eaDir/*'], {
       cwd: directory,
     })
   }

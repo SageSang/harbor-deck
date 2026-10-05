@@ -43,3 +43,9 @@ Before rolling back, export current local settings and drafts. Older versions ma
 The server can be upgraded before the extension. Existing extension APIs and the legacy embedding/cache bridge remain available while store updates are pending. Both Chrome and Edge ZIPs are built, with separate store and fixed-identity unpacked packages.
 
 The full cache behavior, privacy boundary and upgrade steps are documented in [bookmark cache notes](bookmark-cache.md). Current validation is documented in [1.4.25 validation](unified-newtab-validation-2026-10-02.md). Real Mac and the production HTTPS proxy must not be described as tested solely on the basis of isolated Linux browser tests.
+
+## 1.4.26 focus and local theme correction
+
+Upgrade the extension to 1.4.26 for initial search focus and keyboard shortcuts. The 1.4.25 server remains compatible; changing the Docker configuration is unnecessary. Chrome reserves focus for the omnibox on native new-tab overrides, so a tiny local entry immediately replaces itself with the packaged app before rendering. There is no network-dependent redirect or separate cache screen. The address bar displays the local extension URL.
+
+Local new tabs now start with the white Frost theme. Old automatically persisted theme values from 1.4.25 are not migrated as deliberate choices. Select a different skin in the page settings if desired; subsequent local tabs retain that choice. Server webpage preferences are unaffected. See [native-keyboard verification](newtab-focus-validation-2026-10-05.md).

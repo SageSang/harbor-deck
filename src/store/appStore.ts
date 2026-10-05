@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { isLocalNewTab } from '@/lib/clientRuntime'
 import type { NetworkMode } from '@/core/network/detectNetworkMode'
 import {
   persistManualNetworkMode,
@@ -16,6 +17,8 @@ import {
   skinUsesDarkMode,
   type AppSkin,
   WEB_THEME_STORAGE_KEY,
+  LOCAL_NEW_TAB_THEME_STORAGE_KEY,
+  readLocalNewTabSkin,
 } from '@shared/theme'
 import {
   persistSceneState,
@@ -63,17 +66,21 @@ function resolveInitialSkin(): AppSkin {
   if (typeof window === 'undefined') return DEFAULT_APP_SKIN
 
   try {
+    if (isLocalNewTab()) return readLocalNewTabSkin(window.localStorage)
     const stored = window.localStorage.getItem(WEB_THEME_STORAGE_KEY)
     if (stored) return normalizeAppSkin(stored)
     return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'frost' : DEFAULT_APP_SKIN
   } catch {
-    return DEFAULT_APP_SKIN
+    return isLocalNewTab() ? 'frost' : DEFAULT_APP_SKIN
   }
 }
 
 function persistSkin(skin: AppSkin) {
   try {
-    window.localStorage.setItem(WEB_THEME_STORAGE_KEY, skin)
+    window.localStorage.setItem(
+      isLocalNewTab() ? LOCAL_NEW_TAB_THEME_STORAGE_KEY : WEB_THEME_STORAGE_KEY,
+      skin
+    )
   } catch {
     // Theme rendering remains functional when browser storage is unavailable.
   }

@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import { getSearchBootValue, MAX_SEARCH_BOOT_LENGTH } from './components/searchBoot'
-import { installEmbeddedFocusGuard } from './components/searchFocus'
+import { installSearchFocusGuard } from './components/searchFocus'
 import { useAppStore } from './store/appStore'
 import './index.css'
 
@@ -15,7 +15,7 @@ if (handoffQuery.trim()) {
 }
 
 if (isEmbedded) {
-  installEmbeddedFocusGuard()
+  installSearchFocusGuard()
 }
 
 createRoot(document.getElementById('root')!).render(

@@ -42,7 +42,9 @@ export function TopBar() {
   const networkInfoRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    if (systemSkin) {
+    // A local new tab has its own explicit preference and a white default.
+    // The server's fallback must not become a saved user choice on first load.
+    if (systemSkin && !isLocalNewTab()) {
       try {
         if (!isAppSkin(window.localStorage.getItem(WEB_THEME_STORAGE_KEY))) setSkin(systemSkin)
       } catch {

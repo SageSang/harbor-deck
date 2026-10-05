@@ -1,6 +1,6 @@
 {
   "name": "harbor-deck",
-  "version": "1.4.25",
+  "version": "1.4.26",
   "type": "module",
   "scripts": {
     "dev:client": "vite",
