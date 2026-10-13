@@ -51,6 +51,7 @@ export interface ProbeResult {
     | 'network-error'
     | 'permission-missing'
     | 'permission-error'
+    | 'invalid-response'
   elapsedMs: number
   httpStatus?: number
 }

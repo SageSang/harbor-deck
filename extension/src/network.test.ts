@@ -10,6 +10,11 @@ const settings: ExtensionSettings = {
   probeTimeoutMs: 200,
   settingsRevision: 'v1',
 }
+const health = () =>
+  new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  })
 const permissions = vi.fn()
 beforeEach(() => {
   vi.stubGlobal('chrome', { permissions: { contains: permissions } })
@@ -26,7 +31,7 @@ describe('address probing', () => {
       'fetch',
       vi.fn((url: string) =>
         url.includes('lan.test')
-          ? Promise.resolve({ ok: true })
+          ? Promise.resolve(health())
           : new Promise((resolve) => {
               finishSecondary = resolve
             })
@@ -43,7 +48,7 @@ describe('address probing', () => {
       'fetch',
       vi.fn((url: string) =>
         url.includes('wan.test')
-          ? Promise.resolve({ ok: true })
+          ? Promise.resolve(health())
           : new Promise((resolve) => {
               finishPrimary = resolve
             })
@@ -76,7 +81,10 @@ describe('address probing', () => {
     permissions.mockImplementation(async ({ origins }: { origins: string[] }) =>
       origins[0].startsWith('https:')
     )
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => health())
+    )
     expect(await probeAvailableTarget(settings, null)).toMatchObject({
       activeUrl: settings.fallbackUrl,
       status: 'success',
@@ -154,5 +162,57 @@ describe('address probing', () => {
         fallback: { outcome: 'timeout', elapsedMs: 200 },
       },
     })
+  })
+})
+
+describe('health response identity and complete deadlines', () => {
+  it.each([
+    ['login HTML', '<html>Sign in</html>', 'text/html'],
+    ['invalid JSON', '{broken', 'application/json'],
+    ['not healthy', '{"ok":false}', 'application/json'],
+    ['unrelated JSON', '{"status":"ok"}', 'application/json'],
+  ])('rejects %s instead of marking it healthy', async (_label, body, type) => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation(async () => new Response(body, { headers: { 'Content-Type': type } }))
+    )
+    const result = await probeAvailableTarget(settings, null)
+    expect(result.activeUrl).toBe('')
+    expect(result.probeResults?.primary?.outcome).toBe('invalid-response')
+  })
+  it('bounds a response whose headers arrive but whose body stalls', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'Content-Type': 'application/json' }),
+        json: () => new Promise(() => undefined),
+      })
+    )
+    const result = probeAvailableTarget(settings, null)
+    await vi.advanceTimersByTimeAsync(200)
+    expect((await result).probeResults?.primary?.outcome).toBe('timeout')
+  })
+  it('bounds stalled permissions without starting a later fetch', async () => {
+    vi.useFakeTimers()
+    let grant!: (value: boolean) => void
+    permissions.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          grant = resolve
+        })
+    )
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const result = probeAvailableTarget(settings, null)
+    await vi.advanceTimersByTimeAsync(200)
+    expect((await result).status).toBe('failed')
+    grant(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

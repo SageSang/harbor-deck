@@ -182,3 +182,206 @@ describe('popup initialization and uncertain writes', () => {
     expect(host.textContent).toContain('will not be resubmitted automatically')
   })
 })
+
+const manyScenes = {
+  defaultSceneId: 'home',
+  scenes: [
+    {
+      id: 'home',
+      name: 'Home',
+      groups: [
+        { id: 'g', name: '账号｜邮箱' },
+        { id: 'tools', name: '开发｜工具' },
+      ],
+    },
+    { id: 'work', name: 'Dewu', groups: [{ id: 'tests', name: '测试｜平台' }] },
+  ],
+}
+async function setInput(selector: string, value: string) {
+  await act(async () => {
+    const el = host.querySelector<HTMLInputElement>(selector)!
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, value)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+async function submit() {
+  await act(async () =>
+    host
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  )
+}
+function draft(selectedGroups: Record<string, string>, recordSceneId = 'home') {
+  return {
+    sourceTabUrl: 'https://bookmark.test/',
+    tabUrl: 'https://bookmark.test/',
+    tabTitle: 'Draft title',
+    note: 'Keep this text',
+    secondaryUrl: '',
+    selectedGroups,
+    recordSceneId,
+    instanceKey: getInstanceKey(settings),
+  }
+}
+describe('searchable save locations and preserved intent', () => {
+  it('keeps multi-scene choices across filtering and submits their exact IDs', async () => {
+    mocks.getIntegrationJson.mockImplementation(async (_settings, path: string) =>
+      path.includes('/scenes') ? manyScenes : existing
+    )
+    mocks.integrationRequest.mockResolvedValue({ created: false })
+    await act(async () => root.render(<PopupApp />))
+    await setInput('input[type="search"]', 'Dewu 测试')
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-category-option]')!.click())
+    await setInput('input[type="search"]', 'does-not-exist')
+    expect(host.querySelectorAll('.selected-location')).toHaveLength(2)
+    await submit()
+    expect(mocks.integrationRequest).toHaveBeenCalledWith(
+      settings.primaryUrl,
+      '/api/integrations/bookmarks',
+      settings,
+      expect.objectContaining({
+        body: expect.objectContaining({
+          placements: [
+            { sceneId: 'home', groupId: 'g' },
+            { sceneId: 'work', groupId: 'tests' },
+          ],
+        }),
+      })
+    )
+  })
+  it('replaces only the selected group in the same scene', async () => {
+    mocks.readPopupDraft.mockResolvedValue(draft({ home: 'g', work: 'tests' }))
+    mocks.getIntegrationJson.mockResolvedValue(manyScenes)
+    await act(async () => root.render(<PopupApp />))
+    await setInput('input[type="search"]', 'Home 工具')
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-category-option]')!.click())
+    expect(mocks.writePopupDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedGroups: { home: 'tools', work: 'tests' } })
+    )
+  })
+  it('does not change the quick-record target just by browsing or searching', async () => {
+    mocks.getIntegrationJson.mockImplementation(async (_settings, path: string) =>
+      path.includes('/scenes') ? manyScenes : {}
+    )
+    await act(async () => root.render(<PopupApp />))
+    await act(async () =>
+      host.querySelectorAll<HTMLButtonElement>('.popup-scene-heading')[1].click()
+    )
+    await setInput('input[type="search"]', 'Dewu')
+    expect(host.querySelector('select')?.value).toBe('home')
+    expect(host.querySelector('button[type="submit"]')?.textContent).toContain('Home')
+    expect(mocks.writePopupDraft).not.toHaveBeenCalled()
+  })
+  it('saves quick records only to the explicitly selected scene', async () => {
+    mocks.getIntegrationJson.mockImplementation(async (_settings, path: string) =>
+      path.includes('/scenes') ? manyScenes : {}
+    )
+    mocks.integrationRequest.mockResolvedValue({ created: true })
+    await act(async () => root.render(<PopupApp />))
+    await act(async () => {
+      const select = host.querySelector('select')!
+      select.value = 'work'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await submit()
+    expect(mocks.integrationRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      settings,
+      expect.objectContaining({
+        body: expect.objectContaining({ recordSceneId: 'work', placements: [] }),
+      })
+    )
+  })
+  it('blocks a deleted category without silently losing its draft target or text', async () => {
+    mocks.readPopupDraft.mockResolvedValue(draft({ home: 'removed' }))
+    mocks.getIntegrationJson.mockResolvedValue(manyScenes)
+    await act(async () => root.render(<PopupApp />))
+    expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+    expect(host.querySelector('[role="alert"]')).not.toBeNull()
+    expect(host.querySelector('input')?.value).toBe('Draft title')
+    expect(host.querySelector('textarea')?.value).toBe('Keep this text')
+    expect(host.querySelector('details')?.open).toBe(true)
+    await submit()
+    expect(mocks.integrationRequest).not.toHaveBeenCalled()
+    expect(mocks.writePopupDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedGroups: { home: 'removed' } })
+    )
+    await setInput('input[type="search"]', 'Home 邮箱')
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-category-option]')!.click())
+    expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false)
+  })
+  it('persists a missing quick-record scene until the user explicitly chooses a replacement', async () => {
+    mocks.readPopupDraft.mockResolvedValue(draft({}, 'removed-scene'))
+    mocks.getIntegrationJson.mockResolvedValue(manyScenes)
+    await act(async () => root.render(<PopupApp />))
+    expect(host.querySelector('select')?.value).toBe('')
+    await setInput('input:not([type="search"])', 'Updated title')
+    expect(mocks.writePopupDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ recordSceneId: 'removed-scene' })
+    )
+    await submit()
+    expect(mocks.integrationRequest).not.toHaveBeenCalled()
+  })
+  it('keeps unconfirmed submissions blocked even after changing the visible selection', async () => {
+    mocks.readPopupDraft.mockResolvedValue({
+      ...draft({ home: 'g' }),
+      pendingSubmission: {
+        name: 'Draft title',
+        primaryUrl: 'https://bookmark.test/',
+        placements: [{ sceneId: 'home', groupId: 'g' }],
+      },
+    })
+    mocks.getIntegrationJson.mockResolvedValue(manyScenes)
+    await act(async () => root.render(<PopupApp />))
+    await setInput('input[type="search"]', 'Home 工具')
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-category-option]')!.click())
+    await submit()
+    expect(mocks.integrationRequest).not.toHaveBeenCalled()
+    expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+  })
+  it('Enter in category search selects a location without sending a bookmark', async () => {
+    mocks.getIntegrationJson.mockImplementation(async (_settings, path: string) =>
+      path.includes('/scenes') ? manyScenes : {}
+    )
+    await act(async () => root.render(<PopupApp />))
+    await setInput('input[type="search"]', 'Dewu 测试')
+    await act(async () =>
+      host
+        .querySelector('input[type="search"]')!
+        .dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+        )
+    )
+    expect(host.querySelectorAll('.selected-location')).toHaveLength(1)
+    expect(mocks.integrationRequest).not.toHaveBeenCalled()
+  })
+})
+
+it('resumes editing only after explicit review, without replaying an uncertain POST', async () => {
+  mocks.readPopupDraft.mockResolvedValue({
+    ...draft({ home: 'g' }),
+    pendingSubmission: {
+      name: 'Draft title',
+      primaryUrl: 'https://bookmark.test/',
+      placements: [{ sceneId: 'home', groupId: 'g' }],
+    },
+  })
+  mocks.getIntegrationJson.mockImplementation(async (_settings, path: string) =>
+    path.includes('/scenes') ? manyScenes : { bookmark: null, placements: [] }
+  )
+  await act(async () => root.render(<PopupApp />))
+  expect(host.textContent).not.toContain('Reviewed, resume editing')
+  const button = [...host.querySelectorAll('button')].find(
+    (el) => el.textContent === 'Check save result'
+  )!
+  await act(async () => button.click())
+  const resume = [...host.querySelectorAll('button')].find(
+    (el) => el.textContent === 'Reviewed, resume editing'
+  )!
+  expect(resume).toBeDefined()
+  await act(async () => resume.click())
+  expect(mocks.integrationRequest).not.toHaveBeenCalled()
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false)
+  expect(mocks.writePopupDraft.mock.calls.at(-1)?.[0].pendingSubmission).toBeUndefined()
+})

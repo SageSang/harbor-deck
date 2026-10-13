@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { X } from 'lucide-react'
+import { CategoryPicker } from './CategoryPicker'
+import { invalidCategoryTargets, type SceneOption } from './categoryOptions'
 import { getInstanceKey, sameSettings } from './resolutionState'
 import {
   getIntegrationJson,
@@ -23,17 +25,6 @@ import {
 import { restoreExtensionTheme } from './theme'
 import type { ExtensionLanguage, ExtensionSettings, PopupDraft, BookmarkSubmission } from './types'
 import './styles.css'
-
-interface SceneGroup {
-  id: string
-  name: string
-}
-
-interface SceneOption {
-  id: string
-  name: string
-  groups: SceneGroup[]
-}
 
 interface SceneResponse {
   defaultSceneId: string
@@ -67,8 +58,9 @@ export function PopupApp() {
   const [recordSceneId, setRecordSceneId] = useState('')
   const [existingBookmarkSlug, setExistingBookmarkSlug] = useState('')
   const [saving, setSaving] = useState(false)
-  const [collapsedSceneIds, setCollapsedSceneIds] = useState<Set<string>>(new Set())
+  const [moreOpen, setMoreOpen] = useState(false)
   const [ready, setReady] = useState(false)
+  const [submissionReviewed, setSubmissionReviewed] = useState(false)
   const [pendingSubmission, setPendingSubmission] = useState<BookmarkSubmission | undefined>()
   const dirty = useRef(false)
   const userEdited = useRef(false)
@@ -104,6 +96,16 @@ export function PopupApp() {
     () => Object.entries(selectedGroups).map(([sceneId, groupId]) => ({ sceneId, groupId })),
     [selectedGroups]
   )
+
+  const invalidTargets = scenes ? invalidCategoryTargets(scenes.scenes, selectedGroups) : []
+  const invalidRecordTarget = Boolean(
+    scenes && recordSceneId && !scenes.scenes.some((scene) => scene.id === recordSceneId)
+  )
+  const targetInvalid = invalidTargets.length > 0 || (selectedCount === 0 && invalidRecordTarget)
+  const recordSceneName = scenes?.scenes.find((scene) => scene.id === recordSceneId)?.name ?? ''
+  useEffect(() => {
+    if (note || secondaryUrl) setMoreOpen(true)
+  }, [note, secondaryUrl])
 
   function makeDraft(submission = pendingSubmission): PopupDraft {
     return {
@@ -226,10 +228,7 @@ export function PopupApp() {
             Number(right.id === result.defaultSceneId) - Number(left.id === result.defaultSceneId)
         )
         setScenes({ ...result, scenes: sortedScenes })
-        setCollapsedSceneIds(new Set(sortedScenes.map((scene) => scene.id)))
-        setRecordSceneId((current) =>
-          result.scenes.some((scene) => scene.id === current) ? current : result.defaultSceneId
-        )
+        setRecordSceneId((current) => current || result.defaultSceneId)
         if (!reusableDraft && /^https?:\/\//i.test(sourceTabUrl)) {
           try {
             const existing = await getIntegrationJson<ExistingBookmarkResponse>(
@@ -289,7 +288,6 @@ export function PopupApp() {
 
   function toggleGroup(sceneId: string, groupId: string) {
     markDirty()
-    setRecordSceneId(sceneId)
     setSelectedGroups((current) => {
       if (current[sceneId] === groupId) {
         const next = { ...current }
@@ -300,16 +298,11 @@ export function PopupApp() {
     })
   }
 
-  function toggleSceneCollapse(sceneId: string) {
+  function removeSelection(sceneId: string) {
     markDirty()
-    setRecordSceneId(sceneId)
-    setCollapsedSceneIds((current) => {
-      const next = new Set(current)
-      if (next.has(sceneId)) {
-        next.delete(sceneId)
-      } else {
-        next.add(sceneId)
-      }
+    setSelectedGroups((current) => {
+      const next = { ...current }
+      delete next[sceneId]
       return next
     })
   }
@@ -322,6 +315,7 @@ export function PopupApp() {
         lookupPath(body.primaryUrl)
       )
       if (!mounted.current) return
+      setSubmissionReviewed(true)
       setState((current) => ({
         ...current,
         error: isZh
@@ -350,8 +344,11 @@ export function PopupApp() {
     event.preventDefault()
     if (
       saving ||
+      pendingSubmission ||
+      targetInvalid ||
       saved.current ||
       !ready ||
+      !scenes ||
       !state.settings ||
       !recordSceneId ||
       !state.tabTitle.trim() ||
@@ -376,6 +373,7 @@ export function PopupApp() {
       const target = integrationTarget(state.settings)
       if (!target) throw new Error('No available address')
       dirty.current = true
+      setSubmissionReviewed(false)
       setPendingSubmission(body)
       await writePopupDraft(makeDraft(body))
       dispatched = true
@@ -433,131 +431,208 @@ export function PopupApp() {
             ? '选择一个或多个场景分组。受保护场景不会出现在这里。'
             : 'Choose one or more scene groups. Protected scenes are hidden.'}
         </p>
-        <form className="popup-form" onSubmit={handleSubmit}>
+        <form
+          className="popup-form"
+          onSubmit={handleSubmit}
+          onKeyDown={(event) => {
+            if (
+              event.key === 'Enter' &&
+              event.target instanceof HTMLInputElement &&
+              !event.nativeEvent.isComposing
+            )
+              event.preventDefault()
+          }}
+        >
           <fieldset disabled={saving || saved.current} style={{ display: 'contents' }}>
-            <label className="field">
-              <span>{isZh ? '标题' : 'Title'}</span>
-              <input
-                className="input"
-                value={state.tabTitle}
-                onChange={(event) => {
-                  markDirty()
-                  setState((current) => ({ ...current, tabTitle: event.target.value }))
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>URL</span>
-              <input
-                className="input"
-                value={state.tabUrl}
-                onChange={(event) => {
-                  markDirty()
-                  setState((current) => ({ ...current, tabUrl: event.target.value }))
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>{isZh ? '备用 URL（可选）' : 'Secondary URL (optional)'}</span>
-              <input
-                className="input"
-                value={secondaryUrl}
-                onChange={(event) => {
-                  markDirty()
-                  setSecondaryUrl(event.target.value)
-                }}
-              />
-            </label>
-            <label className="field">
-              <span>{isZh ? '备注（可选）' : 'Note (optional)'}</span>
-              <textarea
-                className="input popup-textarea"
-                rows={3}
-                value={note}
-                onChange={(event) => {
-                  markDirty()
-                  setNote(event.target.value)
-                }}
-              />
-            </label>
-            <div className="popup-scenes">
-              {scenes?.scenes.map((scene) => (
-                <div className="popup-scene" key={scene.id}>
-                  <button
-                    type="button"
-                    className="popup-scene-heading"
-                    aria-expanded={!collapsedSceneIds.has(scene.id)}
-                    onClick={() => toggleSceneCollapse(scene.id)}
-                  >
-                    <strong>
-                      {scene.name}
-                      {recordSceneId === scene.id && selectedCount === 0 ? ' · 快速记录' : ''}
-                    </strong>
-                    {collapsedSceneIds.has(scene.id) ? (
-                      <ChevronRight aria-hidden="true" />
-                    ) : (
-                      <ChevronDown aria-hidden="true" />
-                    )}
-                  </button>
-                  {!collapsedSceneIds.has(scene.id) ? (
-                    <div className="popup-groups">
-                      {scene.groups.map((group) => (
-                        <button
-                          key={group.id}
-                          type="button"
-                          className={`toggle-option ${selectedGroups[scene.id] === group.id ? 'active' : ''}`}
-                          onClick={() => toggleGroup(scene.id, group.id)}
-                        >
-                          {group.name}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
+            <div className="popup-fields">
+              <label className="field">
+                <span>{isZh ? '标题' : 'Title'}</span>
+                <input
+                  className="input"
+                  value={state.tabTitle}
+                  onChange={(event) => {
+                    markDirty()
+                    setState((current) => ({ ...current, tabTitle: event.target.value }))
+                  }}
+                />
+              </label>
+              <label className="field">
+                <span>URL</span>
+                <input
+                  className="input"
+                  value={state.tabUrl}
+                  onChange={(event) => {
+                    markDirty()
+                    setState((current) => ({ ...current, tabUrl: event.target.value }))
+                  }}
+                />
+              </label>
+              <details
+                className="popup-more"
+                open={moreOpen}
+                onToggle={(event) => setMoreOpen(event.currentTarget.open)}
+              >
+                <summary>
+                  {isZh ? '更多信息（备用地址、备注）' : 'More details (secondary URL, note)'}
+                </summary>
+                <label className="field">
+                  <span>{isZh ? '备用 URL（可选）' : 'Secondary URL (optional)'}</span>
+                  <input
+                    className="input"
+                    value={secondaryUrl}
+                    onChange={(event) => {
+                      markDirty()
+                      setSecondaryUrl(event.target.value)
+                    }}
+                  />
+                </label>
+                <label className="field">
+                  <span>{isZh ? '备注（可选）' : 'Note (optional)'}</span>
+                  <textarea
+                    className="input popup-textarea"
+                    rows={3}
+                    value={note}
+                    onChange={(event) => {
+                      markDirty()
+                      setNote(event.target.value)
+                    }}
+                  />
+                </label>
+              </details>
             </div>
-            {pendingSubmission ? (
-              <div className="status-note">
-                <p>
-                  {isZh
-                    ? '存在尚未确认的提交，草稿已保留。'
-                    : 'A submission is unconfirmed. Your draft is kept.'}
-                </p>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={saving}
-                  onClick={() => void checkSubmission(pendingSubmission)}
-                >
-                  {isZh ? '只读核对保存结果' : 'Check save result'}
-                </button>
+            <CategoryPicker
+              scenes={scenes?.scenes ?? []}
+              selected={selectedGroups}
+              isZh={isZh}
+              onSelect={toggleGroup}
+            />
+            <div className="popup-footer">
+              <div className="popup-save-context">
+                {selectedCount > 0 ? (
+                  <div
+                    className="selected-locations"
+                    aria-label={isZh ? '已选位置' : 'Selected locations'}
+                  >
+                    {selectedTargets.map(({ sceneId, groupId }) => {
+                      const scene = scenes?.scenes.find((item) => item.id === sceneId)
+                      const group = scene?.groups.find((item) => item.id === groupId)
+                      const label = `${scene?.name ?? sceneId} / ${group?.name ?? (isZh ? '原分类已调整' : 'Group no longer available')}`
+                      return (
+                        <button
+                          type="button"
+                          className={`selected-location ${group ? '' : 'invalid'}`}
+                          key={sceneId}
+                          aria-label={`${isZh ? '移除' : 'Remove'} ${label}`}
+                          onClick={() => removeSelection(sceneId)}
+                        >
+                          {label}
+                          <X size={13} aria-hidden="true" />
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <label className="quick-record-target">
+                    <span>{isZh ? '保存为快速记录' : 'Save as a quick record'}</span>
+                    <select
+                      aria-label={isZh ? '快速记录目标场景' : 'Quick record scene'}
+                      value={invalidRecordTarget ? '' : recordSceneId}
+                      onChange={(event) => {
+                        markDirty()
+                        setRecordSceneId(event.target.value)
+                      }}
+                    >
+                      {invalidRecordTarget ? (
+                        <option value="" disabled>
+                          {isZh ? '请选择场景' : 'Choose a scene'}
+                        </option>
+                      ) : null}
+                      {scenes?.scenes.map((scene) => (
+                        <option key={scene.id} value={scene.id}>
+                          {scene.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {targetInvalid ? (
+                  <p className="status-note error" role="alert">
+                    {isZh
+                      ? '原分类或场景已调整，请重新选择保存位置。'
+                      : 'A saved group or scene has changed. Please choose a save location again.'}
+                  </p>
+                ) : null}
+                {pendingSubmission ? (
+                  <div className="status-note">
+                    <p>
+                      {isZh
+                        ? '存在尚未确认的提交，草稿已保留。'
+                        : 'A submission is unconfirmed. Your draft is kept.'}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={saving}
+                      onClick={() => void checkSubmission(pendingSubmission)}
+                    >
+                      {isZh ? '只读核对保存结果' : 'Check save result'}
+                    </button>
+                    {submissionReviewed ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          markDirty()
+                          setPendingSubmission(undefined)
+                          setSubmissionReviewed(false)
+                          setState((current) => ({
+                            ...current,
+                            error: '',
+                            status: isZh
+                              ? '已恢复编辑，请核对内容后再保存。'
+                              : 'Editing resumed. Review the content before saving.',
+                          }))
+                        }}
+                      >
+                        {isZh ? '已核对，继续编辑' : 'Reviewed, resume editing'}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {state.error ? <p className="status-note error">{state.error}</p> : null}
+                {state.status ? <p className="status-note success">{state.status}</p> : null}
               </div>
-            ) : null}
-            {state.error ? <p className="status-note error">{state.error}</p> : null}
-            {state.status ? <p className="status-note success">{state.status}</p> : null}
-            <button
-              className="btn btn-primary"
-              type="submit"
-              disabled={
-                !ready || saving || saved.current || !recordSceneId || !state.settings.apiToken
-              }
-            >
-              {saving
-                ? isZh
-                  ? '保存中…'
-                  : 'Saving…'
-                : selectedCount === 0
+              <button
+                className="btn btn-primary"
+                type="submit"
+                disabled={
+                  !ready ||
+                  !scenes ||
+                  saving ||
+                  Boolean(pendingSubmission) ||
+                  targetInvalid ||
+                  saved.current ||
+                  !recordSceneId ||
+                  !state.settings.apiToken
+                }
+              >
+                {saving
                   ? isZh
-                    ? '保存记录'
-                    : 'Save record'
-                  : existingBookmarkSlug
+                    ? '保存中…'
+                    : 'Saving…'
+                  : selectedCount === 0
                     ? isZh
-                      ? '保存修改'
-                      : 'Save Changes'
-                    : isZh
-                      ? '确认添加'
-                      : 'Add Bookmark'}
-            </button>
+                      ? `保存到 ${recordSceneName} 快速记录`
+                      : `Save record to ${recordSceneName}`
+                    : existingBookmarkSlug
+                      ? isZh
+                        ? '保存修改'
+                        : 'Save Changes'
+                      : isZh
+                        ? '确认添加'
+                        : 'Add Bookmark'}
+              </button>
+            </div>
           </fieldset>
         </form>
       </section>

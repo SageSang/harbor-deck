@@ -33,27 +33,53 @@ async function probe(baseUrl: string, timeoutMs: number): Promise<ProbeResult> {
     elapsedMs: Math.max(0, Date.now() - startedAt),
     ...(httpStatus === undefined ? {} : { httpStatus }),
   })
-  try {
-    if (!(await hasOriginPermission(baseUrl))) return result('permission-missing')
-  } catch {
-    return result('permission-error')
-  }
-
   const controller = new AbortController()
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs)
-
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const attempt = async (): Promise<ProbeResult> => {
+    try {
+      if (!(await hasOriginPermission(baseUrl))) return result('permission-missing')
+    } catch {
+      return result('permission-error')
+    }
+    if (controller.signal.aborted) return result('timeout')
+    try {
+      const response = await fetch(new URL('/api/health', baseUrl).toString(), {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+      if (!response.ok) return result('http-error', response.status)
+      const contentType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase()
+      if (contentType !== 'application/json') return result('invalid-response', response.status)
+      let body: unknown
+      try {
+        body = await response.json()
+      } catch {
+        return result(controller.signal.aborted ? 'timeout' : 'invalid-response', response.status)
+      }
+      return result(
+        body && typeof body === 'object' && !Array.isArray(body) && 'ok' in body && body.ok === true
+          ? 'reachable'
+          : 'invalid-response',
+        response.status
+      )
+    } catch {
+      return result(controller.signal.aborted ? 'timeout' : 'network-error')
+    }
+  }
   try {
-    const healthUrl = new URL('/api/health', baseUrl).toString()
-    const response = await fetch(healthUrl, {
-      method: 'GET',
-      cache: 'no-store',
-      signal: controller.signal,
-    })
-    return result(response.ok ? 'reachable' : 'http-error', response.status)
-  } catch {
-    return result(controller.signal.aborted ? 'timeout' : 'network-error')
+    // Also bound permission lookup and response-body parsing, not just response headers.
+    return await Promise.race([
+      attempt(),
+      new Promise<ProbeResult>((resolve) => {
+        timer = setTimeout(() => {
+          controller.abort()
+          resolve(result('timeout'))
+        }, timeoutMs)
+      }),
+    ])
   } finally {
-    globalThis.clearTimeout(timeoutId)
+    clearTimeout(timer)
   }
 }
 

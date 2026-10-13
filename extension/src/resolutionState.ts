@@ -132,6 +132,7 @@ export function normalizeResolution(value: unknown): NewTabBootSnapshot | null {
       'network-error',
       'permission-missing',
       'permission-error',
+      'invalid-response',
     ]
     for (const name of ['primary', 'fallback'] as const) {
       const raw = source[name]

@@ -1,6 +1,13 @@
 import { matchesSettings, normalizeResolution } from './resolutionState'
 import type { ExtensionSettings, NewTabBootSnapshot } from './types'
 
+export class ResolutionSettingsChangedError extends Error {}
+
+export function resolutionResponseTimeout(settings: ExtensionSettings) {
+  // The worker must wake up and read storage before its network probe begins.
+  return Math.max(settings.probeTimeoutMs + 2000, 3000)
+}
+
 export async function requestResolution(
   settings: ExtensionSettings,
   options: { force?: boolean; failedUrl?: string; verifySingle?: boolean } = {}
@@ -12,7 +19,7 @@ export async function requestResolution(
       new Promise<never>((_, reject) => {
         timeout = setTimeout(
           () => reject(new Error('Address detection timed out')),
-          settings.probeTimeoutMs + 200
+          resolutionResponseTimeout(settings)
         )
       }),
     ])
@@ -23,10 +30,18 @@ export async function requestResolution(
       !response.ok ||
       !('snapshot' in response)
     ) {
-      throw new Error('Unable to refresh addresses; settings may have changed')
+      if (
+        response &&
+        typeof response === 'object' &&
+        'error' in response &&
+        response.error === 'settings-changed'
+      )
+        throw new ResolutionSettingsChangedError('Connection settings changed')
+      throw new Error('Unable to refresh addresses')
     }
     const snapshot = normalizeResolution(response.snapshot)
-    if (!matchesSettings(snapshot, settings)) throw new Error('Settings changed; reopen this page')
+    if (!matchesSettings(snapshot, settings))
+      throw new ResolutionSettingsChangedError('Settings changed; reopen this page')
     return snapshot
   } finally {
     if (timeout !== undefined) clearTimeout(timeout)
