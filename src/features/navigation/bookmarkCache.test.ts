@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { navigationConfigSchema } from '@/config/schema'
-import { BOOKMARK_CACHE_KEY } from '@shared/bookmarkSnapshot'
+import { navigationConfigSchema, systemConfigSchema } from '@/config/schema'
+import { BOOKMARK_CACHE_KEY, snapshotDisplay } from '@shared/bookmarkSnapshot'
 const config = navigationConfigSchema.parse({
   defaultSceneId: 'main',
   _revision: 'r1',
@@ -25,6 +25,35 @@ async function seeded() {
   return cache
 }
 describe('web bookmark cache lifecycle', () => {
+  it('does not write or notify for equivalent presentation values, including reordered keys', async () => {
+    const cache = await seeded()
+    const display = snapshotDisplay(systemConfigSchema.parse({}))
+    const writes = vi.spyOn(Storage.prototype, 'setItem')
+    const changed = vi.fn()
+    window.addEventListener(cache.BOOKMARK_CACHE_CHANGED, changed)
+    try {
+      cache.updateBookmarkPresentation({ display, expandedGroupKeys: ['main:main'] })
+      expect(writes).toHaveBeenCalledTimes(1)
+      expect(changed).toHaveBeenCalledTimes(1)
+      const stored = localStorage.getItem(BOOKMARK_CACHE_KEY)
+      const reordered = Object.fromEntries(Object.entries(display).reverse()) as typeof display
+      cache.updateBookmarkPresentation({ display: reordered })
+      cache.updateBookmarkPresentation({ expandedGroupKeys: ['main:main'] })
+      expect(writes).toHaveBeenCalledTimes(1)
+      expect(changed).toHaveBeenCalledTimes(1)
+      expect(localStorage.getItem(BOOKMARK_CACHE_KEY)).toBe(stored)
+
+      cache.updateBookmarkPresentation({ display: { ...display, appName: 'Updated' } })
+      cache.updateBookmarkPresentation({ expandedGroupKeys: [] })
+      expect(writes).toHaveBeenCalledTimes(3)
+      expect(changed).toHaveBeenCalledTimes(3)
+      expect(cache.readBookmarkCache()?.display?.appName).toBe('Updated')
+      expect(cache.readBookmarkCache()?.expandedGroupKeys).toEqual([])
+      expect(cache.readBookmarkCache()?.scenes).toEqual(JSON.parse(stored!).scenes)
+    } finally {
+      window.removeEventListener(cache.BOOKMARK_CACHE_CHANGED, changed)
+    }
+  })
   it('retains the last good copy on network/HTTP/parse failure but replaces explicit deletion', async () => {
     const cache = await seeded()
     const api = await import('../config/api')

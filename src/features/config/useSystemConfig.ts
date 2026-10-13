@@ -20,13 +20,12 @@ export function useSystemConfig() {
     () => ({ ...defaultSystemConfig, ...view.snapshot?.display }),
     [view.snapshot?.display]
   )
+  const hasSnapshot = Boolean(view.snapshot)
   useEffect(() => {
-    if (
-      query.data &&
-      view.snapshot &&
-      JSON.stringify(snapshotDisplay(query.data)) !== JSON.stringify(view.snapshot.display)
-    )
+    // Publish server changes (or populate a newly available cache), not cache
+    // notifications: another tab may have cached newer settings than this query.
+    if (query.data && hasSnapshot)
       updateBookmarkPresentation({ display: snapshotDisplay(query.data) })
-  }, [query.data, view.snapshot])
+  }, [query.data, hasSnapshot])
   return { ...query, data: query.data ?? cached }
 }

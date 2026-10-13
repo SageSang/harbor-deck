@@ -1,0 +1,108 @@
+{
+  "date": "2026-10-12",
+  "baseline_commit": "0d4a942",
+  "browser": "Google Chrome 155.0.8059.39, Linux, headless, isolated profile",
+  "scope": "Production web builds using fixture API responses, 120 synthetic bookmarks in 12 expanded groups. No user data or production server access.",
+  "measurement": "CDP Performance TaskDuration delta / Timestamp delta over a 5 second idle window after 1.5 seconds settling. Main-thread busy percentage, not an OS whole-machine CPU measurement.",
+  "before": [
+    {
+      "tabs": 1,
+      "pages": [
+        {
+          "mainThreadBusyPercent": 99.76,
+          "scriptSeconds": 4.881,
+          "layoutSeconds": 0.001,
+          "cacheWrites": 2604,
+          "cacheEvents": 2604,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tabs": 2,
+      "pages": [
+        {
+          "mainThreadBusyPercent": 99.7,
+          "scriptSeconds": 4.845,
+          "layoutSeconds": 0.001,
+          "cacheWrites": 2168,
+          "cacheEvents": 2168,
+          "errors": []
+        },
+        {
+          "mainThreadBusyPercent": 99.7,
+          "scriptSeconds": 4.831,
+          "layoutSeconds": 0.001,
+          "cacheWrites": 2308,
+          "cacheEvents": 2308,
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "tabs": 1,
+      "pages": [
+        {
+          "mainThreadBusyPercent": 0.34,
+          "scriptSeconds": 0.004,
+          "layoutSeconds": 0.001,
+          "cacheWrites": 0,
+          "cacheEvents": 0,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "tabs": 2,
+      "pages": [
+        {
+          "mainThreadBusyPercent": 0.23,
+          "scriptSeconds": 0.003,
+          "layoutSeconds": 0.001,
+          "cacheWrites": 0,
+          "cacheEvents": 0,
+          "errors": []
+        },
+        {
+          "mainThreadBusyPercent": 0.35,
+          "scriptSeconds": 0.004,
+          "layoutSeconds": 0.001,
+          "cacheWrites": 0,
+          "cacheEvents": 0,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "searchValue": "Bookmark 11",
+      "bookmarkCards": 11
+    }
+  ],
+  "root_cause": "snapshotDisplay returned networkProbe before clickOpenTarget; Zod snapshot parsing reordered the same values. JSON.stringify comparison in useSystemConfig therefore always detected a change. updateBookmarkPresentation unconditionally wrote and notified, triggering the same effect again.",
+  "changes": [
+    "Normalize display projection through the same schema used by stored snapshots.",
+    "Skip presentation writes and notifications when normalized contents are identical.",
+    "Publish when server config changes or a cache becomes available; do not republish stale server-query data in response to another cache notification."
+  ],
+  "regressions": {
+    "before": "All three new regression tests failed on the old implementation, including a bounded hook reproduction with 24 write attempts.",
+    "after": "66 test files, 399 tests passed. ESLint, web/server build and Chrome extension build passed. Existing Vite chunk-size warnings remain.",
+    "coverage": [
+      "Display serialization stable after validated storage round trip",
+      "No duplicate writes/notifications for equivalent display or expansion values",
+      "Real display/expansion changes persist and notify",
+      "Multiple useSystemConfig consumers settle without repeated writes",
+      "Newer cached settings from another tab are not overwritten by a stale query",
+      "Search filters 120 fixture cards down to 11 matching cards"
+    ]
+  },
+  "limitations": [
+    "No direct profiling of the affected Mac",
+    "At measurement time: no production deployment, release, extension store upload, or source push. Subsequent publication is tracked by the v1.4.28 release.",
+    "Packaged extension built and covered by automated tests; CPU comparison is for the web build"
+  ],
+  "artifacts": "/tmp/harbordeck-cpu-20261012",
+  "build_index_sha256": "6fd974befb5f45b66d17040271286e74d9a3bb85c4287e783cd02304df8c5c61"
+}

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { navigationConfigSchema } from '../src/config/schema'
-import { cacheSource, makeBookmarkSnapshot, parseBookmarkSnapshot } from './bookmarkSnapshot'
+import { navigationConfigSchema, systemConfigSchema } from '../src/config/schema'
+import {
+  cacheSource,
+  makeBookmarkSnapshot,
+  parseBookmarkSnapshot,
+  snapshotDisplay,
+} from './bookmarkSnapshot'
 const config = navigationConfigSchema.parse({
   defaultSceneId: 'public',
   _revision: 'r1',
@@ -33,6 +38,13 @@ const config = navigationConfigSchema.parse({
   ],
 })
 describe('safe navigation snapshots', () => {
+  it('keeps display serialization stable through a validated storage round trip', () => {
+    const display = snapshotDisplay(systemConfigSchema.parse({}))
+    const snapshot = { ...makeBookmarkSnapshot(config, 'https://deck.test/', 'owner'), display }
+    expect(JSON.stringify(parseBookmarkSnapshot(JSON.stringify(snapshot))?.display)).toBe(
+      JSON.stringify(display)
+    )
+  })
   it('persists only ordinary referenced bookmarks and quick records, even after protected scenes unlock', () => {
     const snapshot = makeBookmarkSnapshot(config, 'https://deck.test/?embedded=1', 'owner')
     expect(snapshot.scenes).toHaveLength(1)

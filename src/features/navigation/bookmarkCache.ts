@@ -186,7 +186,11 @@ export function updateBookmarkPresentation(
   try {
     const snapshot = parseBookmarkSnapshot({ ...current, ...patch }, clientSource())
     if (!snapshot) return
-    clientStorage().setItem(BOOKMARK_CACHE_KEY, JSON.stringify(snapshot))
+    // Multiple mounted consumers can publish the same presentation in one commit.
+    // Both values have passed the same schema, so field order is canonical here.
+    const serialized = JSON.stringify(snapshot)
+    if (serialized === JSON.stringify(current)) return
+    clientStorage().setItem(BOOKMARK_CACHE_KEY, serialized)
     verified = snapshot
     send('snapshot', snapshot)
     changed()

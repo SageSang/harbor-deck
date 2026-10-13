@@ -150,7 +150,9 @@ export function makeBookmarkSnapshot(
 }
 
 export function snapshotDisplay(system: SystemConfig): NonNullable<BookmarkSnapshot['display']> {
-  return {
+  // Use the storage schema's canonical key order. Comparing a raw projection with
+  // a parsed snapshot otherwise reports a change after every cache notification.
+  return bookmarkSnapshotSchema.shape.display.unwrap().parse({
     appName: system.appName,
     skin: system.skin,
     networkProbe: { ...system.networkProbe },
@@ -162,5 +164,5 @@ export function snapshotDisplay(system: SystemConfig): NonNullable<BookmarkSnaps
       name,
       urlTemplate,
     })),
-  }
+  })
 }
