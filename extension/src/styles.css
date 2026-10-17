@@ -354,8 +354,8 @@ a {
 
 .popup-shell {
   width: 420px;
+  /* A viewport-relative cap prevents Chrome's popup from growing at startup. */
   height: 600px;
-  max-height: 100dvh;
   min-height: 0;
   padding: 8px;
   display: flex;
