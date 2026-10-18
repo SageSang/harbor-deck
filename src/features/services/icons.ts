@@ -1,4 +1,5 @@
 import dynamicIconImports from 'lucide-react/dynamicIconImports.js'
+import { toPascalCase } from '../../../shared/iconNames'
 import {
   serviceIconCategoryAliases,
   serviceIconCategoryOrder,
@@ -24,15 +25,7 @@ export interface ServiceIconOption {
   searchText: string
 }
 
-export function toPascalCase(value: string) {
-  return value
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join('')
-}
-
-export { resolveDynamicIconName } from '../../../shared/iconNames'
+export { resolveDynamicIconName, toPascalCase } from '../../../shared/iconNames'
 
 export function loadServiceIcon(loaderKey: DynamicIconName) {
   return dynamicIconImports[loaderKey]()

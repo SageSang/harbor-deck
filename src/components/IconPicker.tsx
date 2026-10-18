@@ -350,7 +350,7 @@ export function IconPicker({ value, size = 'default', onChange }: IconPickerProp
                       >
                         <span className="flex min-w-0 items-center gap-2 text-left">
                           <span className="rounded-md border border-border/70 bg-background/70 p-1.5 text-primary/90">
-                            <ServiceIcon name={option.label} className="h-4 w-4" />
+                            <ServiceIcon name={option.loaderKey} className="h-4 w-4" />
                           </span>
                           <span className="min-w-0">
                             <span className="block truncate">{option.label}</span>

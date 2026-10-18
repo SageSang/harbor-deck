@@ -19,6 +19,21 @@ describe('service icon helpers', () => {
     expect(resolveDynamicIconName(name)).toBeNull()
   })
 
+  it.each([
+    ['Building2', 'building-2'],
+    ['ArrowDownAZ', 'arrow-down-a-z'],
+  ])('resolves historical labels with numbers and abbreviations: %s', (label, key) => {
+    expect(resolveDynamicIconName(label)).toBe(key)
+    expect(resolveDynamicIconName(`  ${label.toLowerCase()}  `)).toBe(key)
+  })
+
+  it('round-trips every displayed catalog label and preserves every canonical key', () => {
+    for (const { label, loaderKey } of serviceIconOptions) {
+      expect(resolveDynamicIconName(label), label).toBe(loaderKey)
+      expect(resolveDynamicIconName(loaderKey), loaderKey).toBe(loaderKey)
+    }
+  })
+
   it('keeps the icon catalog unique', () => {
     expect(new Set(serviceIconOptions.map((option) => option.loaderKey)).size).toBe(
       serviceIconOptions.length

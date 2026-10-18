@@ -87,12 +87,12 @@ function baseConfig(): AppConfig {
   }
 }
 
-async function buildTestServer() {
+async function buildTestServer(config: AppConfig = baseConfig()) {
   vi.resetModules()
   process.env.CONFIG_DIR = tempConfigDir
   process.env.NODE_ENV = 'test'
   process.env.HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN = managementToken
-  await writeFile(path.join(tempConfigDir, 'config.json'), JSON.stringify(baseConfig()), 'utf8')
+  await writeFile(path.join(tempConfigDir, 'config.json'), JSON.stringify(config), 'utf8')
   const { buildServer } = await import('./app.js')
   app = await buildServer()
   return app
@@ -360,6 +360,32 @@ describe('bookmark management API', () => {
       persisted.navigation.bookmarks.find((bookmark: { slug: string }) => bookmark.slug === 'alpha')
         .icon
     ).toBe(canonical)
+  })
+
+  it.each([
+    ['Building2', 'building-2'],
+    ['ArrowDownAZ', 'arrow-down-a-z'],
+  ])('edits only the name of a bookmark with historical icon %s', async (label, canonical) => {
+    const config = baseConfig()
+    config.navigation.bookmarks[0].icon = label
+    const server = await buildTestServer(config)
+    const { state } = await getState(server)
+    const file = path.join(tempConfigDir, 'config.json')
+    const expected = JSON.parse(await readFile(file, 'utf8'))
+    const response = await managementWrite(server, {
+      method: 'PATCH',
+      url: '/api/management/v1/bookmarks/alpha',
+      revision: state.revision,
+      payload: { name: 'Updated title' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json().result.bookmark).toMatchObject({
+      name: 'Updated title',
+      icon: canonical,
+    })
+    Object.assign(expected.navigation.bookmarks[0], { name: 'Updated title', icon: canonical })
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(expected)
+    expect((await getState(server)).state.revision).not.toBe(state.revision)
   })
 
   it('creates, edits, duplicates, moves, orders and deletes bookmarks', async () => {
