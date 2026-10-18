@@ -131,11 +131,7 @@ docker compose up -d
 
 群晖可以把 `./config` 换成 `/volume1/docker/harbor-deck/config` 等持久目录，容器内路径保持 `/app/config`。[仓库 Compose 文件](docker-compose.yml)还提供健康检查和可选集成配置。
 
-### 版本与升级
-
-当前示例固定到已发布的**服务端 1.4.28**；**扩展 1.4.29** 为独立发布。扩展或源码包版本更高，不代表存在同版本 Docker 镜像，升级前请查看对应组件的[发布说明](https://github.com/SageSang/harbor-deck/releases)。
-
-升级前备份完整配置挂载目录并记录原镜像版本。修改镜像标签，执行 `docker compose pull` 和 `docker compose up -d`，保留原配置挂载、接口 Token 和自定义端口映射。服务重启后需重新登录并解锁场景。`latest` 会随服务端发布移动；拉取固定标签不会自动切换到其他版本。
+更新内容与版本下载请查看[发布说明](https://github.com/SageSang/harbor-deck/releases)。
 
 ### 可选环境变量
 
@@ -177,13 +173,6 @@ EXTENSION_BROWSER=edge npm run package:extension
 ```
 
 技术栈为 React、TypeScript、Vite、Tailwind CSS、Fastify 和 Zod。发布标签 `vX.Y.Z-web` 仅发布服务端，`vX.Y.Z-extension` 仅发布扩展，无后缀 `vX.Y.Z` 发布两者。生成安装包不会自动提交商店，详见[发布说明](release-notes/README.md)。
-
-<details>
-<summary>维护者的长期上下文</summary>
-
-个人背景、历史决策、核验状态和待补事项统一维护在 [Sidney Vault](obsidian://open?vault=sidney-vault&file=20-Areas%2F%E8%BD%AF%E4%BB%B6%E9%A1%B9%E7%9B%AE%E7%BB%B4%E6%8A%A4%2F%E5%AE%9E%E4%BD%93%2FHarborDeck%2F%E6%96%87%E6%A1%A3%2F%E8%83%8C%E6%99%AF%E5%AE%9E%E7%8E%B0%E4%B8%8E%E5%8E%86%E5%8F%B2)。本仓库保留代码、使用说明与开发契约；不再复制个人维护日志。未接入该 Vault 的协作者仍可直接使用本文档。
-
-</details>
 
 ## 许可与来源
 

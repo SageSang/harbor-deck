@@ -131,11 +131,7 @@ Open `http://localhost:8080` on the Docker host and create the administrator acc
 
 On Synology, use a persistent host directory such as `/volume1/docker/harbor-deck/config` in place of `./config`. Keep the container path `/app/config`. The repository's [Compose file](docker-compose.yml) also includes a health check and optional integration settings.
 
-### Versions and upgrades
-
-The examples currently pin the published **server 1.4.28**. **Extension 1.4.29** is a separate release. A higher extension or source package version does not imply a matching Docker image; check the [release notes](https://github.com/SageSang/harbor-deck/releases) for the component you are upgrading.
-
-Back up the complete mounted configuration directory and record the current image version before upgrading. Change the image tag, then run `docker compose pull` and `docker compose up -d`. Preserve the configuration mount, integration tokens, and any custom port mapping. A restart requires signing in and unlocking scenes again. The `latest` tag moves with server releases; pulling a fixed tag does not upgrade to a different version.
+See the [release notes](https://github.com/SageSang/harbor-deck/releases) for changes and downloads.
 
 ### Optional settings
 
@@ -177,13 +173,6 @@ EXTENSION_BROWSER=edge npm run package:extension
 ```
 
 The project uses React, TypeScript, Vite, Tailwind CSS, Fastify, and Zod. Release tags select the deliverable: `vX.Y.Z-web` for the server, `vX.Y.Z-extension` for extensions, and `vX.Y.Z` for both. Packaging does not submit an extension to either store. See [release instructions](release-notes/README.md).
-
-<details>
-<summary>Maintainer context</summary>
-
-Personal maintenance history, decisions, verification status, and open context are maintained in [Sidney Vault](obsidian://open?vault=sidney-vault&file=20-Areas%2F%E8%BD%AF%E4%BB%B6%E9%A1%B9%E7%9B%AE%E7%BB%B4%E6%8A%A4%2F%E5%AE%9E%E4%BD%93%2FHarborDeck%2F%E6%96%87%E6%A1%A3%2F%E8%83%8C%E6%99%AF%E5%AE%9E%E7%8E%B0%E4%B8%8E%E5%8E%86%E5%8F%B2). This repository retains source code, usage documentation, and developer contracts. The Vault is not required to build or use the project.
-
-</details>
 
 ## License and origins
 
