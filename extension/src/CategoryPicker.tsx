@@ -49,7 +49,7 @@ export function CategoryPicker({ scenes, selected, isZh, onSelect }: Props) {
           type="search"
           className="input"
           aria-label={isZh ? '搜索保存位置' : 'Search save locations'}
-          placeholder={isZh ? '搜索分类，例如：邮箱、Dewu 测试' : 'Search groups, e.g. Home tools'}
+          placeholder={isZh ? '搜索场景或分组' : 'Search scenes or groups'}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />

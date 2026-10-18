@@ -30,7 +30,7 @@ The actual extension frontend modules were run in the Codex in-app Chromium brow
 Verified flows:
 
 1. Chinese and combined scene/group search; Enter selects without POSTing.
-2. Home and Dewu selections survive a no-results filter; one save sends both exact IDs once.
+2. Selections in two different scenes survive a no-results filter; one save sends both exact IDs once.
 3. A removed group blocks saving while retaining text and notes; choosing its replacement unblocks it.
 4. Long restored notes and four selected locations keep the save button inside the 600px panel. The initially clipped status layout was repaired and rechecked; save-button bottom was 579px, panel bottom 592px.
 5. Read-only uncertain-write verification performs no POST; explicit resume clears the pending marker without sending data.

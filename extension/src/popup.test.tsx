@@ -194,7 +194,7 @@ const manyScenes = {
         { id: 'tools', name: '开发｜工具' },
       ],
     },
-    { id: 'work', name: 'Dewu', groups: [{ id: 'tests', name: '测试｜平台' }] },
+    { id: 'work', name: 'Work', groups: [{ id: 'tests', name: '测试｜平台' }] },
   ],
 }
 async function setInput(selector: string, value: string) {
@@ -230,7 +230,7 @@ describe('searchable save locations and preserved intent', () => {
     )
     mocks.integrationRequest.mockResolvedValue({ created: false })
     await act(async () => root.render(<PopupApp />))
-    await setInput('input[type="search"]', 'Dewu 测试')
+    await setInput('input[type="search"]', 'Work 测试')
     await act(async () => host.querySelector<HTMLButtonElement>('[data-category-option]')!.click())
     await setInput('input[type="search"]', 'does-not-exist')
     expect(host.querySelectorAll('.selected-location')).toHaveLength(2)
@@ -267,7 +267,7 @@ describe('searchable save locations and preserved intent', () => {
     await act(async () =>
       host.querySelectorAll<HTMLButtonElement>('.popup-scene-heading')[1].click()
     )
-    await setInput('input[type="search"]', 'Dewu')
+    await setInput('input[type="search"]', 'Work')
     expect(host.querySelector('select')?.value).toBe('home')
     expect(host.querySelector('button[type="submit"]')?.textContent).toContain('Home')
     expect(mocks.writePopupDraft).not.toHaveBeenCalled()
@@ -345,7 +345,7 @@ describe('searchable save locations and preserved intent', () => {
       path.includes('/scenes') ? manyScenes : {}
     )
     await act(async () => root.render(<PopupApp />))
-    await setInput('input[type="search"]', 'Dewu 测试')
+    await setInput('input[type="search"]', 'Work 测试')
     await act(async () =>
       host
         .querySelector('input[type="search"]')!

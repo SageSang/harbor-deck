@@ -14,7 +14,7 @@ const scenes: SceneOption[] = [
   },
   {
     id: 'work',
-    name: 'Dewu',
+    name: 'Work',
     groups: [
       { id: 'test', name: '测试｜工具' },
       { id: 'mail', name: '账号｜邮箱' },
@@ -48,7 +48,7 @@ async function input(value: string) {
   })
 }
 it('filters complete paths case-insensitively with AND words and preserves server order', () => {
-  expect(filterCategoryScenes(scenes, '  deWU   测试 ')[0].groups.map((g) => g.id)).toEqual([
+  expect(filterCategoryScenes(scenes, '  wOrK   测试 ')[0].groups.map((g) => g.id)).toEqual([
     'test',
   ])
   expect(filterCategoryScenes(scenes, '邮箱').map((s) => s.id)).toEqual(['home', 'work'])
@@ -65,14 +65,14 @@ it('automatically shows matches without changing the selection', async () => {
   expect(host.querySelectorAll('[data-category-option]')).toHaveLength(2)
   expect(host.querySelector('[data-category-option]')?.getAttribute('aria-pressed')).toBe('true')
   expect(select).not.toHaveBeenCalled()
-  await input('Dewu 测试')
+  await input('Work 测试')
   expect(host.textContent).not.toContain('Home')
   expect(host.querySelector('[data-category-option]')?.getAttribute('aria-pressed')).toBe('true')
 })
 it('restores browsing expansion after a search is cleared', async () => {
   await render()
   await act(async () => host.querySelector<HTMLButtonElement>('.popup-scene-heading')!.click())
-  await input('Dewu')
+  await input('Work')
   await act(async () => host.querySelector<HTMLButtonElement>('.popup-scene-heading')!.click())
   await input('')
   expect(host.querySelectorAll('[data-category-option]')).toHaveLength(2)
@@ -111,7 +111,7 @@ it('supports arrows, Enter selection, Escape clearing and IME safety', async () 
       new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
     )
   )
-  expect(document.activeElement?.textContent).toContain('Dewu')
+  expect(document.activeElement?.textContent).toContain('Work')
   await act(async () =>
     document.activeElement?.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
