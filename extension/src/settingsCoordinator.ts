@@ -37,6 +37,10 @@ export function createSettingsCoordinator() {
     read: () => serialize(load),
     save: (value: ExtensionSettings) =>
       serialize(async () => {
+        const current = await load()
+        if (current.settingsRevision !== value.settingsRevision) {
+          throw new Error('settings-conflict')
+        }
         const settings = normalizeSettings(value)
         const cached = await chrome.storage.local.get(BOOKMARK_CACHE_KEY)
         await chrome.storage.local.set({

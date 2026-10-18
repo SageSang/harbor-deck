@@ -505,12 +505,24 @@ describe('bookmark management API', () => {
         reuseExistingByUrl: true,
       },
     })
-    expect(reused.statusCode).toBe(200)
-    expect(reused.json().result).toMatchObject({
+    expect(reused.statusCode).toBe(409)
+    expect(reused.json().error.code).toBe('QUICK_RECORD_CONTENT_CONFLICT')
+    const confirmedReuse = await managementWrite(server, {
+      method: 'POST',
+      url: `/api/management/v1/scenes/private/quick-records/${matchingRecordId}/promote`,
+      revision: state.revision,
+      payload: {
+        placements: [{ sceneId: 'private', groupId: 'secrets' }],
+        reuseExistingByUrl: true,
+        discardConflictingFields: true,
+      },
+    })
+    expect(confirmedReuse.statusCode).toBe(200)
+    expect(confirmedReuse.json().result).toMatchObject({
       created: false,
       removedQuickRecordId: matchingRecordId,
     })
-    expect(reused.json().result.bookmark.slug).toBe('alpha')
+    expect(confirmedReuse.json().result.bookmark.slug).toBe('alpha')
   })
 
   it('fills only missing icons in selected scenes', async () => {

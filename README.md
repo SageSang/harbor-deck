@@ -1,65 +1,47 @@
-# HarborDeck
+<p align="center"><img src="branding/logo.png" width="88" alt="HarborDeck logo"></p>
+<h1 align="center">HarborDeck</h1>
+<p align="center">Your services, bookmarks, and browser start page — on your own server.</p>
+<p align="center"><a href="README.zh-CN.md">简体中文</a> · <a href="https://github.com/SageSang/harbor-deck/releases">Downloads</a> · <a href="docs/bookmark-management-api.md">Management API</a> · <a href="PRIVACY.md">Privacy</a></p>
 
-[中文说明](README.zh-CN.md)
+HarborDeck brings daily websites and self-hosted services into a personal dashboard. Organize them by scene, keep one bookmark shared across several contexts, and use primary and fallback addresses for services you access both at home and away. The optional Chrome and Edge extension turns the same interface into your new-tab page and captures links while you browse.
 
-HarborDeck is a self-hosted start page for people who keep the same services in several places: home, office, a private network, or a public URL. It combines scenes, groups, shared bookmarks, network-aware URLs, and a browser new-tab extension in one small Docker service.
+It is built for a single administrator, with an administrator login for the site and optional passwords for individual scenes. Your configuration lives in a mounted directory; there is no hosted account to register.
 
-The project is designed for one administrator. There is no guest mode: the page is protected by the administrator login, while a scene may optionally have its own password when its bookmarks should stay out of sight.
+![HarborDeck dashboard with demonstration bookmarks](docs/screenshots/overview-2026-10.jpg)
 
-## Acknowledgements
+## Make it your daily starting point
 
-HarborDeck grew from [Goalonez/smart-harbor](https://github.com/Goalonez/smart-harbor). Many thanks to the original author for open-sourcing a solid foundation; this repository continues the work with richer scenes, bookmark management, browser-extension integration, and deployment improvements.
+| Capability                 | How it helps                                                                                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Scenes and groups          | Separate work, learning, home services, and personal collections. Reorder groups and bookmarks without maintaining several copies of the same link.                            |
+| Shared bookmarks           | A bookmark can appear in several scenes, with one group per scene. Editing the shared definition updates all its placements.                                                   |
+| Search and keyboard access | Filter the current scene by title, URL, or note; use built-in or custom search engines, arrow-key navigation, `/` to focus search, and Alt+Shift+arrow keys to switch scenes.  |
+| Primary and fallback URLs  | Configure LAN/WAN probes and two addresses per service. Open or copy a particular address from the bookmark menu when needed.                                                  |
+| Quick records              | Capture now, organize later. Search the inbox, edit notes, and move selected records into a group. Conflicting content is retained until you choose how to handle it.          |
+| Bookmark tools             | Edit, duplicate, drag, multi-select, and place bookmarks across scenes. Import browser bookmark HTML; nested folders become path-based groups. Export browser-compatible HTML. |
+| Local new-tab page         | The extension packages the frontend locally. Ordinary-scene snapshots support browsing and search during connection failures; online content refreshes in place.               |
+| Appearance                 | Choose Frost, Midnight, or Ember, adjust layout, and keep a local theme preference. Both Chinese and English interfaces are included.                                          |
+| Backup and automation      | Export configuration, use scheduled or manual WebDAV backups, and connect shortcut launchers or AI tools through separate APIs.                                                |
 
-## What it does
+<table>
+<tr><td><img src="docs/screenshots/bookmark-editor-2026-10.jpg" alt="Editing a bookmark and its scene placements"></td><td><img src="docs/screenshots/scene-manager-2026-10.jpg" alt="Managing scenes"></td></tr>
+<tr><td align="center">One bookmark, several contexts</td><td align="center">Organize scenes in one place</td></tr>
+</table>
 
-- Switch between any number of user-created scenes without duplicating bookmark definitions.
-- Give each scene its own ordered groups. A shared bookmark can appear in several scenes and in a different group in each scene.
-- Store a primary URL and an optional secondary URL for every bookmark. The page probes the configured network and opens the reachable address.
-- Import browser bookmarks into a selected scene. Nested browser folders become readable path-based groups instead of losing their hierarchy.
-- Add, edit, duplicate, move, multi-select, and delete bookmarks. Removing a bookmark from one scene does not remove it from another; an orphaned definition is cleaned up automatically.
-- Add an optional multi-line note to every bookmark.
-- Search the current scene, choose Google or another configured search engine, and always send Enter to the selected search engine even when local matches exist.
-- Protect scenes with a separate password and keep the unlock only for the current browser session.
-- Use the integration API from uTools or another shortcut launcher. A token is required and protected scenes are never returned.
-- Use an independent management token to let an AI organize groups, bookmarks, ordering, and quick records across every scene.
-- Use the optional Chrome/Chromium extension to open the navigation page on every new tab and add the current page to one or more scene groups.
-- Back up and restore the JSON configuration through WebDAV.
+Screenshots use demonstration data from the current source build. Features and fixes in source arrive in distributed packages when a corresponding release is published.
 
-## Screenshots
+## Run with Docker
 
-The screenshots below show the current HarborDeck web UI and browser extension.
+The published image supports `linux/amd64` and `linux/arm64`. Docker Compose and Synology Container Manager can run it without installing Node.js on the host.
 
-![HarborDeck home page](docs/screenshots/home.png)
-
-![Scene management](docs/screenshots/scene-management.png)
-
-![Group management](docs/screenshots/group-management.png)
-
-![Create a bookmark](docs/screenshots/new-bookmark.png)
-
-![Batch add bookmarks](docs/screenshots/batch-add.png)
-
-![Multi-select operations](docs/screenshots/multi-select.png)
-
-![Private scene password protection](docs/screenshots/private-scene-password.png)
-
-![Quickly add a bookmark from the browser extension](docs/screenshots/extension-add-bookmark.png)
-
-![Browser extension settings](docs/screenshots/extension-settings.png)
-
-![Network probe settings](docs/screenshots/network-probe-settings.png)
-
-## Docker deployment
-
-The repository includes a generic Docker Compose configuration for Docker Compose, Synology Container Manager, and other compatible environments. It pulls a prebuilt multi-architecture image from GitHub Container Registry; the deployment host does not need Node.js or a source checkout.
+Create `compose.yaml`:
 
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.25
-    pull_policy: always
+    image: ghcr.io/sagesang/harbor-deck:1.4.28
     container_name: harbor-deck
-    restart: always
+    restart: unless-stopped
     ports:
       - '127.0.0.1:8080:80'
     environment:
@@ -67,173 +49,96 @@ services:
       PORT: '80'
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
-      HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
-      # Leave empty to disable the management API; otherwise use a random token of 32+ characters.
-      HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN: ''
-      HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
-      HARBORDECK_TRUSTED_EXTENSION_IDS: ${HARBORDECK_TRUSTED_EXTENSION_IDS:-}
-      HARBORDECK_WEBDAV_TIMEOUT_MS: ${HARBORDECK_WEBDAV_TIMEOUT_MS:-15000}
     volumes:
       - ./config:/app/config
     security_opt:
       - no-new-privileges:true
 ```
 
-Deployment steps:
-
-1. Create a host configuration directory, for example `./config`; on Synology, `/volume1/docker/harbor-deck/config` is also suitable.
-2. Adjust the host-side path for your environment, then create and start the project from the YAML.
-3. Point an HTTPS reverse proxy at `127.0.0.1:8080`, then open the HTTPS domain and create the administrator account.
-4. Create scenes and groups in Bookmark Management, then add or import bookmarks.
-
-The container-side path `/app/config` must not be changed. The image is published for `linux/amd64` and `linux/arm64`. Replace `1.4.25` with `latest` only when you intentionally want automatic image updates.
-
-For a direct Docker command:
-
 ```bash
-docker run -d \
-  --name harbor-deck \
-  --restart always \
-  -p 127.0.0.1:8080:80 \
-  -v ./config:/app/config \
-  -e TZ=Asia/Shanghai \
-  -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
-  -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
-  ghcr.io/sagesang/harbor-deck:1.4.25
+docker compose up -d
 ```
 
-HTTPS is supported by putting the container behind any reverse proxy, including Synology Reverse Proxy, Caddy, or Nginx Proxy Manager. The application listens on HTTP inside the container; point the proxy at host `127.0.0.1:8080`. By default it trusts forwarded headers only from loopback, link-local, and private-network proxies. Set `HARBORDECK_TRUST_PROXY` to an explicit IP or CIDR when the proxy is elsewhere. Change the port binding back to `8080:80` only when direct LAN access is intentionally required.
+Open `http://localhost:8080` on the Docker host and create the administrator account. To use another device, configure an HTTPS reverse proxy or deliberately bind the port to a trusted LAN interface. The default loopback binding is not reachable directly from another computer. A reverse proxy running in another container needs a reachable upstream, such as a shared Docker network; its own `127.0.0.1` is not the Docker host.
 
-### Upgrading to 1.4.25
+On Synology, use a persistent host directory such as `/volume1/docker/harbor-deck/config` in place of `./config`. Keep the container path `/app/config`. The repository's [Compose file](docker-compose.yml) also includes a health check and optional integration settings.
 
-This release fixes protected-scene isolation, concurrent credential changes, editing drafts, and WebDAV reliability. Back up the complete configuration before upgrading; restarting the service requires signing in and unlocking scenes again. Existing search and management tokens and bookmark identifiers remain valid.
+### Versions and upgrades
 
-`HARBORDECK_TRUSTED_EXTENSION_IDS` optionally lists additional extension IDs allowed to embed the HTML entry. Each ID must contain exactly 32 letters from a–p. Starting with 1.4.21, the standard HarborDeck Chrome and Edge store identities are allowed by default; an empty value means no extra IDs, rather than blocking all embedding. `HARBORDECK_WEBDAV_TIMEOUT_MS` optionally sets the complete per-request WebDAV timeout (default 15000; integer 100–300000), not the total duration of a multi-step backup. Verify the final reverse-proxy headers and Chrome permissions/Cookie behavior when using embedded mode.
+The examples currently pin the published **server 1.4.28**. **Extension 1.4.29** is a separate release. A higher extension or source package version does not imply a matching Docker image; check the [release notes](https://github.com/SageSang/harbor-deck/releases) for the component you are upgrading.
 
-## Scenes, groups, and imports
+Back up the complete mounted configuration directory and record the current image version before upgrading. Change the image tag, then run `docker compose pull` and `docker compose up -d`. Preserve the configuration mount, integration tokens, and any custom port mapping. A restart requires signing in and unlocking scenes again. The `latest` tag moves with server releases; pulling a fixed tag does not upgrade to a different version.
 
-Scenes are data, not hard-coded UI choices. In the management page you can create, rename, reorder, set a default, password-protect, or delete them. The home page also provides group context actions for creating a bookmark, editing the group name, or deleting the complete group.
+### Optional settings
 
-Each scene owns its group list. Bookmarks are shared definitions referenced by group IDs, so the same URL can be placed in both “Home” and “Work” without creating two independent records. When a bookmark is deleted from one scene, only that scene reference is removed. The bookmark record is deleted only when no scene references it.
+| Variable                               | Purpose                                                                                                              |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `HARBORDECK_SEARCH_TOKEN`              | Enables authenticated shortcut search and bookmark capture for unprotected scenes.                                   |
+| `HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN` | Enables AI/automation management with an independent random token of at least 32 characters. Leave empty to disable. |
+| `HARBORDECK_TRUST_PROXY`               | Trusted proxy IPs/CIDRs; defaults to `loopback,linklocal,uniquelocal`. Match this to your actual proxy path.         |
+| `HARBORDECK_TRUSTED_EXTENSION_IDS`     | Additional trusted embedding identities. Standard HarborDeck Chrome/Edge identities are already included.            |
+| `HARBORDECK_WEBDAV_TIMEOUT_MS`         | Complete timeout per WebDAV request: default `15000`, range `100`–`300000` milliseconds.                             |
 
-The import flow asks for a target scene before reading the browser export. A nested folder such as `Bookmarks Bar / Engineering / Frontend` is represented as one group with that full path, so bookmarks remain grouped without requiring a second unsupported folder level in the homepage grid. A root-level bookmark is placed in `Imported Bookmarks`.
+## Add the browser extension
 
-## Integration API ([API reference](docs/api.md))
+Install from the existing [Chrome Web Store](https://chromewebstore.google.com/detail/mlnpanpmgplmlangfnokhelkhkfcpine) or [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/ogjfbhbheifoaidpfdbcbcbgfiblmnik) listing, or download the appropriate package from [Releases](https://github.com/SageSang/harbor-deck/releases). Store availability may lag a GitHub release.
 
-See the complete endpoint reference, request schemas, response examples, and error codes in [`docs/api.md`](docs/api.md).
+1. Set the primary HarborDeck URL and, if useful, its fallback URL. Grant access to those origins.
+2. Choose the local new-tab page or explicitly select direct navigation to your server. Connection settings belong to this installation and are not synchronized across devices.
+3. Sign in with your administrator account for the navigation page. To capture bookmarks from the toolbar, also configure the server's search/capture token in the extension.
+4. Use the capture popup to edit the title, URLs, and note, then search for a target scene/group or save a quick record.
 
-Set `HARBORDECK_SEARCH_TOKEN` in the container environment. Every request must include:
+Chrome and Edge have separate packages and identities. For manual installation use the corresponding unpacked ZIP; `-store.zip` files are intended for store submission. Update an existing installation in place. Before changing installation identity, use the settings export/import flow; its transfer file excludes the token, which must be entered again.
 
-```http
-X-HarborDeck-Search-Token: your-secret-token
-```
+See [extension setup and recovery](docs/extension-local-settings-and-recovery.md), [package identities](docs/extension-identities.md), and [local cache behavior](docs/bookmark-cache.md).
 
-Search bookmarks for uTools or another launcher:
+## Keep control of your data
 
-```bash
-curl \
-  -H "X-HarborDeck-Search-Token: $HARBORDECK_SEARCH_TOKEN" \
-  "http://localhost:8080/api/integrations/bookmarks/search?q=har&sceneId=all"
-```
+The site requires administrator authentication. Password-protected scenes add a separate visibility boundary. A bookmark deliberately shared with an ordinary scene is also visible there.
 
-`q` is matched against the bookmark name, slug, primary URL, secondary URL, and note. `sceneId` may be a specific scene ID or `all` (omitted also means all scenes). Password-protected scenes are excluded, even when the administrator has unlocked them in the browser. Each result includes the scene/group context, `name`, and `url`; the secondary URL is returned when present, otherwise the primary URL is used.
+Web pages keep ordinary-scene display snapshots in `localStorage`; the extension uses `chrome.storage.local`. They contain the displayed links and notes, so treat the browser profile as private. Protected scenes are excluded even when unlocked. Offline snapshots are not backups or authorization to edit: editing requires a current online configuration, and offline writes are not queued. Logout or a detected loss of access clears the relevant cache; offline devices cannot instantly learn about remote permission changes.
 
-The extension popup uses two additional token-protected endpoints:
+Use WebDAV for a complete backup. Web configuration exports made while scenes are locked contain only accessible data. A restore replaces the current configuration; keep a fresh backup before restoring an older version. See the [privacy policy](PRIVACY.md) for storage, retention, and transfer details.
 
-- `GET /api/integrations/bookmarks/scenes` lists only scenes that can receive a bookmark.
-- `POST /api/integrations/bookmarks` accepts `{ name, primaryUrl, secondaryUrl?, note?, placements: [{ sceneId, groupId }] }` and adds the current page to one group per selected scene.
+## Connect launchers and AI tools
 
-## AI bookmark management API
+| Interface           | Access                                                                                                                                      | Documentation                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Search and capture  | `X-HarborDeck-Search-Token`; unprotected scenes only. Useful for uTools, launchers, and bookmark capture.                                   | [Integration API](docs/api.md)                                                                       |
+| Bookmark management | `X-HarborDeck-Management-Token`; groups, bookmarks, placements, and quick records across all scenes. Supports revision checks and dry runs. | [Management API](docs/bookmark-management-api.md) · [OpenAPI](docs/bookmark-management-openapi.yaml) |
 
-To let an AI or automation script organize all bookmarks, set the independent `HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN` directly in the deployment YAML and send it as `X-HarborDeck-Management-Token`. The token bypasses administrator login and scene passwords and can read or mutate private bookmark data. It cannot manage scenes, passwords, WebDAV, backups, or system settings.
+The management token can read and modify bookmarks in protected scenes without administrator login or scene passwords. It cannot manage scene definitions, credentials, system settings, or WebDAV. Enable it only for tools you intend to give that scope, and keep it separate from the capture token. Configuration files and integration tokens should never be committed to Git.
 
-The base path is `/api/management/v1`. Every write requires the latest revision in `If-Match` and supports `X-HarborDeck-Dry-Run: true`. See the [bookmark management API reference](docs/bookmark-management-api.md) for endpoint contracts, examples, error codes, and the security boundary. A machine-readable [OpenAPI 3.1 document](docs/bookmark-management-openapi.yaml) is also included.
+## Develop locally
 
-## Browser extension
-
-Build the extension with:
-
-```bash
-npm run build:extension
-npm run package:extension
-```
-
-Install the generated unpacked directory from `chrome://extensions` with Developer mode enabled, or use the ZIP attached to a GitHub release.
-
-The options page accepts:
-
-| Setting             | Meaning                                            |
-| ------------------- | -------------------------------------------------- |
-| `primaryUrl`        | Usually the LAN address                            |
-| `fallbackUrl`       | Usually the public/WAN address                     |
-| `openMode=direct`   | Redirect the new-tab page to the selected address  |
-| `openMode=local` | Run the packaged full frontend, cache first (default) |
-| `probeTimeoutMs`    | Reachability check timeout; default is 1000 ms      |
-| API token           | Used by the “add current page” popup               |
-
-New tabs use the packaged formal UI: display a local snapshot immediately, then update it in place. There is no separate cache list or hidden iframe. Without a cache, the editable transition input preserves text, selection and IME composition. Legacy opening modes move to local rendering; choose Direct explicitly in the new options if remote navigation is desired. The browser address bar is not automatically focused or overwritten.
-
-## Configuration and security
-
-The mounted directory contains `config.json`. The most important sections are:
-
-| Section                  | Purpose                                                             |
-| ------------------------ | ------------------------------------------------------------------- |
-| `system`                 | Theme, app title, click behavior, search engines, and WebDAV backup |
-| `navigation.scenes[]`    | Scene names, passwords, groups, and ordered bookmark references     |
-| `navigation.bookmarks[]` | Shared bookmark definitions, URLs, icon, note, and opening behavior |
-
-Passwords are stored as hashes. There is one administrator account and no anonymous mode. A scene password is independent of the admin password and is valid only for a browser session; closing the browser, changing the password, restoring a backup, or restarting the server requires unlocking again. Five failed admin logins trigger a temporary lockout.
-
-Do not commit `config.json`, WebDAV credentials, or the integration token to Git. Keep the mounted config directory backed up separately from the image.
-
-Privacy policy: [`PRIVACY.md`](PRIVACY.md)
-
-## Local development
+Use Node.js 24 and npm:
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-- Web client: `http://localhost:3000`
-- API server: `http://localhost:3001`
-
-Useful checks:
+The web frontend is at `http://localhost:3000`; the API is at `http://localhost:3001`. Development data defaults to `./config`; set `CONFIG_DIR` to an isolated directory when testing.
 
 ```bash
+npm test
 npm run lint
-npm run test
 npm run build
 npm run build:extension
+npm run package:extension
+EXTENSION_BROWSER=edge npm run build:extension
+EXTENSION_BROWSER=edge npm run package:extension
 ```
 
-## Tech stack and license
+The project uses React, TypeScript, Vite, Tailwind CSS, Fastify, and Zod. Release tags select the deliverable: `vX.Y.Z-web` for the server, `vX.Y.Z-extension` for extensions, and `vX.Y.Z` for both. Packaging does not submit an extension to either store. See [release instructions](release-notes/README.md).
 
-React 19, TypeScript, Vite, Tailwind CSS, Zustand, TanStack Query, Fastify, and Zod.
-
-Licensed under [Apache-2.0](LICENSE).
-
-## Web editing and privacy behavior
-
-- Web themes are local to each browser. The server skin is only a first-visit default; extension redirects do not overwrite an existing local choice.
-- Home search includes bookmark names, slugs, groups, both URLs, and notes. The Quick records button lists ungrouped records and supports bulk placement.
-- Automatic network detection uses dedicated LAN/WAN probes. Incomplete settings produce Unknown; choose a network manually or open either URL from the bookmark menu.
-- Web configuration responses omit locked scene content. Saving visible content preserves locked scenes on the server. JSON exports made while scenes are locked are partial; use WebDAV for a full backup.
-- Editing drafts keep their original revision and survive background updates. Conflicting saves require an explicit reload, with a comparison view and a discard confirmation.
-
-## Maintainer context
+<details>
+<summary>Maintainer context</summary>
 
 Personal maintenance history, decisions, verification status, and open context are maintained in [Sidney Vault](obsidian://open?vault=sidney-vault&file=20-Areas%2F%E8%BD%AF%E4%BB%B6%E9%A1%B9%E7%9B%AE%E7%BB%B4%E6%8A%A4%2F%E5%AE%9E%E4%BD%93%2FHarborDeck%2F%E6%96%87%E6%A1%A3%2F%E8%83%8C%E6%99%AF%E5%AE%9E%E7%8E%B0%E4%B8%8E%E5%8E%86%E5%8F%B2). This repository retains source code, usage documentation, and developer contracts. The Vault is not required to build or use the project.
 
-## Extension identities, local settings and recovery in 1.4.21
+</details>
 
-Version 1.4.21 stores addresses, token, opening mode, and probe timeout per installation. Verify the device's addresses after the one-time migration from old sync settings. The options page can export/import settings and drafts without the token; a paused new-tab page offers **Check again and open**. Keep the old installation until its data has been verified.
+## License and origins
 
-Chrome and Edge packages use their respective stable store identities. Server 1.4.21 or later permits both by default, without per-device registration. Upgrade older servers or register the standard ID once; custom builds still use additional trusted IDs. See the [upgrade, transfer, recovery, and validation notes](docs/extension-local-settings-and-recovery.md).
-
-Builds default to Chrome; use `EXTENSION_BROWSER=edge` for the Edge package. The two channels have separate packages and public keys. See [identity provenance and build instructions](docs/extension-identities.md).
-
-### Unified local new tab in 1.4.25
-
-Cached and online content use the same frontend. Only ordinary display data is persisted; complete online config and revisions are still required for editing. Protected scenes and credentials are excluded, and offline writes are not queued. Server upgrades remain compatible with older extensions. See [cache behavior and upgrade notes](docs/bookmark-cache.md) and [validation](docs/unified-newtab-validation-2026-10-02.md).
+HarborDeck is licensed under [Apache-2.0](LICENSE). It originated from [Goalonez/smart-harbor](https://github.com/Goalonez/smart-harbor); thank you to the original author and contributors for the foundation. HarborDeck's ongoing development focuses on scene-based bookmark management, browser integration, and self-hosted operation.

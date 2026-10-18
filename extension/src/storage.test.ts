@@ -76,7 +76,10 @@ describe('extension settings and real draft compatibility', () => {
     expect(sync.smartHarborNewTabSettings).toEqual(settings)
   })
   it('assigns a new public settings revision on each save', async () => {
-    const first = await writeSettings(settings)
+    const first = await writeSettings({
+      ...settings,
+      settingsRevision: (await readSettings()).settingsRevision,
+    })
     const second = await writeSettings(first)
     expect(first.settingsRevision).toBeTruthy()
     expect(second.settingsRevision).not.toBe(first.settingsRevision)
@@ -98,7 +101,7 @@ describe('extension settings and real draft compatibility', () => {
     sync.harborDeckNewTabSettings = settings
     expect((await readSettings()).primaryUrl).toBe('')
   })
-  it('serializes migration before a concurrent save, and never overwrites the saved value', async () => {
+  it('rejects an unversioned save queued during migration and accepts a fresh edit', async () => {
     let finish!: (value: Record<string, unknown>) => void
     vi.mocked(chrome.storage.sync.get).mockImplementationOnce(
       () =>
@@ -109,8 +112,11 @@ describe('extension settings and real draft compatibility', () => {
     const loading = readSettings()
     for (let i = 0; i < 10; i++) await Promise.resolve()
     const saving = writeSettings({ ...settings, primaryUrl: 'https://edited.test/' })
+    const rejected = expect(saving).rejects.toThrow('settings-conflict')
     finish({ harborDeckNewTabSettings: settings })
-    await Promise.all([loading, saving])
+    const migrated = await loading
+    await rejected
+    await writeSettings({ ...migrated, primaryUrl: 'https://edited.test/' })
     expect((await readSettings()).primaryUrl).toBe('https://edited.test/')
   })
   it('recovers after a failed migration without touching the original sync settings', async () => {
@@ -168,6 +174,7 @@ it.each([
       openMode: mode,
       localExperienceVersion: version,
     }
+    local.harborDeckNewTabSettings = before
     const selected = effectiveOpenMode(before)
     expect(selected).toBe(expected)
     const saved = await writeSettings({
@@ -183,3 +190,28 @@ it.each([
     expect(saved.probeTimeoutMs).toBe(1000)
   }
 )
+
+it('rejects stale settings without changing the connection, cache or draft', async () => {
+  const old = await writeSettings({
+    ...settings,
+    settingsRevision: (await readSettings()).settingsRevision,
+  })
+  const current = await writeSettings({
+    ...old,
+    primaryUrl: 'https://new.test/',
+    apiToken: 'new-test-token',
+  })
+  local.draft = 'keep'
+  const before = structuredClone(local)
+  await expect(writeSettings({ ...old, probeTimeoutMs: 2000 })).rejects.toThrow('settings-conflict')
+  expect(local).toEqual(before)
+  await expect(writeSettings({ ...settings, probeTimeoutMs: 2000 })).rejects.toThrow(
+    'settings-conflict'
+  )
+  expect(await readSettings()).toEqual(current)
+  await expect(writeSettings({ ...current, probeTimeoutMs: 2000 })).resolves.toMatchObject({
+    primaryUrl: 'https://new.test/',
+    apiToken: 'new-test-token',
+    probeTimeoutMs: 2000,
+  })
+})

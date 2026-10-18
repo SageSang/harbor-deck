@@ -203,17 +203,17 @@ export async function commitScenePasswordConfig(
 /** Restore authorization is decided against the state immediately before this commit. */
 export async function commitRestoredAppConfig(
   value: unknown,
-  canCommit: () => boolean,
+  canCommit: (current: AppConfig) => boolean,
   onCommitted: (requiresReauth: boolean) => void
 ) {
   const restoredConfig = cleanAppGroupExpansionPreference(appConfigSchema.parse(value))
   storedNavigationConfigSchema.parse(restoredConfig.navigation)
   return withWriteLock(async () => {
+    const current = await readAppConfig()
     const assertNotCancelled = () => {
-      if (!canCommit()) throw new Error('恢复已取消')
+      if (!canCommit(current)) throw new Error('恢复已取消')
     }
     assertNotCancelled()
-    const current = await readAppConfig()
     const requiresReauth = !sameAuth(current.system.auth, restoredConfig.system.auth)
     const filePath = await ensureAppConfigFile()
     await writeJsonFile(filePath, restoredConfig, {

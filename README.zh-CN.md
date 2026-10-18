@@ -1,67 +1,47 @@
-# HarborDeck
+<p align="center"><img src="branding/logo.png" width="88" alt="HarborDeck 标志"></p>
+<h1 align="center">HarborDeck</h1>
+<p align="center">把常用网站、自托管服务和浏览器起始页，放在自己的服务器上。</p>
+<p align="center"><a href="README.md">English</a> · <a href="https://github.com/SageSang/harbor-deck/releases">下载与发布</a> · <a href="docs/bookmark-management-api.md">管理 API</a> · <a href="PRIVACY.md">隐私政策</a></p>
 
-[English](README.md)
+HarborDeck 是一个面向日常使用的自托管导航与书签应用。你可以按工作、学习、家庭服务等场景整理链接，让同一书签出现在不同场景，并为内外网访问配置主备地址。Chrome 和 Edge 扩展可以把同一套界面带到新标签页，也能在浏览网页时随手收藏。
 
-HarborDeck 是一个面向个人自托管服务的导航首页，适合把“家里、公司、隐私”几套书签放在同一个系统里管理。它把场景、分组、共享书签、内外网地址判断和浏览器新标签页扩展整合在一个 Docker 服务中。
+应用面向单个管理员：整站需要登录，场景可以另设密码。配置保存在你挂载的目录中，无需注册托管平台账号。
 
-项目按单管理员设计，不提供游客模式。管理员登录后可以创建任意数量的场景；如果某个场景不希望被别人看到，还可以给它单独设置场景密码。
+![HarborDeck 导航首页，使用演示书签](docs/screenshots/overview-2026-10.jpg)
 
-## 致谢
+## 从每天打开的第一页开始
 
-本项目是在 [Goalonez/smart-harbor](https://github.com/Goalonez/smart-harbor) 的基础上持续优化而来。感谢原作者开源了这个项目，为 HarborDeck 提供了很好的起点；本仓库在此基础上继续完善场景、书签管理、浏览器扩展和部署体验。
+| 能力           | 可以怎样使用                                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------------------------------- |
+| 场景与分组     | 把工作、学习、家庭服务和个人收藏分开组织，按自己的习惯调整分组及书签顺序。                                     |
+| 共享书签       | 同一书签可以引用到多个场景，每个场景归属一个分组；修改书签内容会同步影响它的所有引用。                         |
+| 搜索与键盘操作 | 按名称、地址或备注筛选当前场景；使用内置或自定义搜索引擎，方向键浏览，`/` 聚焦搜索，Alt+Shift+方向键切换场景。 |
+| 内外网主备地址 | 为服务设置两个地址并配置 LAN/WAN 探针；也可从书签菜单明确打开或复制某个地址。                                  |
+| 快速记录       | 先收集、后整理。收件箱支持搜索、编辑备注与批量归组；转换遇到内容冲突时保留记录，由你决定如何处理。             |
+| 书签整理       | 编辑、复制、拖拽、多选与跨场景放置；导入浏览器书签 HTML，嵌套文件夹保留为路径分组，也可导出浏览器可用的 HTML。 |
+| 本地新标签页   | 扩展自带正式前端；连接失败时仍可浏览、搜索普通场景缓存，恢复连接后在原页面更新。                               |
+| 外观           | Frost、Midnight、Ember 三种皮肤，可调整布局并保留本机主题偏好；提供中英文界面。                                |
+| 备份与自动化   | 配置导出、WebDAV 定时或手动备份；通过独立 API 接入启动器、快捷工具和 AI 书签整理。                             |
 
-## 主要能力
+<table>
+<tr><td><img src="docs/screenshots/bookmark-editor-2026-10.jpg" alt="编辑书签与跨场景放置"></td><td><img src="docs/screenshots/scene-manager-2026-10.jpg" alt="管理场景"></td></tr>
+<tr><td align="center">一份书签，多处使用</td><td align="center">集中管理不同场景</td></tr>
+</table>
 
-- 场景完全由后台创建、重命名、排序、设为默认、加密和删除，不写死为三个场景。
-- 每个场景拥有独立的分组和顺序；同一个书签可以被多个场景引用，并在不同场景归属于不同分组。
-- 每个书签支持主地址和可选备用地址，系统按已配置的网络探针选择地址；未配置时显示未知，可手动选择内外网，或从书签菜单直接打开主地址、备用地址。
-- 浏览器导入时先选择目标场景；多层文件夹会按完整路径折叠成可读的一级分组，不会把所有书签无序铺平。
-- 支持新增、编辑、复制、拖动、多选、批量移动和删除书签。删除某个场景中的引用不会影响其他场景；只有完全没有场景引用的孤立书签才会被清理。
-- 每个书签有可选的多行备注栏，首页搜索支持名称、标识、分组、主地址、备用地址及备注。
-- 顶栏“快速记录”显示当前场景的未归组记录数量，可查看全部、编辑或批量归入分组。
-- Web 主题独立保存在当前浏览器中；首次访问可使用服务端默认主题，扩展跳转不会覆盖已有本机选择。
-- 搜索框支持 Google 和自定义搜索引擎。无论本地是否匹配到书签，按 Enter 都会执行搜索；也可以直接点击匹配到的书签。
-- 场景可以单独设置密码，解锁状态只保留在当前浏览器会话中。
-- 提供带 Token 的搜索接口，方便接入 uTools 等快捷工具；有密码的场景永远不会被接口返回。
-- 提供独立管理 Token 的书签管理 API，供 AI 读取并整理全部场景中的分组、书签、顺序和快速记录。
-- 可选的 Chrome/Chromium 扩展：新标签页打开导航首页，并把当前网页添加到一个或多个场景分组。
-- 支持通过 WebDAV 备份、恢复和保留多个配置版本。
+截图使用当前源码构建和演示数据。源码中的新功能与修复，需要对应版本正式发布后才会进入分发镜像或扩展包。
 
-## 界面预览
+## 用 Docker 部署
 
-以下截图来自当前 HarborDeck Web 界面和浏览器扩展。
+镜像支持 `linux/amd64` 和 `linux/arm64`，可使用 Docker Compose 或群晖 Container Manager，宿主机无需安装 Node.js。
 
-![HarborDeck 首页](docs/screenshots/home.png)
-
-![场景管理](docs/screenshots/scene-management.png)
-
-![分组管理](docs/screenshots/group-management.png)
-
-![新建书签](docs/screenshots/new-bookmark.png)
-
-![批量添加书签](docs/screenshots/batch-add.png)
-
-![多选操作](docs/screenshots/multi-select.png)
-
-![私密场景密码保护](docs/screenshots/private-scene-password.png)
-
-![浏览器扩展快捷添加书签](docs/screenshots/extension-add-bookmark.png)
-
-![浏览器扩展设置](docs/screenshots/extension-settings.png)
-
-![网络探测设置](docs/screenshots/network-probe-settings.png)
-
-## Docker 部署
-
-项目提供通用 Docker Compose 配置，可用于 Docker Compose、群晖 Container Manager 或其他兼容环境。镜像从 GitHub Container Registry 拉取已经构建好的多架构版本，不需要在部署主机上安装 Node.js，也不需要拉源码编译。
+创建 `compose.yaml`：
 
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.25
-    pull_policy: always
+    image: ghcr.io/sagesang/harbor-deck:1.4.28
     container_name: harbor-deck
-    restart: always
+    restart: unless-stopped
     ports:
       - '127.0.0.1:8080:80'
     environment:
@@ -69,167 +49,96 @@ services:
       PORT: '80'
       CONFIG_DIR: /app/config
       TZ: Asia/Shanghai
-      HARBORDECK_SEARCH_TOKEN: ${HARBORDECK_SEARCH_TOKEN:-}
-      # 留空时书签管理 API 关闭；启用时直接填写至少 32 位随机 Token。
-      HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN: ''
-      HARBORDECK_TRUST_PROXY: ${HARBORDECK_TRUST_PROXY:-loopback,linklocal,uniquelocal}
-      HARBORDECK_TRUSTED_EXTENSION_IDS: ${HARBORDECK_TRUSTED_EXTENSION_IDS:-}
-      HARBORDECK_WEBDAV_TIMEOUT_MS: ${HARBORDECK_WEBDAV_TIMEOUT_MS:-15000}
     volumes:
       - ./config:/app/config
     security_opt:
       - no-new-privileges:true
 ```
 
-部署步骤：
-
-1. 创建宿主机配置目录，例如 `./config`；群晖环境可使用 `/volume1/docker/harbor-deck/config`。
-2. 按部署环境修改左侧宿主机路径，然后用以上 YAML 创建并启动项目。
-3. 配置 HTTPS 反向代理指向宿主机 `127.0.0.1:8080`，通过 HTTPS 域名访问并创建管理员账号。
-4. 进入书签管理，创建场景和分组，然后添加或导入书签。
-
-容器内的 `/app/config` 不要修改。镜像支持 `linux/amd64` 和 `linux/arm64`。只有在确实需要自动跟随最新镜像时才把版本号改成 `latest`。
-
-如果使用命令行部署：
-
 ```bash
-docker run -d \
-  --name harbor-deck \
-  --restart always \
-  -p 127.0.0.1:8080:80 \
-  -v ./config:/app/config \
-  -e TZ=Asia/Shanghai \
-  -e HARBORDECK_TRUST_PROXY=loopback,linklocal,uniquelocal \
-  -e HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN='replace-with-at-least-32-random-characters' \
-  ghcr.io/sagesang/harbor-deck:1.4.25
+docker compose up -d
 ```
 
-HTTPS 可以支持。应用容器内部监听 HTTP，可使用任意反向代理（包括群晖反向代理、Caddy 或 Nginx Proxy Manager）终止 TLS，再把 HTTPS 域名转发到宿主机 `127.0.0.1:8080`。默认只信任回环、链路本地和私有网络代理；代理不在这些网段时，用 `HARBORDECK_TRUST_PROXY` 明确填写其 IP 或 CIDR。只有确实需要绕过反向代理从局域网直连时，才把端口绑定改回 `8080:80`。
+在 Docker 宿主机打开 `http://localhost:8080`，创建管理员账号。其他设备访问时，配置 HTTPS 反向代理，或明确绑定到可信局域网接口；默认回环绑定不能被其他电脑直接访问。反向代理若运行在另一个容器里，需要使用共享 Docker 网络等可达上游，该容器里的 `127.0.0.1` 不代表宿主机。
 
-### 升级到 1.4.25
+群晖可以把 `./config` 换成 `/volume1/docker/harbor-deck/config` 等持久目录，容器内路径保持 `/app/config`。[仓库 Compose 文件](docker-compose.yml)还提供健康检查和可选集成配置。
 
-本版修复保护场景隔离、并发改密、编辑草稿和 WebDAV 可靠性。升级前备份完整配置；服务重启后需重新登录、解锁场景。现有搜索与管理 Token、书签标识继续有效。
+### 版本与升级
 
-`HARBORDECK_TRUSTED_EXTENSION_IDS` 可选，填写额外允许内嵌 HTML 入口的扩展 ID，多个用逗号分隔；每项必须为 32 个 a–p 字符。从1.4.21起默认允许HarborDeck的Chrome和Edge商店身份，留空表示没有额外ID，不再表示完全禁止内嵌。`HARBORDECK_WEBDAV_TIMEOUT_MS` 可选，设置单个 WebDAV 请求完整超时（默认 15000，整数范围 100–300000 毫秒），不是多步骤备份的总耗时。使用内嵌时还需验证反代最终响应头与 Chrome 权限/Cookie 行为。
+当前示例固定到已发布的**服务端 1.4.28**；**扩展 1.4.29** 为独立发布。扩展或源码包版本更高，不代表存在同版本 Docker 镜像，升级前请查看对应组件的[发布说明](https://github.com/SageSang/harbor-deck/releases)。
 
-## 场景、分组与导入规则
+升级前备份完整配置挂载目录并记录原镜像版本。修改镜像标签，执行 `docker compose pull` 和 `docker compose up -d`，保留原配置挂载、接口 Token 和自定义端口映射。服务重启后需重新登录并解锁场景。`latest` 会随服务端发布移动；拉取固定标签不会自动切换到其他版本。
 
-场景是后台数据，不是前端写死的选项。可以在书签管理中新增、改名、排序、设为默认、设置密码或删除；首页分组标题右键还可以新建书签、编辑分组名称或删除整个分组。
+### 可选环境变量
 
-每个场景维护自己的分组列表。书签定义是共享的，分组只保存引用关系，因此同一个 URL 可以同时出现在“个人”和“工作”两个场景中，而不需要创建两份书签。删除某个场景里的书签只会取消该场景引用；当任何场景都不再引用它时，系统才会删除孤立定义。
+| 变量                                   | 用途                                                                        |
+| -------------------------------------- | --------------------------------------------------------------------------- |
+| `HARBORDECK_SEARCH_TOKEN`              | 为普通场景的快捷搜索和收藏接口设置 Token。                                  |
+| `HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN` | 启用 AI/自动化管理，使用独立的至少 32 字符随机 Token；留空关闭。            |
+| `HARBORDECK_TRUST_PROXY`               | 可信代理 IP/CIDR，默认 `loopback,linklocal,uniquelocal`，按实际代理链设置。 |
+| `HARBORDECK_TRUSTED_EXTENSION_IDS`     | 额外允许内嵌的扩展身份，标准 HarborDeck Chrome/Edge 身份已内置。            |
+| `HARBORDECK_WEBDAV_TIMEOUT_MS`         | 每个 WebDAV 请求的完整超时，默认 `15000`，范围 `100`–`300000` 毫秒。        |
 
-导入浏览器书签时先选择一个目标场景。比如浏览器里的 `Bookmarks Bar / Engineering / Frontend` 会被保存成一个同名路径分组，既保留层级语义，又适配首页当前的一级分组网格；根目录书签会进入 `Imported Bookmarks` 分组。
+## 安装浏览器扩展
 
-## 集成搜索接口（[API 文档](docs/api.md)）
+从现有 [Chrome 应用商店](https://chromewebstore.google.com/detail/mlnpanpmgplmlangfnokhelkhkfcpine)或 [Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/ogjfbhbheifoaidpfdbcbcbgfiblmnik)安装，也可从 [Releases](https://github.com/SageSang/harbor-deck/releases)下载对应安装包。商店审核和更新进度可能晚于 GitHub 发布。
 
-完整的接口清单、参数约束、返回示例和错误码请参阅 [`docs/api.md`](docs/api.md)。
+1. 填写 HarborDeck 主地址及可选备用地址，并授予对应地址的访问权限。
+2. 使用本地新标签页，或明确选择直接跳转到服务器。连接设置仅属于当前安装，不在设备之间同步覆盖。
+3. 导航页面使用管理员账号登录；工具栏收藏还需填写服务器配置的搜索/收藏 Token。
+4. 打开收藏弹窗，编辑标题、主备地址和备注，搜索目标场景/分组，或先保存为快速记录。
 
-在容器环境变量中设置 `HARBORDECK_SEARCH_TOKEN`，请求必须带上：
+Chrome、Edge 使用不同的包和身份。手动安装选择对应解压包，`-store.zip` 用于商店提交。更新时优先沿用已有安装；需要更换安装身份时先导出、再导入设置与草稿，迁移文件不含 Token，需要重新填写。
 
-```http
-X-HarborDeck-Search-Token: 你的秘密 Token
-```
+详细说明见[扩展设置与恢复](docs/extension-local-settings-and-recovery.md)、[安装包身份](docs/extension-identities.md)和[本地缓存行为](docs/bookmark-cache.md)。
 
-搜索接口示例：
+## 数据由你掌握
 
-```bash
-curl \
-  -H "X-HarborDeck-Search-Token: $HARBORDECK_SEARCH_TOKEN" \
-  "http://localhost:8080/api/integrations/bookmarks/search?q=har&sceneId=all"
-```
+整站由管理员登录保护，密码场景提供额外的可见性边界。主动共享到普通场景的书签，也会在该普通场景可见。
 
-`q` 会匹配书签名称、slug、主地址、备用地址和备注。`sceneId` 可以填具体场景 ID，也可以填 `all`；省略时同样搜索所有场景。有密码的场景不会返回，即使管理员已经在页面中解锁也一样。结果包含场景/分组信息、`name` 和 `url`；有备用地址时优先返回备用地址，否则返回主地址。
+网页通过 `localStorage`，扩展通过 `chrome.storage.local` 保存普通场景的展示快照，其中包含显示的链接和备注，因此浏览器用户配置也应视为私有数据。受保护场景即使解锁也不进入快照。离线快照不代替备份或编辑权限：编辑需要最新在线配置，离线写入不会排队补发。退出或检测到权限丢失时清除相关缓存；离线设备无法即时获知远端权限变化。
 
-扩展添加当前网页还会使用两个接口：
+完整备份使用 WebDAV。场景处于锁定状态时，网页导出的配置仅包含可访问数据。恢复会替换当前配置，使用旧备份前先备份现状。存储范围、保存期限与迁移文件说明见[隐私政策](PRIVACY.md)。
 
-- `GET /api/integrations/bookmarks/scenes`：只列出可以接收书签的场景及分组。
-- `POST /api/integrations/bookmarks`：请求体为 `{ name, primaryUrl, secondaryUrl?, note?, placements: [{ sceneId, groupId }] }`，可一次添加到多个场景，每个场景选择一个分组。
+## 接入快捷工具与 AI
 
-## AI 书签管理接口
+| 接口       | 权限与用途                                                                                          | 文档                                                                                           |
+| ---------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 搜索与收藏 | `X-HarborDeck-Search-Token`，仅访问未保护场景，适合 uTools、启动器及快捷收藏。                      | [集成 API](docs/api.md)                                                                        |
+| 书签管理   | `X-HarborDeck-Management-Token`，可管理全部场景中的分组、书签、位置和快速记录，支持版本检查与预演。 | [管理 API](docs/bookmark-management-api.md) · [OpenAPI](docs/bookmark-management-openapi.yaml) |
 
-需要让 AI 或自动化脚本整理全部书签时，在部署 YAML 中直接填写独立的 `HARBORDECK_BOOKMARK_MANAGEMENT_TOKEN`，请求使用 `X-HarborDeck-Management-Token`。这个 Token 可以绕过管理员登录和场景密码，读取及修改受保护场景内的全部书签隐私数据；它不能管理场景本身、密码、WebDAV、备份或系统设置。
-
-管理接口基础路径为 `/api/management/v1`。所有写入都必须携带上次查询得到的 `If-Match` revision，并支持 `X-HarborDeck-Dry-Run: true` 预演。完整端点、请求体、响应、错误码、curl 示例和安全边界见 [书签管理 API 技术文档](docs/bookmark-management-api.md)，机器可读定义见 [OpenAPI 3.1](docs/bookmark-management-openapi.yaml)。
-
-## 浏览器扩展
-
-本地构建扩展：
-
-```bash
-npm run build:extension
-npm run package:extension
-```
-
-可以在 `chrome://extensions` 打开开发者模式后加载生成的目录，也可以安装 GitHub Release 中的 ZIP。
-
-扩展设置项：
-
-| 设置                | 说明                            |
-| ------------------- | ------------------------------- |
-| `primaryUrl`        | 通常填写内网地址                |
-| `fallbackUrl`       | 通常填写公网/外网地址           |
-| `openMode=direct`   | 新标签页直接跳转到选中的地址    |
-| `openMode=local` | 本地运行正式前端，缓存优先（默认） |
-| `probeTimeoutMs`    | 地址检测超时时间，默认 1000 毫秒 |
-| API Token           | 扩展弹窗添加当前网页时使用      |
-
-新标签页直接运行随扩展打包的正式界面，有缓存先展示，联网后原位更新，没有独立缓存列表或隐藏 iframe。无缓存时保留可输入的过渡界面，接续文字、光标和中文组合输入。旧打开模式自动使用本地页面；需要跳转到服务端时，在新设置里明确选择“直接打开”并保存。不会自动抢走浏览器地址栏焦点。
-
-## 配置与安全
-
-挂载目录中保存一个 `config.json`，核心字段如下：
-
-| 字段                     | 用途                                             |
-| ------------------------ | ------------------------------------------------ |
-| `system`                 | 主题、应用名称、点击行为、搜索引擎和 WebDAV 备份 |
-| `navigation.scenes[]`    | 场景名称、密码、分组及有序书签引用               |
-| `navigation.bookmarks[]` | 共享书签定义、URL、图标、备注和打开方式          |
-
-Web 配置读取只返回公开和已解锁场景的内容；锁定场景保留名称及锁定标记。保存公开内容时，服务端保留锁定场景的数据。未解锁时导出的 JSON 不包含私密内容，需要完整备份时使用 WebDAV 备份。
-
-密码只保存哈希值。项目只有一个管理员账号，没有匿名模式。场景密码独立于管理员密码，只对当前浏览器会话有效；关闭浏览器、修改场景密码、恢复备份或重启服务后需要重新解锁。管理员连续登录失败 5 次会触发临时锁定。
-
-不要把 `config.json`、WebDAV 凭据和集成 Token 提交到 Git。配置目录应独立备份，镜像更新不会覆盖它。
-
-隐私政策：[`PRIVACY.md`](PRIVACY.md)
+管理 Token 可以绕过管理员登录和场景密码，读取及修改受保护场景中的书签；它不能管理场景定义、账号密码、系统设置或 WebDAV。仅向需要这些权限的工具提供管理 Token，与收藏 Token 分开保管。配置文件和 Token 不应提交到 Git。
 
 ## 本地开发
 
+使用 Node.js 24 与 npm：
+
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-- Web：`http://localhost:3000`
-- API：`http://localhost:3001`
-
-常用检查：
+网页位于 `http://localhost:3000`，API 位于 `http://localhost:3001`。开发数据默认保存到 `./config`，测试时请通过 `CONFIG_DIR` 指定隔离目录。
 
 ```bash
+npm test
 npm run lint
-npm run test
 npm run build
 npm run build:extension
+npm run package:extension
+EXTENSION_BROWSER=edge npm run build:extension
+EXTENSION_BROWSER=edge npm run package:extension
 ```
 
-## 技术栈与许可
+技术栈为 React、TypeScript、Vite、Tailwind CSS、Fastify 和 Zod。发布标签 `vX.Y.Z-web` 仅发布服务端，`vX.Y.Z-extension` 仅发布扩展，无后缀 `vX.Y.Z` 发布两者。生成安装包不会自动提交商店，详见[发布说明](release-notes/README.md)。
 
-React 19、TypeScript、Vite、Tailwind CSS、Zustand、TanStack Query、Fastify 和 Zod。
-
-许可证：[Apache-2.0](LICENSE)
-
-## 长期维护上下文
+<details>
+<summary>维护者的长期上下文</summary>
 
 个人背景、历史决策、核验状态和待补事项统一维护在 [Sidney Vault](obsidian://open?vault=sidney-vault&file=20-Areas%2F%E8%BD%AF%E4%BB%B6%E9%A1%B9%E7%9B%AE%E7%BB%B4%E6%8A%A4%2F%E5%AE%9E%E4%BD%93%2FHarborDeck%2F%E6%96%87%E6%A1%A3%2F%E8%83%8C%E6%99%AF%E5%AE%9E%E7%8E%B0%E4%B8%8E%E5%8E%86%E5%8F%B2)。本仓库保留代码、使用说明与开发契约；不再复制个人维护日志。未接入该 Vault 的协作者仍可直接使用本文档。
 
-## 1.4.21 扩展身份、本机设置与启动恢复
+</details>
 
-1.4.21将主备地址、Token、打开方式和探测超时改为按设备保存；首次升级接续旧设置后，请核对本机地址。设置页提供不含Token的迁移文件导出、导入，启动页暂停后可使用“重新检测并打开”。旧安装的数据核对完成前请勿卸载。
+## 许可与来源
 
-Chrome和Edge分发包分别固定为对应商店ID；服务端1.4.21起无需逐台登记。旧服务端仍需升级或登记标准ID，自定义扩展继续使用额外允许配置。升级、迁移、回退和验证边界见[扩展本机设置与启动恢复说明](docs/extension-local-settings-and-recovery.md)。
-
-构建默认生成Chrome包；设置`EXTENSION_BROWSER=edge`可生成Edge包。两个渠道分别打包，不能互换公钥。默认允许来源和身份维护依据见[扩展身份与构建说明](docs/extension-identities.md)。
-
-### 1.4.25 本地正式界面与原位更新
-
-缓存和在线内容使用同一套正式前端；本机只保存普通展示数据，编辑仍要求完整在线配置与版本号。受保护场景及凭据不落盘，离线修改不排队补交。服务端可以先升级，旧扩展继续使用。使用和升级见[书签缓存说明](docs/bookmark-cache.md)，验收见[验证记录](docs/unified-newtab-validation-2026-10-02.md)。
+HarborDeck 使用 [Apache-2.0 许可证](LICENSE)，起源于 [Goalonez/smart-harbor](https://github.com/Goalonez/smart-harbor)。感谢原作者与贡献者提供的基础。HarborDeck 持续围绕多场景书签整理、浏览器集成和自托管使用发展。

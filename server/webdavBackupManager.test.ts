@@ -99,7 +99,7 @@ describe('backup commit and shutdown boundaries', () => {
       commitRestoredConfig: commit,
       logger: quietLogger,
     })
-    const result = await manager.restoreVersion('fixture-version')
+    const result = await manager.restoreVersion('fixture-version', () => {})
     expect(result.requiresReauth).toBe(true)
     expect(commit).toHaveBeenCalledTimes(1)
     const stopped = manager.stop()
@@ -123,7 +123,7 @@ describe('backup commit and shutdown boundaries', () => {
       commitRestoredConfig: commit,
       logger: quietLogger,
     })
-    const pending = manager.restoreVersion('fixture-version')
+    const pending = manager.restoreVersion('fixture-version', () => {})
     const rejected = expect(pending).rejects.toThrow('cancelled')
     await started.promise
     await manager.stop()
@@ -141,13 +141,13 @@ describe('backup commit and shutdown boundaries', () => {
       readSystemConfig: async () => config.system,
       logger: quietLogger,
       commitRestoredConfig: async (_value, canCommit) => {
-        expect(canCommit()).toBe(true)
+        expect(canCommit(config)).toBe(true)
         started.resolve()
         await release.promise
         return { restoredConfig: config, requiresReauth: false }
       },
     })
-    const pending = manager.restoreVersion('fixture-version')
+    const pending = manager.restoreVersion('fixture-version', () => {})
     await started.promise
     let stopped = false
     const closing = manager.stop().then(() => {
@@ -183,4 +183,41 @@ describe('backup commit and shutdown boundaries', () => {
     expect(createWebdavBackup).not.toHaveBeenCalled()
     await manager.stop()
   })
+})
+
+it('checks a queued manual restore before downloading and leaves automatic backup independent', async () => {
+  const config = backupConfig()
+  const started = deferred<void>()
+  const release = deferred<never[]>()
+  vi.mocked(listWebdavBackupVersions).mockImplementation(async () => {
+    started.resolve()
+    return release.promise
+  })
+  const commit = vi.fn(async () => ({ restoredConfig: config, requiresReauth: false }))
+  const manager = createWebdavBackupManager({
+    readAppConfig: async () => config,
+    readSystemConfig: async () => config.system,
+    commitRestoredConfig: commit,
+    logger: quietLogger,
+  })
+  const listing = manager.listVersions()
+  await started.promise
+  let valid = true
+  const pending = manager.restoreVersion('queued', () => {
+    if (!valid) throw new Error('session revoked')
+  })
+  const rejected = expect(pending).rejects.toThrow('session revoked')
+  valid = false
+  release.resolve([])
+  await listing
+  await rejected
+  expect(restoreWebdavBackup).not.toHaveBeenCalled()
+  expect(commit).not.toHaveBeenCalled()
+  vi.mocked(createWebdavBackup).mockResolvedValue({
+    version: { id: 'auto', filename: 'auto.json', size: 1, createdAt: new Date().toISOString() },
+    removedVersionIds: [],
+  })
+  await manager.runBackup('auto')
+  expect(createWebdavBackup).toHaveBeenCalledOnce()
+  await manager.stop()
 })

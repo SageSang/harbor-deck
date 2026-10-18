@@ -1,3 +1,7 @@
+import {
+  quickRecordConflicts,
+  promotionConflictMessage,
+} from '../../../shared/quickRecordPromotion'
 import type { NavigationConfig } from '@/config/schema'
 import {
   buildUniqueNavigationId,
@@ -24,6 +28,10 @@ export function promoteQuickRecords(
     const existing = next.bookmarks.find((bookmark) =>
       bookmarkMatchesAnyUrl(bookmark, [record.primaryUrl, record.secondaryUrl ?? ''])
     )
+    if (existing) {
+      const conflicts = quickRecordConflicts(record, existing)
+      if (conflicts.length) throw new Error(promotionConflictMessage(record.name, conflicts))
+    }
     const bookmark = existing ?? {
       slug: buildUniqueNavigationId(
         record.name,

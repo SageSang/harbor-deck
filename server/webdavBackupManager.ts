@@ -24,7 +24,10 @@ export interface RestoredConfigResult {
 interface CreateWebdavBackupManagerOptions {
   readAppConfig: () => Promise<AppConfig>
   readSystemConfig: () => Promise<SystemConfig>
-  commitRestoredConfig: (value: unknown, canCommit: () => boolean) => Promise<RestoredConfigResult>
+  commitRestoredConfig: (
+    value: unknown,
+    canCommit: (current: AppConfig) => boolean
+  ) => Promise<RestoredConfigResult>
   logger?: LoggerLike
   now?: () => Date
 }
@@ -165,9 +168,10 @@ export function createWebdavBackupManager(options: CreateWebdavBackupManagerOpti
     })
   }
 
-  function restoreVersion(versionId: string) {
+  function restoreVersion(versionId: string, assertAuthorized: (current: AppConfig) => void) {
     return enqueue(async () => {
       const current = await options.readAppConfig()
+      assertAuthorized(current)
       const restored = await restoreWebdavBackup(current.system.webdavBackup, versionId, {
         signal: lifetime.signal,
       })
@@ -175,7 +179,10 @@ export function createWebdavBackupManager(options: CreateWebdavBackupManagerOpti
       // The app owns the atomic local commit and synchronous access invalidation.
       // It checks canCommit again immediately before rename. Once rename starts,
       // stop() waits for the commit and its invalidation to finish.
-      const result = await options.commitRestoredConfig(restored, () => !disposed)
+      const result = await options.commitRestoredConfig(restored, (latest) => {
+        assertAuthorized(latest)
+        return !disposed
+      })
       requestReload()
       logger.info({ versionId, requiresReauth: result.requiresReauth }, 'WebDAV 备份版本已恢复')
       return result

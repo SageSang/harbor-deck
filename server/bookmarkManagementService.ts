@@ -1,3 +1,5 @@
+import { resolveDynamicIconName } from '../shared/iconNames.js'
+import { quickRecordConflicts, promotionConflictMessage } from '../shared/quickRecordPromotion.js'
 import { buildUniqueIdentifier, MAX_NEW_ID_LENGTH } from '../shared/identifiers.js'
 import { createHash, randomInt } from 'node:crypto'
 import dynamicIconImports from 'lucide-react/dynamicIconImports.js'
@@ -162,7 +164,7 @@ function chooseRandomIcon() {
 }
 
 function assertIcon(icon: string | null | undefined) {
-  if (icon && !availableIconIdSet.has(icon)) {
+  if (icon && !resolveDynamicIconName(icon)) {
     error(422, 'INVALID_ICON', `不支持的图标 ID：${icon}`)
   }
 }
@@ -193,7 +195,7 @@ function cleanBookmark(input: BookmarkCreateInput | (BookmarkPatchInput & Servic
       name: input.name,
       primaryUrl: input.primaryUrl,
       ...(input.note ? { note: input.note.trim() } : {}),
-      ...(input.icon ? { icon: input.icon } : {}),
+      ...(input.icon ? { icon: resolveDynamicIconName(input.icon) ?? input.icon } : {}),
       ...(input.secondaryUrl ? { secondaryUrl: input.secondaryUrl } : {}),
       ...(input.probes && input.probes.length > 0 ? { probes: input.probes } : {}),
       ...(input.forceNewTab ? { forceNewTab: true } : {}),
@@ -498,7 +500,10 @@ export function updateManagedBookmark(
     ...patch,
     slug: nextSlug,
     note: patch.note === null ? undefined : (patch.note ?? current.note),
-    icon: patch.icon === null ? undefined : (patch.icon ?? current.icon),
+    icon:
+      patch.icon === null
+        ? undefined
+        : (resolveDynamicIconName(patch.icon ?? current.icon) ?? patch.icon ?? current.icon),
     secondaryUrl:
       patch.secondaryUrl === null ? undefined : (patch.secondaryUrl ?? current.secondaryUrl),
     probes: patch.probes === null ? undefined : (patch.probes ?? current.probes),
@@ -745,7 +750,9 @@ function createQuickRecordValue(input: QuickRecordInput, now: number): QuickReco
     primaryUrl: input.primaryUrl,
     ...(input.secondaryUrl ? { secondaryUrl: input.secondaryUrl } : {}),
     ...(input.note?.trim() ? { note: input.note.trim() } : {}),
-    ...(input.icon ? { icon: input.icon } : { icon: chooseRandomIcon() }),
+    ...(input.icon
+      ? { icon: resolveDynamicIconName(input.icon) ?? input.icon }
+      : { icon: chooseRandomIcon() }),
     createdAt: now,
     updatedAt: now,
   }
@@ -780,7 +787,10 @@ export function updateManagedQuickRecord(
     ...patch,
     name: patch.name?.trim() ?? current.name,
     note: patch.note === null ? undefined : (patch.note?.trim() ?? current.note),
-    icon: patch.icon === null ? undefined : (patch.icon ?? current.icon),
+    icon:
+      patch.icon === null
+        ? undefined
+        : (resolveDynamicIconName(patch.icon ?? current.icon) ?? patch.icon ?? current.icon),
     secondaryUrl:
       patch.secondaryUrl === null ? undefined : (patch.secondaryUrl ?? current.secondaryUrl),
     updatedAt: now,
@@ -806,7 +816,12 @@ export function promoteManagedQuickRecord(
   navigation: NavigationConfig,
   sourceSceneId: string,
   recordId: string,
-  input: { slug?: string; placements: ManagedPlacement[]; reuseExistingByUrl: boolean }
+  input: {
+    slug?: string
+    placements: ManagedPlacement[]
+    reuseExistingByUrl: boolean
+    discardConflictingFields?: boolean
+  }
 ) {
   const next = cloneNavigation(navigation)
   const sourceScene = findScene(next, sourceSceneId)
@@ -817,6 +832,11 @@ export function promoteManagedQuickRecord(
         bookmarkMatchesAnyUrl(item, [record.primaryUrl, record.secondaryUrl])
       )
     : undefined
+  if (bookmark && !input.discardConflictingFields) {
+    const conflicts = quickRecordConflicts(record, bookmark)
+    if (conflicts.length)
+      error(409, 'QUICK_RECORD_CONTENT_CONFLICT', promotionConflictMessage(record.name, conflicts))
+  }
   let created = false
   if (!bookmark) {
     const slug =

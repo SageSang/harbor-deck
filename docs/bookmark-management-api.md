@@ -150,7 +150,7 @@ X-HarborDeck-Dry-Run: true
 | `400` | `INVALID_JSON`、`INVALID_REQUEST`、`INVALID_IF_MATCH`、`INVALID_DRY_RUN_HEADER` | JSON、路径、查询参数或 Header 格式无效 |
 | `401` | `INVALID_MANAGEMENT_TOKEN` | Token 缺失或错误 |
 | `404` | `SCENE_NOT_FOUND`、`GROUP_NOT_FOUND`、`BOOKMARK_NOT_FOUND`、`QUICK_RECORD_NOT_FOUND`、`PLACEMENT_NOT_FOUND` | 目标不存在 |
-| `409` | `GROUP_NAME_CONFLICT`、`GROUP_ID_CONFLICT`、`BOOKMARK_SLUG_CONFLICT`、`PLACEMENT_CONFLICT`、`GROUP_ORDER_CONFLICT`、`BOOKMARK_ORDER_CONFLICT`、`GROUP_NOT_EMPTY`、`ORPHAN_BOOKMARK` | 当前状态与请求冲突 |
+| `409` | `QUICK_RECORD_CONTENT_CONFLICT`、`GROUP_NAME_CONFLICT`、`GROUP_ID_CONFLICT`、`BOOKMARK_SLUG_CONFLICT`、`PLACEMENT_CONFLICT`、`GROUP_ORDER_CONFLICT`、`BOOKMARK_ORDER_CONFLICT`、`GROUP_NOT_EMPTY`、`ORPHAN_BOOKMARK` | 当前状态与请求冲突 |
 | `412` | `REVISION_MISMATCH` | 客户端状态已过期 |
 | `413` | `PAYLOAD_TOO_LARGE` | 请求体超过 1 MiB |
 | `422` | `INVALID_REQUEST`、`INVALID_BOOKMARK`、`INVALID_ICON`、`INVALID_POSITION`、`DUPLICATE_SCENE_PLACEMENT`、`DUPLICATE_BOOKMARK_ID`、`INVALID_TARGET_GROUP`、`PLACEMENT_REQUIRED` | JSON 请求体字段或业务规则无效 |
@@ -257,7 +257,7 @@ GET /api/management/v1/bookmarks/:slug
 GET /api/management/v1/icons?q=server&limit=50
 ```
 
-`q` 可省略，最长 100 字符；`limit` 为 1–500，默认 50。返回 `{ items: [{ id, label }] }`。书签与快速记录的 `icon` 必须使用这里返回的 ID；未知 ID 返回 `422 INVALID_ICON`。
+`q` 可省略，最长 100 字符；`limit` 为 1–500，默认 50。返回 `{ items: [{ id, label }] }`。书签与快速记录的 `icon` 必须使用这里返回的 ID；未知 ID 返回 `422 INVALID_ICON`。旧网页保存的 PascalCase 名称（如 `ArrowUpRight`）仍兼容，写入时规范化为 `arrow-up-right`；仅改备注不会因这些旧名称失败。
 
 ## 6. 分组接口
 
@@ -509,7 +509,11 @@ If-Match: "sha256:..."
 }
 ```
 
-当 `reuseExistingByUrl` 为 `true` 且快速记录的主/备用 URL 与现有书签任一主/备用 URL 相同，服务端复用现有书签；否则创建新书签。放置成功后删除原快速记录。匹配、创建/复用、放置和删除在同一原子写入中完成。
+当 `reuseExistingByUrl` 为 `true`（默认）且快速记录的主/备用 URL 与现有书签任一主/备用 URL 匹配，服务端尝试复用现有书签。若源记录的名称、非空备注、主备地址或图标含有不会被保留的差异，返回 `409 QUICK_RECORD_CONTENT_CONFLICT`，整笔不写，源记录保留。地址内容比较保留 URL fragment，避免把不同锚点静默丢弃。
+
+调用方可以将 `reuseExistingByUrl` 设为 `false` 另建书签并保留记录内容；只有已明确决定舍弃差异时才传 `discardConflictingFields: true`（默认 `false`），继续复用已有书签。已有共享书签字段不被覆盖。同一场景移动到指定组，其他场景位置保留。放置成功后删除原快速记录；匹配、创建/复用、放置和删除在同一原子写入中完成。冲突后应先读取和比较，不能自动带上舍弃参数重试。
+
+此冲突保护属于当前源码的后续修复，旧发布版本可能仍直接复用并删除源记录；调用方不能依赖旧版本提供该保护。
 
 ## 10. 图标维护
 

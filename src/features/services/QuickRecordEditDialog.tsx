@@ -1,3 +1,7 @@
+import {
+  quickRecordConflicts,
+  promotionConflictMessage,
+} from '../../../shared/quickRecordPromotion'
 import { useEditSnapshot } from '@/features/config/useEditSnapshot'
 import { DraftNotice } from '@/features/config/DraftNotice'
 import { useDiscardDraft } from '@/features/config/useDiscardDraft'
@@ -80,6 +84,22 @@ export function QuickRecordEditDialog({
   const [note, setNote] = useState('')
   const [placements, setPlacements] = useState<PlacementChoice[]>([])
   const [feedback, setFeedback] = useState('')
+  const [conflictChoice, setConflictChoice] = useState<'' | 'create' | 'reuse'>('')
+
+  useEffect(() => {
+    setConflictChoice('')
+  }, [open, recordId, name, primaryUrl, secondaryUrl, note])
+
+  const matchingBookmark =
+    isHttpUrl(primaryUrl.trim()) && (!secondaryUrl.trim() || isHttpUrl(secondaryUrl.trim()))
+      ? navigation?.bookmarks.find((bookmark) =>
+          bookmarkMatchesAnyUrl(bookmark, [primaryUrl.trim(), secondaryUrl.trim()])
+        )
+      : undefined
+  const conflicts =
+    matchingBookmark && record
+      ? quickRecordConflicts({ ...record, name, primaryUrl, secondaryUrl, note }, matchingBookmark)
+      : []
 
   useEffect(() => {
     if (!open || !record) {
@@ -137,9 +157,11 @@ export function QuickRecordEditDialog({
       if (placements.length === 0) {
         next = upsertQuickRecord(navigation, sceneId, nextRecord, record.id)
       } else {
-        const existing = navigation.bookmarks.find((bookmark) =>
-          bookmarkMatchesAnyUrl(bookmark, [trimmedPrimary, trimmedSecondary])
-        )
+        if (matchingBookmark && conflicts.length && !conflictChoice) {
+          setFeedback(promotionConflictMessage(trimmedName, conflicts))
+          return
+        }
+        const existing = conflictChoice === 'create' ? undefined : matchingBookmark
         const service: ServiceConfig =
           existing ??
           cleanServiceConfig({
@@ -157,12 +179,18 @@ export function QuickRecordEditDialog({
           })
         next = removeQuickRecordFromScene(navigation, sceneId, record.id)
         const existingPlacements = existing ? getBookmarkPlacements(navigation, existing.slug) : []
-        next = upsertBookmark(next, service, [
-          ...existingPlacements,
-          ...placements.filter(
-            (placement) => !existingPlacements.some((item) => item.sceneId === placement.sceneId)
-          ),
-        ])
+        next = upsertBookmark(
+          next,
+          service,
+          [
+            ...existingPlacements.filter(
+              (item) => !placements.some((placement) => placement.sceneId === item.sceneId)
+            ),
+            ...placements,
+          ],
+          existing?.slug,
+          { preserveExistingPlacement: true }
+        )
       }
     } catch (error) {
       setFeedback(formatBookmarkError(error))
@@ -276,6 +304,33 @@ export function QuickRecordEditDialog({
               ))}
             </div>
           </div>
+          {placements.length > 0 && matchingBookmark && conflicts.length > 0 && (
+            <fieldset className="config-panel-card-muted space-y-2 p-3">
+              <legend className="text-sm font-semibold">发现同地址书签 / Existing bookmark</legend>
+              <p className="text-sm">
+                已有“{matchingBookmark.name}”，以下内容不同：{conflicts.join('、')}
+                。选择处理方式后再保存。
+              </p>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="promotion-conflict"
+                  checked={conflictChoice === 'create'}
+                  onChange={() => setConflictChoice('create')}
+                />
+                另建书签，保留本次内容 / Create a separate bookmark
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="promotion-conflict"
+                  checked={conflictChoice === 'reuse'}
+                  onChange={() => setConflictChoice('reuse')}
+                />
+                使用已有书签，舍弃本记录的差异内容并删除记录 / Reuse and discard these differences
+              </label>
+            </fieldset>
+          )}
           {feedback ? <p className="text-sm text-destructive">{feedback}</p> : null}
         </div>
         <div className="flex justify-end gap-2 border-t border-border/65 p-3 sm:p-4">

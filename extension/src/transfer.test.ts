@@ -118,6 +118,7 @@ describe('one-time extension data transfer', () => {
       await connections.read()
       if (kind === 'settings')
         await connections.save({
+          settingsRevision: (await connections.read()).settingsRevision,
           primaryUrl: 'https://existing.test/',
           fallbackUrl: '',
           apiToken: '',

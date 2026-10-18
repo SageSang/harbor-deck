@@ -66,7 +66,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           : Promise.reject(new Error('Invalid settings operation'))
     void result
       .then((settings) => sendResponse({ ok: true, settings }))
-      .catch(() => sendResponse({ ok: false, error: 'settings-unavailable' }))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          error:
+            error instanceof Error && error.message === 'settings-conflict'
+              ? 'settings-conflict'
+              : 'settings-unavailable',
+        })
+      )
     return true
   }
   if (

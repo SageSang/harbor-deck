@@ -562,3 +562,90 @@ describe('shared editor callers', () => {
     expect(document.body.textContent).toContain('First bookmark')
   })
 })
+
+describe('promotion and rename regression boundaries', () => {
+  async function openConflictingRecord() {
+    serverNavigation.scenes[0].quickRecords[0].primaryUrl = 'https://first.example/'
+    serverNavigation.scenes[0].quickRecords[0].note = 'UNIQUE NOTE'
+    await refreshTo(serverNavigation)
+    await render(<QuickRecordEditDialog open sceneId="a" recordId="q1" onClose={() => {}} />)
+    await click('Two')
+  }
+  it('retains a conflicting record and form edits until a separate bookmark is chosen', async () => {
+    await openConflictingRecord()
+    await change(
+      Array.from(document.querySelectorAll('input')).find((i) => i.value === 'First record')!,
+      'Edited title'
+    )
+    await click('保存')
+    expect(writes).toHaveLength(0)
+    expect(document.body.textContent).toContain('记录已保留')
+    await act(async () =>
+      (document.querySelectorAll('input[type=radio]')[0] as HTMLInputElement).click()
+    )
+    await click('保存')
+    expect(writes[0].config.bookmarks).toContainEqual(
+      expect.objectContaining({ name: 'Edited title', note: 'UNIQUE NOTE' })
+    )
+    expect(writes[0].config.bookmarks[0]).toEqual(serverNavigation.bookmarks[0])
+    expect(writes[0].config.scenes[0].quickRecords.map((r) => r.id)).not.toContain('q1')
+    await finishWrite()
+  })
+  it('moves an explicitly reused bookmark to the selected group and preserves another scene', async () => {
+    serverNavigation.scenes[1].groups = [{ id: 'shared', name: 'Shared', bookmarkIds: ['first'] }]
+    await openConflictingRecord()
+    await act(async () =>
+      (document.querySelectorAll('input[type=radio]')[1] as HTMLInputElement).click()
+    )
+    await click('保存')
+    expect(writes[0].config.scenes[0].groups[0].bookmarkIds).not.toContain('first')
+    expect(writes[0].config.scenes[0].groups[1].bookmarkIds).toContain('first')
+    expect(writes[0].config.scenes[1]).toEqual(serverNavigation.scenes[1])
+    expect(writes[0].config.bookmarks[0]).toEqual(serverNavigation.bookmarks[0])
+    await finishWrite()
+  })
+  it('invalidates an explicit discard choice when the source content is edited again', async () => {
+    await openConflictingRecord()
+    await act(async () =>
+      (document.querySelectorAll('input[type=radio]')[1] as HTMLInputElement).click()
+    )
+    await change(
+      Array.from(document.querySelectorAll('input')).find((i) => i.value === 'First record')!,
+      'Another edit'
+    )
+    await click('保存')
+    expect(writes).toHaveLength(0)
+  })
+  it('keeps the original revision and draft when a concurrent rename is rejected', async () => {
+    await render(
+      <GroupExpansionProvider>
+        <ServiceGrid />
+      </GroupExpansionProvider>
+    )
+    const drag = Array.from(document.querySelectorAll('button')).find((b) =>
+      b.getAttribute('aria-label')?.includes('One')
+    )!
+    await act(async () => drag.click())
+    await flush()
+    await click('编辑分组')
+    const input = document.querySelector('[role="dialog"] input') as HTMLInputElement
+    await change(input, 'My stale name')
+    const newer = fixture('r2')
+    newer.scenes[0].groups[0].name = 'Concurrent name'
+    serverNavigation = newer
+    await refreshTo(newer)
+    await click('保存名称')
+    expect(writes[0].config._revision).toBe('r1')
+    await act(async () =>
+      writes[0].response.resolve(
+        new Response('导航状态已变化，请重新加载后再保存', { status: 412 })
+      )
+    )
+    await flush()
+    expect(input.value).toBe('My stale name')
+    expect(client.getQueryData<NavigationConfig>(navigationKey())?.scenes[0].groups[0].name).toBe(
+      'Concurrent name'
+    )
+    expect(writes).toHaveLength(1)
+  })
+})

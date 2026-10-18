@@ -1,3 +1,4 @@
+import type { NavigationConfig } from '@/config/schema'
 import { useDialogFocus } from '@/components/useDialogFocus'
 import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent, MouseEvent } from 'react'
@@ -106,6 +107,10 @@ interface QuickRecordDialogState {
 }
 
 interface GroupRenameState {
+  editorId: number
+  navigation: NavigationConfig
+  sceneId: string
+  accessVersion: number
   groupId: string
   groupName: string
 }
@@ -197,6 +202,7 @@ export function ServiceGrid() {
   const navigationQuery = useNavigationConfig()
   const activeSceneId = useAppStore((state) => state.activeSceneId)
   const sceneTokens = useAppStore((state) => state.sceneTokens)
+  const accessVersion = useAppStore((state) => state.sceneAccessVersion)
   const saveMutation = useSaveNavigationConfig(activeSceneId ?? '')
   const {
     expandedGroupKeys,
@@ -218,7 +224,14 @@ export function ServiceGrid() {
   const [bookmarkDialog, setBookmarkDialog] = useState<BookmarkDialogState | null>(null)
   const [quickRecordDialog, setQuickRecordDialog] = useState<QuickRecordDialogState | null>(null)
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
+  const renameSequence = useRef(0)
   const [renamingGroup, setRenamingGroup] = useState<GroupRenameState | null>(null)
+  const renameMutation = useSaveNavigationConfig(
+    `rename:${activeSceneId}:${accessVersion}:${renamingGroup?.editorId ?? 'closed'}`
+  )
+  useEffect(() => {
+    setRenamingGroup(null)
+  }, [activeSceneId, accessVersion])
   const [gridWidth, setGridWidth] = useState(0)
   const [desktopColumnCount, setDesktopColumnCount] = useState(() => {
     if (typeof window === 'undefined') {
@@ -981,8 +994,13 @@ export function ServiceGrid() {
   }
 
   function handleRenameGroup(groupId: string, groupName: string) {
-    const navigation = navigationQuery.data
-    if (!navigation || !activeSceneId) {
+    const navigation = renamingGroup?.navigation
+    if (
+      !navigation ||
+      !activeSceneId ||
+      renamingGroup.sceneId !== activeSceneId ||
+      renamingGroup.accessVersion !== accessVersion
+    ) {
       return
     }
 
@@ -1000,7 +1018,7 @@ export function ServiceGrid() {
 
     try {
       const nextConfig = renameGroupInScene(navigation, activeSceneId, groupId, name)
-      saveMutation.mutate(nextConfig, {
+      renameMutation.mutate(nextConfig, {
         onSuccess: () => {
           setRenamingGroup(null)
           showToast({ type: 'success', message: messages.serviceGrid.groupRenamed(name) })
@@ -1579,9 +1597,13 @@ export function ServiceGrid() {
       />
 
       <GroupRenameDialog
-        open={renamingGroup !== null}
+        open={
+          renamingGroup !== null &&
+          renamingGroup.sceneId === activeSceneId &&
+          renamingGroup.accessVersion === accessVersion
+        }
         currentName={renamingGroup?.groupName ?? ''}
-        saving={saveMutation.isSaveBlocked}
+        saving={renameMutation.isSaveBlocked}
         onClose={() => setRenamingGroup(null)}
         onSave={(name) => {
           if (renamingGroup) {
@@ -1728,9 +1750,18 @@ export function ServiceGrid() {
                     <button
                       type="button"
                       onClick={() => {
+                        const navigation = navigationQuery.data
+                        const group = navigation?.scenes
+                          .find((scene) => scene.id === activeSceneId)
+                          ?.groups.find((group) => group.id === contextMenu.groupId)
+                        if (!navigation || !activeSceneId || !group) return
                         setRenamingGroup({
-                          groupId: contextMenu.groupId,
-                          groupName: contextMenu.groupName,
+                          editorId: ++renameSequence.current,
+                          navigation,
+                          sceneId: activeSceneId,
+                          accessVersion,
+                          groupId: group.id,
+                          groupName: group.name,
                         })
                         setContextMenu(null)
                       }}

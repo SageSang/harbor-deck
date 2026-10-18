@@ -438,3 +438,21 @@ describe('authentication transaction races', () => {
     expect((await secondPending).statusCode).toBe(401)
   })
 })
+
+it.each([undefined, null, []])(
+  'rejects malformed whole-app system payload %j without changing credentials',
+  async (system) => {
+    const cookie = await setup()
+    const get = await server.inject({ method: 'GET', url: '/api/config/app', headers: { cookie } })
+    const before = await readFile(path.join(directory, 'config.json'), 'utf8')
+    const result = await server.inject({
+      method: 'PUT',
+      url: '/api/config/app',
+      headers: { cookie, 'if-match': String(get.headers.etag) },
+      payload: { ...get.json(), system },
+    })
+    expect(result.statusCode).toBe(400)
+    expect(await readFile(path.join(directory, 'config.json'), 'utf8')).toBe(before)
+    expect(await status(cookie)).toMatchObject({ authenticated: true, setupRequired: false })
+  }
+)

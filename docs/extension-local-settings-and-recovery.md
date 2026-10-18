@@ -49,3 +49,7 @@ The full cache behavior, privacy boundary and upgrade steps are documented in [b
 Upgrade the extension to 1.4.26 for initial search focus and keyboard shortcuts. The 1.4.25 server remains compatible; changing the Docker configuration is unnecessary. Chrome reserves focus for the omnibox on native new-tab overrides, so a tiny local entry immediately replaces itself with the packaged app before rendering. There is no network-dependent redirect or separate cache screen. The address bar displays the local extension URL.
 
 Local new tabs now start with the white Frost theme. Old automatically persisted theme values from 1.4.25 are not migrated as deliberate choices. Select a different skin in the page settings if desired; subsequent local tabs retain that choice. Server webpage preferences are unaffected. See [native-keyboard verification](newtab-focus-validation-2026-10-05.md).
+
+## Concurrent settings pages
+
+Saving a connection form checks the revision originally loaded by that page inside the shared storage lock. If another page has saved in the meantime, the old form is retained and the save is rejected. Copy any edits you still need, then use **Discard edits and reload** to read the current connection settings. A save never silently restores an older address or token. One-time migration and import retain their separate initialization rules.

@@ -1237,6 +1237,11 @@ components:
         reuseExistingByUrl:
           type: boolean
           default: true
+          description: Reuse a matching bookmark only if no source content would be lost, or discardConflictingFields is explicitly true. Otherwise returns 409 QUICK_RECORD_CONTENT_CONFLICT without deleting the record.
+        discardConflictingFields:
+          type: boolean
+          default: false
+          description: Explicitly discard differing source content when reusing an existing bookmark. Do not automatically retry a conflict with this flag.
 
     MutationResponse:
       type: object

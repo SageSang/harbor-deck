@@ -340,7 +340,7 @@ export function IconPicker({ value, size = 'default', onChange }: IconPickerProp
                         key={option.loaderKey}
                         type="button"
                         onClick={() => {
-                          onChange(option.label)
+                          onChange(option.loaderKey)
                           setIsOpen(false)
                         }}
                         className={cn(

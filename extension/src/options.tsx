@@ -39,7 +39,7 @@ type SaveStatus =
   | { tone: 'idle'; kind: 'idle' }
   | { tone: 'success'; kind: 'saved' }
   | { tone: 'warn'; kind: 'saved-no-permission' }
-  | { tone: 'error'; kind: 'invalid-url' | 'save-failed' }
+  | { tone: 'error'; kind: 'invalid-url' | 'save-failed' | 'settings-conflict' }
 
 function getStatusText(language: ExtensionLanguage, status: SaveStatus) {
   const messages = getMessages(language)
@@ -53,6 +53,10 @@ function getStatusText(language: ExtensionLanguage, status: SaveStatus) {
       return messages.options.statusSavedNoPermission
     case 'invalid-url':
       return messages.options.statusInvalidUrl
+    case 'settings-conflict':
+      return language === 'zh-CN'
+        ? '另一页面已修改连接设置。本次输入已保留；请先复制需要的修改，再重新加载设置。'
+        : 'Another page changed these settings. Your edits are retained; copy any needed changes before reloading.'
     case 'save-failed':
       return messages.options.statusSaveFailed
   }
@@ -118,6 +122,7 @@ export function OptionsApp() {
 
     try {
       let nextSettings: ExtensionSettings = {
+        settingsRevision: savedForm.settingsRevision,
         primaryUrl: normalizeUrl(form.primaryUrl),
         fallbackUrl: normalizeUrl(form.fallbackUrl),
         apiToken: form.apiToken.trim(),
@@ -145,7 +150,12 @@ export function OptionsApp() {
       const message = error instanceof Error ? error.message : ''
       setStatus({
         tone: 'error',
-        kind: message.includes('Invalid URL') ? 'invalid-url' : 'save-failed',
+        kind:
+          message === 'settings-conflict'
+            ? 'settings-conflict'
+            : message.includes('Invalid URL')
+              ? 'invalid-url'
+              : 'save-failed',
       })
     } finally {
       setSaving(false)
@@ -220,6 +230,29 @@ export function OptionsApp() {
           </p>
         </div>
 
+        {status.kind === 'settings-conflict' && (
+          <div className="field" role="alert">
+            <p className="status-note error">{getStatusText(language, status)}</p>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={saving || transferring}
+              onClick={async () => {
+                try {
+                  const latest = await readSettings()
+                  setForm(latest)
+                  setSavedForm(latest)
+                  setStatus({ tone: 'idle', kind: 'idle' })
+                  await refreshPermissions(latest)
+                } catch {
+                  setStatus({ tone: 'error', kind: 'save-failed' })
+                }
+              }}
+            >
+              {language === 'zh-CN' ? '放弃本次输入并重新加载' : 'Discard edits and reload'}
+            </button>
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           <fieldset
             className="settings-grid settings-fields"
@@ -393,4 +426,5 @@ export function OptionsApp() {
   )
 }
 
-createRoot(document.getElementById('root')!).render(<OptionsApp />)
+const rootElement = document.getElementById('root')
+if (rootElement) createRoot(rootElement).render(<OptionsApp />)

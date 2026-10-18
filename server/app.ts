@@ -807,6 +807,9 @@ export async function buildServer() {
     if (!(await authService.requireAuthenticated(request, reply))) {
       return reply
     }
+    if (!isRecord(request.body) || !isRecord(request.body.system)) {
+      return reply.code(400).send('整站配置必须包含有效的 system 对象')
+    }
 
     const expectedRevision = getIfMatchRevision(request)
     if (!expectedRevision) {
@@ -1159,7 +1162,19 @@ export async function buildServer() {
 
     try {
       const { versionId } = restoreWebdavBackupBodySchema.parse(request.body)
-      const result = await webdavBackupManager.restoreVersion(versionId)
+      const sessionKey = authService.getSessionKey(request)
+      const result = await webdavBackupManager.restoreVersion(versionId, (current) => {
+        if (
+          !sessionKey ||
+          !authService.isSessionCurrent(request, current.system.auth, sessionKey)
+        ) {
+          throw new BookmarkManagementError(
+            401,
+            'RESTORE_SESSION_EXPIRED',
+            '恢复已取消，请重新登录后操作'
+          )
+        }
+      })
 
       if (result.requiresReauth) {
         authService.clearSessionCookie(reply, request)
@@ -1171,7 +1186,7 @@ export async function buildServer() {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '恢复 WebDAV 备份版本失败'
-      reply.code(400)
+      reply.code(error instanceof BookmarkManagementError ? error.statusCode : 400)
       return message
     }
   })

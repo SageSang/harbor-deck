@@ -144,6 +144,8 @@ async function requestSettings(operation: 'read' | 'save', settings?: ExtensionS
     settings,
   })
   if (!isRecord(response) || response.ok !== true || !isRecord(response.settings)) {
+    if (isRecord(response) && response.error === 'settings-conflict')
+      throw new Error('settings-conflict')
     throw new Error('Unable to load or save connection settings')
   }
   return parseStoredSettings(response.settings)

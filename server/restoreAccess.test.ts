@@ -6,6 +6,18 @@ import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppConfig } from '../src/config/schema.js'
 
+const writeControl = vi.hoisted(() => ({ pause: null as null | (() => Promise<void>) }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
+      await actual.writeFile(...args)
+      if (String(args[1]).includes('REVOCATION-TEST')) await writeControl.pause?.()
+    },
+  }
+})
+
 const versionId = 'harbor-deck-config-20260912T120000000Z.json'
 const username = 'restore-admin'
 const password = 'restore-original-password'
@@ -97,6 +109,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  writeControl.pause = null
   await server?.close()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
@@ -212,3 +225,61 @@ describe('restore access at the actual app commit boundary', () => {
     expect(await readFile(path.join(directory, 'config.json'), 'utf8')).toBe(originalFile)
   })
 })
+
+it.each(['download', 'before-rename'])(
+  'rejects a manual restore revoked during %s',
+  async (phase) => {
+    const started = deferred()
+    const release = deferred()
+    const before = await readFile(path.join(directory, 'config.json'), 'utf8')
+    const restored = structuredClone(initial)
+    restored.system.appName = 'REVOCATION-TEST'
+    if (phase === 'before-rename')
+      writeControl.pause = async () => {
+        started.resolve()
+        await release.promise
+      }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input, init) => {
+        expect(init?.method).toBe('GET')
+        if (phase === 'download') {
+          started.resolve()
+          await release.promise
+        }
+        return new Response(JSON.stringify(restored), { status: 200 })
+      })
+    )
+    const pending = server
+      .inject({
+        method: 'POST',
+        url: '/api/backups/webdav/restore',
+        headers: { cookie },
+        payload: { versionId },
+      })
+      .then((response) => response)
+    await started.promise
+    try {
+      await server.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie } })
+      if (phase === 'download') {
+        const fresh = await server.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          payload: { username, password },
+        })
+        expect(fresh.statusCode).toBe(200)
+      }
+    } finally {
+      release.resolve()
+    }
+    const response = await pending
+    expect(response.statusCode).toBe(401)
+    expect(await readFile(path.join(directory, 'config.json'), 'utf8')).toBe(before)
+    const login = await server.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username, password },
+    })
+    expect(login.statusCode).toBe(200)
+  }
+)

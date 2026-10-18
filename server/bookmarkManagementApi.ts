@@ -173,6 +173,7 @@ const promoteQuickRecordSchema = z
     slug: slugSchema.optional(),
     placements: z.array(placementSchema).min(1).max(MAX_BATCH_SIZE),
     reuseExistingByUrl: z.boolean().default(true),
+    discardConflictingFields: z.boolean().default(false),
   })
   .strict()
 const fillMissingIconsSchema = z
