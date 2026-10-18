@@ -1,5 +1,7 @@
 import { useDialogFocus } from '@/components/useDialogFocus'
 import { useDiscardDraft } from '@/features/config/useDiscardDraft'
+import { NavigationSyncNotice } from '@/features/navigation/NavigationSyncNotice'
+import type { useSaveNavigationConfig } from '@/features/navigation/useNavigation'
 import {
   useEffect,
   useId,
@@ -17,7 +19,10 @@ import { useI18n } from '@/i18n/runtime'
 interface GroupRenameDialogProps {
   open: boolean
   currentName: string
-  saving: boolean
+  save: Pick<
+    ReturnType<typeof useSaveNavigationConfig>,
+    'isPending' | 'isSaveBlocked' | 'syncError' | 'isSyncing' | 'retrySync'
+  >
   onClose: () => void
   onSave: (name: string) => void
 }
@@ -25,7 +30,7 @@ interface GroupRenameDialogProps {
 export function GroupRenameDialog({
   open,
   currentName,
-  saving,
+  save,
   onClose,
   onSave,
 }: GroupRenameDialogProps) {
@@ -34,7 +39,12 @@ export function GroupRenameDialog({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const titleId = useId()
   const descriptionId = useId()
-  const close = useDiscardDraft(open && name !== currentName, saving, onClose)
+  // A failed refresh follows a committed write: closing must not discard or resubmit it.
+  const close = useDiscardDraft(
+    open && !save.syncError && name !== currentName,
+    save.isPending,
+    onClose
+  )
   const dialogRef = useDialogFocus<HTMLFormElement>(open, close, 120)
 
   useEffect(() => {
@@ -54,7 +64,7 @@ export function GroupRenameDialog({
   const trimmedName = name.trim()
 
   function saveName() {
-    if (!trimmedName || trimmedName === currentName.trim() || saving) {
+    if (!trimmedName || trimmedName === currentName.trim() || save.isSaveBlocked) {
       return
     }
     onSave(trimmedName)
@@ -77,7 +87,7 @@ export function GroupRenameDialog({
     <div
       className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-950/65 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !saving) {
+        if (event.target === event.currentTarget && !save.isPending) {
           void close()
         }
       }}
@@ -115,13 +125,15 @@ export function GroupRenameDialog({
             variant="ghost"
             size="icon"
             aria-label={messages.common.closeModal}
-            disabled={saving}
+            disabled={save.isPending}
             onClick={close}
             className="h-8 w-8 shrink-0 rounded-lg text-stone-600 hover:bg-stone-100 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-white"
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
+
+        <NavigationSyncNotice save={save} />
 
         <div className="space-y-2 bg-stone-50 px-5 py-5 dark:bg-stone-950">
           <label
@@ -134,7 +146,7 @@ export function GroupRenameDialog({
             ref={inputRef}
             id={`${titleId}-name`}
             value={name}
-            disabled={saving}
+            disabled={save.isSaveBlocked}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={handleInputKeyDown}
             className="border-stone-300 bg-white text-stone-950 shadow-sm placeholder:text-stone-400 focus-visible:border-orange-400 focus-visible:ring-orange-400/20 dark:border-stone-700 dark:bg-stone-900 dark:text-white dark:placeholder:text-stone-500"
@@ -145,7 +157,7 @@ export function GroupRenameDialog({
           <Button
             type="button"
             variant="outline"
-            disabled={saving}
+            disabled={save.isPending}
             onClick={close}
             className="border-stone-300 bg-white text-stone-800 hover:border-stone-400 hover:bg-stone-100 hover:text-stone-950 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:hover:border-stone-600 dark:hover:bg-stone-800 dark:hover:text-white"
           >
@@ -153,7 +165,7 @@ export function GroupRenameDialog({
           </Button>
           <Button
             type="submit"
-            disabled={!trimmedName || trimmedName === currentName.trim() || saving}
+            disabled={!trimmedName || trimmedName === currentName.trim() || save.isSaveBlocked}
           >
             {messages.serviceGrid.saveGroupAction}
           </Button>

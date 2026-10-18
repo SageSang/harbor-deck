@@ -649,3 +649,137 @@ describe('promotion and rename regression boundaries', () => {
     expect(writes).toHaveLength(1)
   })
 })
+
+describe('group rename synchronization recovery', () => {
+  async function openRename(groupName: string) {
+    const drag = Array.from(document.querySelectorAll('button')).find((button) =>
+      button.getAttribute('aria-label')?.includes(groupName)
+    )!
+    expect(drag).toBeTruthy()
+    await act(async () => drag.click())
+    await flush()
+    await click('编辑分组')
+    return document.querySelector('[role="dialog"] input') as HTMLInputElement
+  }
+
+  async function saveWithFailedRead() {
+    await render(
+      <GroupExpansionProvider>
+        <ServiceGrid />
+      </GroupExpansionProvider>
+    )
+    const input = await openRename('One')
+    await change(input, 'Saved rename')
+    await click('保存名称')
+    expect(writes).toHaveLength(1)
+    expect(input.disabled).toBe(true)
+    expect(
+      Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).every(
+        (button) => button.disabled
+      )
+    ).toBe(true)
+    await refreshTo(fixture('intervening-query'))
+    readNavigation = async () => {
+      throw new Error('Temporary GET failure')
+    }
+    const saved = await finishWrite()
+    expect(serverNavigation.scenes[0].groups[0].name).toBe('Saved rename')
+    expect(navigationReads).toBeGreaterThan(0)
+    return { input, saved }
+  }
+
+  it('recovers a committed group rename through GET only, even after a background refresh', async () => {
+    const { input, saved } = await saveWithFailedRead()
+    const dialog = document.querySelector('[role="dialog"]')!
+    expect(dialog.textContent).toContain('已保存，但页面同步失败')
+    expect(input.disabled).toBe(true)
+    expect(dialog.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+    const closeButtons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button')).filter(
+      (button) => button.textContent === '取消' || button.getAttribute('aria-label')
+    )
+    expect(closeButtons).toHaveLength(2)
+    expect(closeButtons.every((button) => !button.disabled)).toBe(true)
+    await act(async () =>
+      dialog.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    )
+    await click('仅重新读取', dialog)
+    expect(dialog.textContent).toContain('已保存，但页面同步失败')
+    expect(writes).toHaveLength(1)
+    readNavigation = async () => json(saved)
+    await act(async () => client.refetchQueries({ queryKey: navigationKey(), exact: true }))
+    await flush()
+    expect(dialog.textContent).toContain('已保存，但页面同步失败')
+    const readsBeforeRetry = navigationReads
+    await click('仅重新读取', dialog)
+    expect(navigationReads).toBe(readsBeforeRetry + 1)
+    expect(writes).toHaveLength(1)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(client.getQueryData<NavigationConfig>(navigationKey())?._revision).toBe('r2')
+    expect(document.body.textContent).toContain('Saved rename')
+  })
+
+  it('closes a committed rename without an unsaved warning and reopens with current data', async () => {
+    const { saved } = await saveWithFailedRead()
+    const unload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(unload)
+    expect(unload.defaultPrevented).toBe(false)
+    await click('取消', document.querySelector('[role="dialog"]')!)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.textContent).not.toContain('放弃未保存的修改')
+    readNavigation = async () => json(saved)
+    await act(async () => client.refetchQueries({ queryKey: navigationKey(), exact: true }))
+    await flush()
+    const input = await openRename('Saved rename')
+    expect(input.value).toBe('Saved rename')
+    expect(input.disabled).toBe(false)
+    expect(document.body.textContent).not.toContain('已保存，但页面同步失败')
+    expect(writes).toHaveLength(1)
+  })
+
+  it('ignores a late read after closing the saved rename and opening another editor', async () => {
+    const { saved } = await saveWithFailedRead()
+    await refreshTo(saved)
+    const retry = deferred<Response>()
+    readNavigation = () => retry.promise
+    await click('仅重新读取', document.querySelector('[role="dialog"]')!)
+    expect(document.body.textContent).toContain('正在重新读取')
+    await act(async () =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    )
+    await flush()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    const input = await openRename('Two')
+    await change(input, 'Another draft')
+    await act(async () => retry.resolve(json(saved)))
+    await flush()
+    expect(document.querySelector('[role="dialog"] input')).toBe(input)
+    expect(input.value).toBe('Another draft')
+    expect(document.body.textContent).not.toContain('已保存，但页面同步失败')
+    const unload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(unload)
+    expect(unload.defaultPrevented).toBe(true)
+    expect(writes).toHaveLength(1)
+  })
+
+  it('allows closing an unsubmitted rename when navigation becomes unavailable', async () => {
+    await render(
+      <GroupExpansionProvider>
+        <ServiceGrid />
+      </GroupExpansionProvider>
+    )
+    await openRename('One')
+    readNavigation = async () => {
+      throw new Error('Offline before saving')
+    }
+    await act(async () => client.refetchQueries({ queryKey: navigationKey(), exact: true }))
+    await flush()
+    const dialog = document.querySelector('[role="dialog"]')!
+    expect(dialog.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+    const close = dialog.querySelector<HTMLButtonElement>('button[aria-label]')!
+    expect(close.disabled).toBe(false)
+    await act(async () => close.click())
+    await flush()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(writes).toHaveLength(0)
+  })
+})

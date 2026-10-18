@@ -1603,7 +1603,7 @@ export function ServiceGrid() {
           renamingGroup.accessVersion === accessVersion
         }
         currentName={renamingGroup?.groupName ?? ''}
-        saving={renameMutation.isSaveBlocked}
+        save={renameMutation}
         onClose={() => setRenamingGroup(null)}
         onSave={(name) => {
           if (renamingGroup) {

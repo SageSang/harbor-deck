@@ -298,6 +298,70 @@ describe('bookmark management API', () => {
     expect(removed.json().result.deletedBookmarks).toEqual(['secret-tool'])
   })
 
+  it.each(['constructor', '__proto__', 'toString'])(
+    'rejects inherited icon names in bookmark and quick-record writes: %s',
+    async (icon) => {
+      const server = await buildTestServer()
+      const { state } = await getState(server)
+      const original = await readFile(path.join(tempConfigDir, 'config.json'), 'utf8')
+      const requests = [
+        {
+          method: 'POST' as const,
+          url: '/api/management/v1/bookmarks',
+          payload: {
+            name: 'Invalid icon',
+            icon,
+            primaryUrl: 'https://invalid.example.com',
+            placements: [{ sceneId: 'public', groupId: 'main' }],
+          },
+        },
+        { method: 'PATCH' as const, url: '/api/management/v1/bookmarks/alpha', payload: { icon } },
+        {
+          method: 'POST' as const,
+          url: '/api/management/v1/scenes/private/quick-records',
+          payload: {
+            name: 'Invalid icon',
+            icon,
+            primaryUrl: 'https://invalid.example.com',
+          },
+        },
+        {
+          method: 'PATCH' as const,
+          url: '/api/management/v1/scenes/private/quick-records/quick-private',
+          payload: { icon },
+        },
+      ]
+      for (const request of requests) {
+        const response = await managementWrite(server, { ...request, revision: state.revision })
+        expect(response.statusCode, request.url).toBe(422)
+        expect(response.json().error.code).toBe('INVALID_ICON')
+      }
+      expect((await getState(server)).state).toEqual(state)
+      expect(await readFile(path.join(tempConfigDir, 'config.json'), 'utf8')).toBe(original)
+    }
+  )
+
+  it.each([
+    ['Star', 'star'],
+    ['ArrowUpRight', 'arrow-up-right'],
+  ])('still normalizes legacy icon names in API updates: %s', async (icon, canonical) => {
+    const server = await buildTestServer()
+    const { state } = await getState(server)
+    const response = await managementWrite(server, {
+      method: 'PATCH',
+      url: '/api/management/v1/bookmarks/alpha',
+      revision: state.revision,
+      payload: { icon },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json().result.bookmark.icon).toBe(canonical)
+    const persisted = JSON.parse(await readFile(path.join(tempConfigDir, 'config.json'), 'utf8'))
+    expect(
+      persisted.navigation.bookmarks.find((bookmark: { slug: string }) => bookmark.slug === 'alpha')
+        .icon
+    ).toBe(canonical)
+  })
+
   it('creates, edits, duplicates, moves, orders and deletes bookmarks', async () => {
     const server = await buildTestServer()
     let { state } = await getState(server)

@@ -24,7 +24,7 @@ export function resolveDynamicIconName(iconName?: string): DynamicIconName | nul
   ])
 
   for (const candidate of candidates) {
-    if (candidate in dynamicIconImports) {
+    if (Object.prototype.hasOwnProperty.call(dynamicIconImports, candidate)) {
       return candidate as DynamicIconName
     }
   }

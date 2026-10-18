@@ -11,6 +11,12 @@ describe('service icon helpers', () => {
     expect(resolveDynamicIconName('ArrowDown')).toBe('arrow-down')
     expect(resolveDynamicIconName('arrow-down')).toBe('arrow-down')
     expect(resolveDynamicIconName('arrow_down')).toBe('arrow-down')
+    expect(resolveDynamicIconName('Star')).toBe('star')
+    expect(resolveDynamicIconName('ArrowUpRight')).toBe('arrow-up-right')
+  })
+
+  it.each(['constructor', '__proto__', 'toString'])('rejects inherited icon names: %s', (name) => {
+    expect(resolveDynamicIconName(name)).toBeNull()
   })
 
   it('keeps the icon catalog unique', () => {
