@@ -1,4 +1,4 @@
-<p align="center"><img src="branding/logo.png" width="88" alt="HarborDeck logo"></p>
+<p align="center"><img src="extension/public/icons/icon-128.png" width="88" alt="HarborDeck logo"></p>
 <h1 align="center">HarborDeck</h1>
 <p align="center"><strong>Self-hosted bookmarks, ready for AI tools. Your collection, your control.</strong></p>
 <p align="center">Run locally · Organize by scene · Automate through APIs · Browse with Chrome / Edge</p>

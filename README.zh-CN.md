@@ -1,4 +1,4 @@
-<p align="center"><img src="branding/logo.png" width="88" alt="HarborDeck 标志"></p>
+<p align="center"><img src="extension/public/icons/icon-128.png" width="88" alt="HarborDeck 标志"></p>
 <h1 align="center">HarborDeck</h1>
 <p align="center"><strong>可接入 AI 的自托管书签管理，让收藏与数据由你掌握。</strong></p>
 <p align="center">本地部署 · 多场景导航 · AI 管理 API · Chrome / Edge 扩展</p>
