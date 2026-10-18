@@ -218,6 +218,10 @@ React 19、TypeScript、Vite、Tailwind CSS、Zustand、TanStack Query、Fastify
 
 许可证：[Apache-2.0](LICENSE)
 
+## 长期维护上下文
+
+个人背景、历史决策、核验状态和待补事项统一维护在 [Sidney Vault](obsidian://open?vault=sidney-vault&file=20-Areas%2F%E8%BD%AF%E4%BB%B6%E9%A1%B9%E7%9B%AE%E7%BB%B4%E6%8A%A4%2F%E5%AE%9E%E4%BD%93%2FHarborDeck%2F%E6%96%87%E6%A1%A3%2F%E8%83%8C%E6%99%AF%E5%AE%9E%E7%8E%B0%E4%B8%8E%E5%8E%86%E5%8F%B2)。本仓库保留代码、使用说明与开发契约；不再复制个人维护日志。未接入该 Vault 的协作者仍可直接使用本文档。
+
 ## 1.4.21 扩展身份、本机设置与启动恢复
 
 1.4.21将主备地址、Token、打开方式和探测超时改为按设备保存；首次升级接续旧设置后，请核对本机地址。设置页提供不含Token的迁移文件导出、导入，启动页暂停后可使用“重新检测并打开”。旧安装的数据核对完成前请勿卸载。

@@ -1,0 +1,340 @@
+{
+  "verified_at_utc": "2026-09-12T08:26:22.743798+00:00",
+  "head": "010024c5d4be0a2f6b0e87632326c2439e08e8d9",
+  "approved_plan_sha256": "916982e4e0cd2b76aed42bb0cfa4e9cc93ac2628ac4f239dc599326dcd8b2cf7",
+  "implementation_fingerprint": "0bbd00c5e19fa7ccbffdd658b54c517dd18a43fc7a99c22a530582504c416b1c",
+  "fingerprint_format": "SHA-256 of compact UTF-8 JSON of sorted {path,sha256} records",
+  "resume_fingerprint": "804b5a8e2545911762dafb29853488f33f8ff9978aa7a9d0e4825ee41f34dfc0",
+  "changed_since_resume": [
+    "extension/src/newtab-loader.test.ts",
+    "extension/src/newtab-loader.ts",
+    "extension/src/popup.test.tsx",
+    "extension/src/popup.tsx"
+  ],
+  "checks": {
+    "test_files": 51,
+    "tests_passed": 288,
+    "lint": "passed",
+    "diff_check": "passed",
+    "web_server_build": "passed in current Docker build; unchanged host inputs matched resume check",
+    "extension_build": "passed",
+    "docker_image": "sha256:8665f0277703a8830b68db0b8688119e786556164d77ff06764ed692b87bda39",
+    "docker_platform": "linux/amd64",
+    "runtime_smoke": {
+      "health": true,
+      "setup": true,
+      "protectedConfigSave": true,
+      "backup": true,
+      "restore": true,
+      "authPreserved": true,
+      "staticHtml": true,
+      "syntheticDataOnly": true
+    },
+    "browser_web": [
+      "login",
+      "second group draft retained after first group save",
+      "new scene remains selected"
+    ],
+    "graceful_shutdown": [
+      {
+        "name": "harbor-deck-final-a95dfdff",
+        "stopExit": 0,
+        "containerExit": "0"
+      },
+      {
+        "name": "harbor-deck-review-3a30091f",
+        "stopExit": 0,
+        "containerExit": "0"
+      }
+    ],
+    "audit_production": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "audit_including_development": {
+      "info": 0,
+      "low": 0,
+      "moderate": 3,
+      "high": 1,
+      "critical": 1,
+      "total": 5
+    }
+  },
+  "not_verified": [
+    "real Chrome extension installation / host permissions / Cookie / HTTP LAN / HTTPS / reverse proxy matrix",
+    "real warm/cold/offline latency distribution and network transitions",
+    "production deployment and outage duration",
+    "other container CPU architectures",
+    "forced termination / power loss"
+  ],
+  "source_files": [
+    {
+      "path": "extension/newtab.html",
+      "sha256": "5a2c163451689d8598ee442f831a1aeba9a71bc04d1428f69b98a5abdc5699b6"
+    },
+    {
+      "path": "extension/src/background.ts",
+      "sha256": "b13a1b1925cd3ea782299307a992c0e27f9580c59e1da214d2ad1d155913e757"
+    },
+    {
+      "path": "extension/src/chrome.d.ts",
+      "sha256": "fe189471b8b95df9420e72a1e7cf138e3a4710e60a64193e3a0486e79a0b2e4d"
+    },
+    {
+      "path": "extension/src/i18n.ts",
+      "sha256": "f3238830348a10ebea2370fe3cc31d64d2e5657ea40d716cd97d415f360f8f4b"
+    },
+    {
+      "path": "extension/src/integrationClient.test.ts",
+      "sha256": "ffbbed80604a7a466c46a9a5cbbdfa0867c8061eae9b60db0365e2a0a6e088b9"
+    },
+    {
+      "path": "extension/src/integrationClient.ts",
+      "sha256": "a57f10f6afac84fd0ad9bdec5079b103fc8ceacc97583c8504ebe39b0013d3a6"
+    },
+    {
+      "path": "extension/src/network.test.ts",
+      "sha256": "a3f673a07e939507255f21ab34954452780798dc3ef002604dd8182b0a629dd1"
+    },
+    {
+      "path": "extension/src/network.ts",
+      "sha256": "ff13e0c93e15cde848f6e36287b7721ade087967c39e242721d512707e37e837"
+    },
+    {
+      "path": "extension/src/newtab-loader.test.ts",
+      "sha256": "da8620b320a5aeecf2c66b6e0dbe4e2bc595010a149695e060295cfcfb17fd97"
+    },
+    {
+      "path": "extension/src/newtab-loader.ts",
+      "sha256": "54a9c84c7273c237c3a6e5fef88b23fbb8f2504041f033952de9749fbabc8702"
+    },
+    {
+      "path": "extension/src/newtab.tsx",
+      "sha256": "220a5898a1f109bf5371600b1b76873bfd142bc828cc0518ecde7622a205d84d"
+    },
+    {
+      "path": "extension/src/newtabController.test.ts",
+      "sha256": "5692cb1d1f20a3e907c25ea3cce1b2971f2a40befa00f978e75897e598042113"
+    },
+    {
+      "path": "extension/src/newtabController.ts",
+      "sha256": "dbd23b5964ce4ab7f3db96173e72b53dc1618aaa43f354a801e0336831a46a6f"
+    },
+    {
+      "path": "extension/src/options.tsx",
+      "sha256": "49e579d50a64f08b1d5ff8c0e03013ed395e452063caa0a768c618eddcf59552"
+    },
+    {
+      "path": "extension/src/popup.test.tsx",
+      "sha256": "645e1003e78313960ccca42719f256bf6aed588e2ebfcd4790670cdbf08dd1f7"
+    },
+    {
+      "path": "extension/src/popup.tsx",
+      "sha256": "63183a6a1021c95258fad3899325a7df39e0561c3be48c6b35c89abe441c4234"
+    },
+    {
+      "path": "extension/src/resolutionClient.ts",
+      "sha256": "e5b679e7a166e5666c1b16d6863aa1a1e02fb0089dd5858a190f0d2f3cff9ae8"
+    },
+    {
+      "path": "extension/src/resolutionCoordinator.test.ts",
+      "sha256": "a32b07df8b87c1aa271d9ac126403f0ce5ac02934cb4ceefa2ff750ef63be145"
+    },
+    {
+      "path": "extension/src/resolutionCoordinator.ts",
+      "sha256": "db30efdd751e9d2385dfb3507dde721054e997134e574a4d41f6ab8f5569b5b3"
+    },
+    {
+      "path": "extension/src/resolutionState.ts",
+      "sha256": "5b5ab1b06a48f3f605e4c942518ce1d75e9dac5197840b5519f8309e9381484a"
+    },
+    {
+      "path": "extension/src/storage.test.ts",
+      "sha256": "5f9263da63c2428535333986d9c2c506da5b1ad93d72c3e9ea85b9bcaffc7eff"
+    },
+    {
+      "path": "extension/src/storage.ts",
+      "sha256": "cc5a5b0121c91c6bc07f5136bb4b60bc984d972b2780ba23c547ba75baad7d17"
+    },
+    {
+      "path": "extension/src/styles.css",
+      "sha256": "e75ef0e4019fa496fdf3c9d02159352b63e6efd961a24966d1846d89d4b27f77"
+    },
+    {
+      "path": "extension/src/theme.ts",
+      "sha256": "d5680090ee6ecb078b738630255c814ad80b70c8940f36bec8db09c20c75a302"
+    },
+    {
+      "path": "extension/src/types.ts",
+      "sha256": "d2fa47575928f5bf46c413241624275d99c2a588f9ec0988f7cdd3a980521a2d"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "8ecbaf9d9a0015bb0228c6de1dd614ae1864370c6dd0ca21f2be523c77a61cac"
+    },
+    {
+      "path": "package.json",
+      "sha256": "23d14bfc6d3051b13688547e7cdef69aa03f00b40097935ca34c8e16d9c90dc8"
+    },
+    {
+      "path": "server/app.ts",
+      "sha256": "ea1d1916f7401b2bd3da4e2b0928a85444096fc24a76aa3fc34e48484a49fcff"
+    },
+    {
+      "path": "server/auth.ts",
+      "sha256": "71a3fca86978a0b911e1cabea1a367dc64408449d577af42dd426446062102b5"
+    },
+    {
+      "path": "server/authConcurrency.test.ts",
+      "sha256": "c342707bb6a06f1f5855bfa8a08bcee2a93fc80106de5da1a1867cd19667fa15"
+    },
+    {
+      "path": "server/bookmarkManagementApi.test.ts",
+      "sha256": "2fe837061f5301a860ef497d596737d34cab616e3048faf79ba2906daf305920"
+    },
+    {
+      "path": "server/bookmarkManagementApi.ts",
+      "sha256": "48f47c5a370312e3830f1f0e2ca9b548a7ea91b723da4c7ce4dc148962d98210"
+    },
+    {
+      "path": "server/bookmarkManagementService.ts",
+      "sha256": "39af8cb45e93cb09c780226f025e7b0274014d550c3d76c5d32a5500fb0b6dd5"
+    },
+    {
+      "path": "server/configStore.test.ts",
+      "sha256": "2ef727ace6df4d9b9cc7fcb17d378695145b790e70d0c262662716215db76e92"
+    },
+    {
+      "path": "server/configStore.ts",
+      "sha256": "acd71f6c9088770efc1018fae79833abfce8bd0a006941e28e1d9b9a74034f06"
+    },
+    {
+      "path": "server/index.ts",
+      "sha256": "e76a149b8398ed39a6114208d3af6248d777f8d5d14a60ebcf6defe3841c4103"
+    },
+    {
+      "path": "server/integrationApi.test.ts",
+      "sha256": "3b48aca9cefe114c7a92dd0197f9ff2f50528079ff0e04cfd7a2d9e25234062f"
+    },
+    {
+      "path": "server/integrationApi.ts",
+      "sha256": "e22d599086d442b8ee8bcd438002c238500fef2d1d5b4338eaa7330e45aa5a1f"
+    },
+    {
+      "path": "server/passwordAttempts.test.ts",
+      "sha256": "cae22ee504aad9af0a3fa6bcedbf89732ac9dfaa96b171bad8f6725936c7b527"
+    },
+    {
+      "path": "server/passwordAttempts.ts",
+      "sha256": "837d7fb52565baaacececd16e81cd2aa21e2857b3bda73e101e1b9f92b5d667c"
+    },
+    {
+      "path": "server/restoreAccess.test.ts",
+      "sha256": "384ebbb0825229d1d24c024d961b7977d9751f3ec6bea7b7509da0ebe9eb61ec"
+    },
+    {
+      "path": "server/sceneAccess.ts",
+      "sha256": "7e0f81483bee1d676cdc712a3397ff77fe96565d050b156f9a3ad9fab4d5f3ec"
+    },
+    {
+      "path": "server/startupAndEmbedding.test.ts",
+      "sha256": "a00e1120c31cd8ec4b9cca8ce77e945f5c8f04b0218af5676672f127f159148d"
+    },
+    {
+      "path": "server/webSafety.test.ts",
+      "sha256": "396ff8f9b63ed6e6ce3646bfae167b62dc71e7a76fc21e7f9948e64b43ac4708"
+    },
+    {
+      "path": "server/webdavBackup.test.ts",
+      "sha256": "6c74c5987b74e362f3346d83c1cd4cd528f111c7b185b6537a073a0fdf0ce0cd"
+    },
+    {
+      "path": "server/webdavBackup.ts",
+      "sha256": "21b66f4df555b6410d0e7ad6ce4998618f058dd6a75d947f2837dc5c05628973"
+    },
+    {
+      "path": "server/webdavBackupManager.test.ts",
+      "sha256": "7c38ae4799b29cb3dd08528c006c92758382418fd4d3203816a06e23e1865619"
+    },
+    {
+      "path": "server/webdavBackupManager.ts",
+      "sha256": "daf10b6aef53521caf09362ffa5130bd54b1e5ae608a6167bbeac825952e62b4"
+    },
+    {
+      "path": "shared/identifiers.test.ts",
+      "sha256": "94a4430062f6f1173fc1c7bf7b8716a67a2a0f479903571369f2ecb0a6804385"
+    },
+    {
+      "path": "shared/identifiers.ts",
+      "sha256": "e8b930ef5c3e014c88250fe16c6221b3c28bddec68f9180cfba73daa2cc268ef"
+    },
+    {
+      "path": "src/components/BookmarkManageButton.tsx",
+      "sha256": "cbc52ca42a11af380a0f034f79c88b31d1f0a56460cb3f40e54cb8c375d12085"
+    },
+    {
+      "path": "src/components/ServiceSettingsButton.tsx",
+      "sha256": "372bb5abf8bc5ac7559fc8d05d1c53dee3ffd5222477c2f11c09b004c8388bcb"
+    },
+    {
+      "path": "src/components/bookmarkEditing.integration.test.tsx",
+      "sha256": "0790be3db8b2a604634fd458f29cd9cb9c29c0c143b600d6be6ab0589a230679"
+    },
+    {
+      "path": "src/features/backup/api.ts",
+      "sha256": "2d49bc0138725fa31339acf77d6ff7746bb1dc1cb557f3fae8918c1396769e40"
+    },
+    {
+      "path": "src/features/backup/useRestoreWebdavBackup.ts",
+      "sha256": "8fae45e30877315d50ad61c1fbc43930b118208567fc5da671b83486c2e4a603"
+    },
+    {
+      "path": "src/features/backup/useRunWebdavBackup.ts",
+      "sha256": "7e4410b0c0aaf8bc84be487ac5b605f691f90e11379ec66e1dd30d1a925af6a5"
+    },
+    {
+      "path": "src/features/config/useFieldDraft.ts",
+      "sha256": "fab600f368481e3909ea4b6ead3032eb4dc78b175986e5fafa387ec22e15959d"
+    },
+    {
+      "path": "src/features/navigation/NavigationSyncNotice.tsx",
+      "sha256": "915d99573b22f11c717236162274c0aa7dad8c064a551fb87f78ec9a10eb931e"
+    },
+    {
+      "path": "src/features/navigation/navigationConfig.ts",
+      "sha256": "3400ae503ed7b5c11b57e19ed7d3a87cb01cdad76ba30461dd4ad2aa54357a14"
+    },
+    {
+      "path": "src/features/navigation/useNavigation.ts",
+      "sha256": "de7c5d609b5cecdcf4ebd462cdf0b2eedce7166d6804acba9f08d806738a82c8"
+    },
+    {
+      "path": "src/features/services/BookmarkEditDialog.tsx",
+      "sha256": "b7f1543d0da8a59b8c89fa23cc0b9c17214f904fddac69259a903359f4b68f1c"
+    },
+    {
+      "path": "src/features/services/QuickRecordEditDialog.tsx",
+      "sha256": "11bad9be82072a5e45f2301ede75d1c342b9b49cfedfb52ee7e3eb7dcfffefb3"
+    },
+    {
+      "path": "src/features/services/QuickRecordInbox.tsx",
+      "sha256": "3f34013ac8624e09de4d408f939312c1fef2e69a72dde1c9f8aa114dd4720c03"
+    },
+    {
+      "path": "src/features/services/ServiceGrid.tsx",
+      "sha256": "35e4280218ce3bc5166248428b057d13f71dc2ba3bc655d6932bbf6970071375"
+    },
+    {
+      "path": "src/features/services/bookmarkForm.ts",
+      "sha256": "5fbb687541de4ab43e4bdf9567898a4cfb441c66fdc1dad632a78df32012ac75"
+    },
+    {
+      "path": "src/features/services/servicesConfig.ts",
+      "sha256": "9eb42acfb5f3e662d89a4a332aee2bba9b2b7f2caf946c37a6782910ad5fabc6"
+    }
+  ]
+}

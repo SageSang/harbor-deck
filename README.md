@@ -222,6 +222,10 @@ Licensed under [Apache-2.0](LICENSE).
 - Web configuration responses omit locked scene content. Saving visible content preserves locked scenes on the server. JSON exports made while scenes are locked are partial; use WebDAV for a full backup.
 - Editing drafts keep their original revision and survive background updates. Conflicting saves require an explicit reload, with a comparison view and a discard confirmation.
 
+## Maintainer context
+
+Personal maintenance history, decisions, verification status, and open context are maintained in [Sidney Vault](obsidian://open?vault=sidney-vault&file=20-Areas%2F%E8%BD%AF%E4%BB%B6%E9%A1%B9%E7%9B%AE%E7%BB%B4%E6%8A%A4%2F%E5%AE%9E%E4%BD%93%2FHarborDeck%2F%E6%96%87%E6%A1%A3%2F%E8%83%8C%E6%99%AF%E5%AE%9E%E7%8E%B0%E4%B8%8E%E5%8E%86%E5%8F%B2). This repository retains source code, usage documentation, and developer contracts. The Vault is not required to build or use the project.
+
 ## Extension identities, local settings and recovery in 1.4.21
 
 Version 1.4.21 stores addresses, token, opening mode, and probe timeout per installation. Verify the device's addresses after the one-time migration from old sync settings. The options page can export/import settings and drafts without the token; a paused new-tab page offers **Check again and open**. Keep the old installation until its data has been verified.
