@@ -10,6 +10,7 @@ import {
 import { bookmarkMatchesAnyUrl } from '../src/features/services/bookmarkUrl.js'
 import { quickRecordMatchesSearch } from '../src/features/services/quickRecordSearch.js'
 import { buildUniqueIdentifier } from '../shared/identifiers.js'
+import { quickRecordConflicts } from '../shared/quickRecordPromotion.js'
 
 export const integrationTokenHeader = 'x-harbordeck-search-token'
 const legacyIntegrationTokenHeader = 'x-smart-harbor-search-token'
@@ -264,9 +265,10 @@ export function createIntegrationBookmark(
   // in the selected scene without adding a normal group reference.
   if (body.placements.length === 0) {
     const targetScene =
-      next.scenes.find((scene) => scene.id === body.recordSceneId) ??
-      next.scenes.find((scene) => scene.id === next.defaultSceneId && !scene.protected) ??
-      next.scenes.find((scene) => !scene.protected)
+      body.recordSceneId !== undefined
+        ? next.scenes.find((scene) => scene.id === body.recordSceneId)
+        : (next.scenes.find((scene) => scene.id === next.defaultSceneId && !scene.protected) ??
+          next.scenes.find((scene) => !scene.protected))
     if (!targetScene || targetScene.protected) {
       throw new Error('No unlocked record scene is available')
     }
@@ -409,9 +411,11 @@ export function createIntegrationBookmark(
     const quickRecord = (scene.quickRecords ?? []).find((record) =>
       bookmarkMatchesAnyUrl(record, submittedUrls)
     )
-    scene.quickRecords = (scene.quickRecords ?? []).filter(
-      (record) => record.id !== quickRecord?.id
-    )
+    // Capturing a bookmark does not authorize discarding a matching record's
+    // independent content. Leave conflicts in the inbox for an explicit decision.
+    if (quickRecord && quickRecordConflicts(quickRecord, bookmark).length === 0) {
+      scene.quickRecords = scene.quickRecords.filter((record) => record.id !== quickRecord.id)
+    }
     scene.groups.forEach((group) => {
       if (group.id !== targetGroup.id) {
         group.bookmarkIds = group.bookmarkIds.filter((id) => id !== bookmark!.slug)

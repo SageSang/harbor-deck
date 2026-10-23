@@ -107,7 +107,7 @@ HarborDeck 提供面向 AI 与自动化的 HTTP 管理 API 和 OpenAPI 描述。
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.28
+    image: ghcr.io/sagesang/harbor-deck:1.4.30
     container_name: harbor-deck
     restart: unless-stopped
     ports:

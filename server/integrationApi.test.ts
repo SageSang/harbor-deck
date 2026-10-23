@@ -318,4 +318,83 @@ describe('integrationApi', () => {
     expect(searchNavigationBookmarks(updated.navigation, 'quick-')).toEqual([])
     expect(searchNavigationBookmarks(updated.navigation, 'current title')).toHaveLength(1)
   })
+
+  it.each([undefined, 'public'])('retains conflicting quick records when reusing %s', (slug) => {
+    const record = {
+      id: 'research',
+      name: 'Independent research',
+      primaryUrl: 'https://public.example.com',
+      secondaryUrl: 'https://research.example.com',
+      note: 'Keep these independent notes',
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const config = parseNavigationConfig({
+      ...navigation,
+      scenes: navigation.scenes.map((scene) =>
+        scene.id === 'default' ? { ...scene, quickRecords: [record] } : scene
+      ),
+    })
+    const result = createIntegrationBookmark(config, {
+      name: 'Public Tool',
+      primaryUrl: 'https://public.example.com',
+      existingBookmarkSlug: slug,
+      placements: [{ sceneId: 'default', groupId: 'tools' }],
+    })
+    expect(result.navigation.scenes[0].quickRecords).toEqual([record])
+    expect(result.bookmark.slug).toBe('public')
+    expect(config.scenes[0].quickRecords).toEqual([record])
+  })
+
+  it('only consumes quick records whose content was preserved in the captured bookmark', () => {
+    const config = parseNavigationConfig({
+      defaultSceneId: 'first',
+      bookmarks: [],
+      scenes: ['first', 'second'].map((id) => ({
+        id,
+        name: id,
+        groups: [{ id: 'tools', name: 'Tools', bookmarkIds: [] }],
+        quickRecords: [
+          {
+            id: `record-${id}`,
+            name: 'Shared link',
+            primaryUrl: 'https://shared.example.com',
+            note: id === 'first' ? 'Submitted notes' : 'Different notes to retain',
+            icon: 'Bookmark',
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      })),
+    })
+    const result = createIntegrationBookmark(config, {
+      name: 'Shared link',
+      primaryUrl: 'https://shared.example.com',
+      note: 'Submitted notes',
+      placements: ['first', 'second'].map((sceneId) => ({ sceneId, groupId: 'tools' })),
+    })
+    expect(result.navigation.scenes[0].quickRecords).toEqual([])
+    expect(result.navigation.scenes[1].quickRecords).toEqual(config.scenes[1].quickRecords)
+    expect(result.placements).toHaveLength(2)
+  })
+
+  it('rejects an explicit missing record scene without writing to the default scene', () => {
+    const original = structuredClone(navigation)
+    expect(() =>
+      createIntegrationBookmark(navigation, {
+        name: 'Keep in requested scene',
+        primaryUrl: 'https://public.example.com',
+        recordSceneId: 'deleted-scene',
+        placements: [],
+      })
+    ).toThrow()
+    expect(navigation).toEqual(original)
+    expect(
+      createIntegrationBookmark(navigation, {
+        name: 'Use default when omitted',
+        primaryUrl: 'https://new.example.com',
+        placements: [],
+      }).recordSceneId
+    ).toBe('default')
+  })
 })

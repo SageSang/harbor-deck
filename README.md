@@ -107,7 +107,7 @@ Create `compose.yaml`:
 ```yaml
 services:
   harbor-deck:
-    image: ghcr.io/sagesang/harbor-deck:1.4.28
+    image: ghcr.io/sagesang/harbor-deck:1.4.30
     container_name: harbor-deck
     restart: unless-stopped
     ports:
